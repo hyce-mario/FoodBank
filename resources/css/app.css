@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    html {
+        -webkit-tap-highlight-color: transparent;
+    }
+    body {
+        @apply antialiased;
+    }
+}
+
+@layer components {
+    .nav-item {
+        @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium
+               transition-colors duration-150 cursor-pointer select-none;
+    }
+    .nav-item-active {
+        @apply bg-navy-700 text-white;
+    }
+    .nav-item-inactive {
+        @apply text-gray-600 hover:bg-gray-100 hover:text-gray-900;
+    }
+    .stat-card {
+        @apply rounded-2xl p-5 flex flex-col gap-3;
+    }
+    .quick-action {
+        @apply flex flex-col items-center justify-center gap-3 bg-white
+               rounded-2xl p-6 cursor-pointer transition-shadow hover:shadow-md
+               border border-gray-100;
+    }
+}
