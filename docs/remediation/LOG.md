@@ -11,7 +11,8 @@
 | Date | Session | Phase | Sub-task | Status | Commit | Notes |
 |---|---|---|---|---|---|---|
 | 2026-04-29 | 0 | — | Scaffolding (`docs/remediation/`) | ✅ | d257731 | Created LOG, HANDOFF, ADR template + ADR-001. |
-| 2026-04-29 | 1 | 0.1 | Lock down UserController (admin-only) | ✅ | _pending_ | StoreUserRequest + UpdateUserRequest + UserController.update + UserController.destroy. 8 regression tests pass. ADR-002. Code-review caught DELETE gap. |
+| 2026-04-29 | 1 | 0.1 | Lock down UserController (admin-only) | ✅ | b1ad1d7 | StoreUserRequest + UpdateUserRequest + UserController.update + UserController.destroy. 8 regression tests pass. ADR-002. Code-review caught DELETE gap. |
+| 2026-04-29 | 1 | 0.2 | Schedule SyncEventStatuses + README setup docs | ✅ | _pending_ | routes/console.php gains `withoutOverlapping()`. README adds Linux cron + Windows Task Scheduler instructions. Verified via `schedule:list` and a manual run that synced 1→current, 5→past against dev DB. |
 
 ---
 
@@ -19,8 +20,8 @@
 
 | Sub-task | Status | Commit | Acceptance |
 |---|---|---|---|
-| 0.1 Lock down `UpdateUserRequest` / `StoreUserRequest` authorize() | ✅ | _pending_ | ✅ Non-admin POST/PUT/DELETE /users → 403; admin still works (8 tests) |
-| 0.2 Schedule `SyncEventStatuses` + Windows Task Scheduler entry | ⬜ | — | Event with `date=today` flips to `current` automatically |
+| 0.1 Lock down `UpdateUserRequest` / `StoreUserRequest` authorize() | ✅ | b1ad1d7 | ✅ Non-admin POST/PUT/DELETE /users → 403; admin still works (8 tests) |
+| 0.2 Schedule `SyncEventStatuses` + Windows Task Scheduler entry | ✅ | _pending_ | ✅ Schedule registered (`schedule:list`); README has Linux cron + Windows Task Scheduler setup; manual run synced events correctly |
 
 ## Phase 1 — Data integrity foundations
 
