@@ -20,7 +20,7 @@ On `phase-1/data-integrity-foundations`:
 - `4b42f8c` — Phase 1.1.a: unique index on (event_id, lane, queue_position) + 4 tests
 - `2681c50` — Phase 1.1.b: EventCheckInService::checkIn transaction + lockForUpdate + 5 tests
 - `a353b4c` — Phase 1.1.c.1: queue_position nullable + null-on-exit + 3 tests
-- `<pending>` — Phase 1.1.c.2: VisitReorderService + EventDayController::reorder + scanner/loader JS + 8 tests
+- `57de2ca` — Phase 1.1.c.2: VisitReorderService + EventDayController::reorder + scanner/loader JS + 8 tests
 
 30 PHPUnit tests pass total.
 
