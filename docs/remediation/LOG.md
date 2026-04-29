@@ -10,7 +10,8 @@
 
 | Date | Session | Phase | Sub-task | Status | Commit | Notes |
 |---|---|---|---|---|---|---|
-| 2026-04-29 | 0 | — | Scaffolding (`docs/remediation/`) | 🟡 | — | Created LOG, HANDOFF, ADR template. No code changes yet. |
+| 2026-04-29 | 0 | — | Scaffolding (`docs/remediation/`) | ✅ | d257731 | Created LOG, HANDOFF, ADR template + ADR-001. |
+| 2026-04-29 | 1 | 0.1 | Lock down UserController (admin-only) | ✅ | _pending_ | StoreUserRequest + UpdateUserRequest + UserController.update + UserController.destroy. 8 regression tests pass. ADR-002. Code-review caught DELETE gap. |
 
 ---
 
@@ -18,7 +19,7 @@
 
 | Sub-task | Status | Commit | Acceptance |
 |---|---|---|---|
-| 0.1 Lock down `UpdateUserRequest` / `StoreUserRequest` authorize() | ⬜ | — | Non-admin POST /users → 403; admin still works |
+| 0.1 Lock down `UpdateUserRequest` / `StoreUserRequest` authorize() | ✅ | _pending_ | ✅ Non-admin POST/PUT/DELETE /users → 403; admin still works (8 tests) |
 | 0.2 Schedule `SyncEventStatuses` + Windows Task Scheduler entry | ⬜ | — | Event with `date=today` flips to `current` automatically |
 
 ## Phase 1 — Data integrity foundations
@@ -89,7 +90,8 @@ Tracked separately; pulled in only when capacity allows. See AUDIT_REPORT.md Par
 
 | ADR | Title | Date | Status |
 |---|---|---|---|
-| _none yet_ | | | |
+| 001 | [AUDIT_REPORT.md Part 13 is the spec](adr/001-audit-report-is-spec.md) | 2026-04-29 | accepted |
+| 002 | [UserController is admin-only](adr/002-usercontroller-admin-only.md) | 2026-04-29 | accepted |
 
 ---
 
@@ -99,4 +101,6 @@ When the implementation diverges from `AUDIT_REPORT.md` Part 13, log it here wit
 
 | Date | Phase / Sub-task | Spec said | We did | Why |
 |---|---|---|---|---|
-| _none yet_ | | | | |
+| 2026-04-29 | 0.1 | Fix `authorize()` on Store/Update | Also fixed `UserController::destroy()` admin guard | Code-review caught that non-admin could DELETE any user (DoS-tier bug). Logical extension of the same fix; closing it now is cheaper than re-opening Phase 0 later. |
+| 2026-04-29 | 0.1 | (not in spec) | Made 3 migrations sqlite-compatible (sessions dup, queue_position MySQL user vars, events CURDATE backfill) + uncommented sqlite-in-memory in phpunit.xml | Required to make Phase 0.1 tests run safely in isolation without clobbering the dev MySQL DB. These are real portability bugs that would also bite a fresh deploy. |
+| 2026-04-29 | 0.1 | (not in spec) | Updated `tests/Feature/ExampleTest.php` (Laravel stub) to tolerate auth-redirect | Was strictly asserting 200 on `/`, but `/` redirects to `/login` (auth middleware). Pre-existing failure, surfaced once sqlite test isolation was enabled. |
