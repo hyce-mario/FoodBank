@@ -64,4 +64,37 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
 # FoodBank
+
+## Scheduled Tasks
+
+Some operational behaviour depends on Laravel's task scheduler running. The most important is `events:sync-statuses`, which transitions events from `upcoming` → `current` on the morning of an event so that day-of role auth codes activate. **If the scheduler is not running, codes will not auto-activate and the event will be stuck in `upcoming` state.**
+
+Defined schedules live in [routes/console.php](routes/console.php). Run `php artisan schedule:list` to inspect them.
+
+### Linux / macOS (cron)
+
+Add this to the deploy user's crontab (`crontab -e`):
+
+```
+* * * * * cd /path/to/Foodbank && php artisan schedule:run >> /dev/null 2>&1
+```
+
+### Windows (Task Scheduler)
+
+Create a task that runs every minute:
+
+1. Open **Task Scheduler** → **Create Task...**
+2. **General** tab: Name `FoodBank Schedule Runner`, *Run whether user is logged on or not*, *Run with highest privileges*.
+3. **Triggers**: New → *Daily*, *Repeat task every 1 minute* for *Indefinitely*.
+4. **Actions**: New → Program/script: `C:\xampp\php\php.exe` (or your PHP path). Arguments: `artisan schedule:run`. Start in: `C:\xampp\htdocs\Foodbank` (or your project root).
+5. **Settings**: enable *Run task as soon as possible after a scheduled start is missed* and *If the running task does not end when requested, force it to stop*.
+
+### Manually triggering once
+
+You can also run `php artisan events:sync-statuses` directly to verify behaviour.
+
+### Verifying it's running
+
+Run `php artisan schedule:list` to see all registered tasks and their next-run times. After the scheduler has run at least once, `php artisan schedule:test` lets you pick a task and execute it interactively.
