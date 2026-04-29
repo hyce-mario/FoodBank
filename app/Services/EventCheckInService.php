@@ -136,6 +136,8 @@ class EventCheckInService
             'loading_completed_at' => $visit->loading_completed_at ?? $now,
             'exited_at'            => $now,
             'end_time'             => $now,
+            // Phase 1.1.c.1: position is meaningful only for active visits.
+            'queue_position'       => null,
         ]);
 
         return $visit;

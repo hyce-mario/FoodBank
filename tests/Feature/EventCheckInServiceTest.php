@@ -114,19 +114,95 @@ class EventCheckInServiceTest extends TestCase
      * Once a visit is exited (end_time set), the same household may be
      * re-checked-in. The Phase 1.3 work will tighten this with a
      * "one-visit-per-event" guard with explicit override; this test pins
-     * the current behavior so the 1.1.b changes don't silently alter it.
+     * the current behavior so the 1.1.b/1.1.c changes don't silently alter it.
+     *
+     * After Phase 1.1.c.1 the exited visit's queue_position is NULL, so the
+     * re-check-in starts at position 1 (not 2). The visit count goes 1 → 2,
+     * proving a new visit was created.
      */
     public function test_re_check_in_after_exit_succeeds_with_next_position(): void
     {
         $h1 = $this->makeHousehold('Ann', 'Adams');
 
         $first = $this->service->checkIn($this->event, $h1, 1);
-        $first->update(['end_time' => now(), 'visit_status' => 'exited']);
+        $this->service->markDone($first);
 
         $second = $this->service->checkIn($this->event, $h1, 1);
 
         $this->assertNotSame($first->id, $second->id);
-        $this->assertSame(2, $second->queue_position);
+        // Exited visit released position 1 (NULL), so the new check-in gets 1.
+        $this->assertSame(1, $second->queue_position);
+    }
+
+    /**
+     * Phase 1.1.c.1: marking a visit done (exiting it) must clear its
+     * queue_position so a later reorder of active visits won't collide
+     * with a position still occupied by an exited row.
+     */
+    public function test_mark_done_clears_queue_position(): void
+    {
+        $h1 = $this->makeHousehold('Ann', 'Adams');
+        $visit = $this->service->checkIn($this->event, $h1, 1);
+
+        $this->assertSame(1, $visit->queue_position);
+
+        $this->service->markDone($visit);
+        $visit->refresh();
+
+        $this->assertNull($visit->queue_position, 'exited visit must release its queue_position');
+        $this->assertSame('exited', $visit->visit_status);
+    }
+
+    /**
+     * Phase 1.1.c.1: with queue_position nullable, multiple exited visits
+     * can coexist with NULL positions on the same (event_id, lane). The
+     * unique index from Phase 1.1.a treats NULLs as distinct so it does
+     * not constrain exited rows.
+     */
+    public function test_multiple_exited_visits_can_share_null_position(): void
+    {
+        $h1 = $this->makeHousehold('Ann', 'Adams');
+        $h2 = $this->makeHousehold('Ben', 'Brown');
+        $h3 = $this->makeHousehold('Cal', 'Cohen');
+
+        $v1 = $this->service->checkIn($this->event, $h1, 1);
+        $v2 = $this->service->checkIn($this->event, $h2, 1);
+        $v3 = $this->service->checkIn($this->event, $h3, 1);
+
+        $this->service->markDone($v1);
+        $this->service->markDone($v2);
+        $this->service->markDone($v3);
+
+        $exitedVisits = Visit::where('event_id', $this->event->id)
+            ->where('visit_status', 'exited')
+            ->get();
+
+        $this->assertCount(3, $exitedVisits);
+        $this->assertTrue($exitedVisits->every(fn ($v) => $v->queue_position === null));
+    }
+
+    /**
+     * Phase 1.1.c.1: after a visit exits and releases its position, a
+     * fresh check-in on the same lane gets its position computed against
+     * the remaining active visits — exited rows are skipped because their
+     * position is NULL (and SQL MAX() ignores NULLs).
+     */
+    public function test_check_in_after_exits_uses_active_max_only(): void
+    {
+        $h1 = $this->makeHousehold('Ann', 'Adams');
+        $h2 = $this->makeHousehold('Ben', 'Brown');
+        $h3 = $this->makeHousehold('Cal', 'Cohen');
+
+        $v1 = $this->service->checkIn($this->event, $h1, 1);
+        $v2 = $this->service->checkIn($this->event, $h2, 1);
+        $this->service->markDone($v1);
+        $this->service->markDone($v2);
+
+        // Both prior visits are exited (positions NULL). The next check-in
+        // should restart from position 1, not continue from 3.
+        $v3 = $this->service->checkIn($this->event, $h3, 1);
+
+        $this->assertSame(1, $v3->queue_position);
     }
 
     /**
