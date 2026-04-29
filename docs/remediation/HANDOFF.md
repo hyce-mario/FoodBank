@@ -18,7 +18,7 @@ On `main` baseline (already pushed):
 - Tag `phase-1.1-complete` → 802e955
 
 On `phase-1.2/visit-households-snapshots`:
-- `<pending>` — Phase 1.2.a: snapshot columns migration + `withPivot()` on Visit/Household + 4 tests
+- `33d73e2` — Phase 1.2.a: snapshot columns migration + `withPivot()` on Visit/Household + 4 tests
 
 ### What's next — start here on resume
 
