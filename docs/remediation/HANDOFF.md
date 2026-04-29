@@ -29,7 +29,7 @@ On `phase-1.2/visit-households-snapshots`:
 - `42e58b3` — Phase 1.2.b: snapshot at attach + NOT NULL flip + shared helper + 4 service tests
 - `7272c23` — docs: 1.2.b SHA backfill
 - `7ca9728` — docs: fix 1.1.a/1.1.b SHA placeholders that sed swept
-- `<pending>` — Phase 1.2.c: ReportAnalyticsService snapshot reads + 4 temporal-stability tests
+- `f37dc03` — Phase 1.2.c: ReportAnalyticsService snapshot reads + 4 temporal-stability tests
 
 ### What's done in Phase 1.2
 - ✅ **1.2.a** — Schema + backfill on `visit_households` (108 dev-DB rows backfilled). Pivot columns exposed via `withPivot()`.
