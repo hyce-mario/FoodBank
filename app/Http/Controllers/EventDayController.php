@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Models\Visit;
+use App\Services\VisitReorderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -132,6 +133,8 @@ class EventDayController extends Controller
                 'lane'                     => $visit->lane,
                 'queue_position'           => $visit->queue_position,
                 'visit_status'             => $visit->visit_status,
+                // Phase 1.1.c.2: optimistic-lock token consumed by reorder.
+                'updated_at'               => $visit->updated_at?->toIso8601String(),
                 'start_time'               => $visit->start_time->format('g:i A'),
                 'waited_min'               => (int) now()->diffInMinutes($visit->start_time),
                 'bags_needed'              => $totalBags,
@@ -177,7 +180,7 @@ class EventDayController extends Controller
 
     // ─── Reorder (drag-and-drop persist) ─────────────────────────────────────
 
-    public function reorder(Request $request, Event $event): JsonResponse
+    public function reorder(Request $request, Event $event, VisitReorderService $reorderService): JsonResponse
     {
         // Require ANY valid role session for this event
         $authed = false;
@@ -188,21 +191,45 @@ class EventDayController extends Controller
 
         $validated = $request->validate([
             'moves'                  => ['required', 'array'],
-            'moves.*.id'             => ['required', 'integer', 'exists:visits,id'],
+            // Scope (id-belongs-to-event) is enforced authoritatively by the
+            // service inside its lockForUpdate transaction; doing it here too
+            // would just add N extra SELECTs per request.
+            'moves.*.id'             => ['required', 'integer'],
             'moves.*.lane'           => ['required', 'integer', 'min:1'],
             'moves.*.queue_position' => ['required', 'integer', 'min:1'],
+            // 'date' rejects garbage strings cleanly with 422 instead of
+            // letting Carbon::parse explode inside the service as a 500.
+            'moves.*.updated_at'     => ['required', 'date'],
         ]);
 
-        foreach ($validated['moves'] as $move) {
-            Visit::where('id', $move['id'])
-                 ->where('event_id', $event->id)
-                 ->update([
-                     'lane'           => $move['lane'],
-                     'queue_position' => $move['queue_position'],
-                 ]);
+        try {
+            $reorderService->reorder($event, $validated['moves']);
+        } catch (\RuntimeException $e) {
+            return match ($e->getMessage()) {
+                VisitReorderService::ERR_VERSION_MISMATCH => response()->json([
+                    'error' => 'A more recent change to one of these visits exists. Refresh and try again.',
+                    'code'  => 'version_mismatch',
+                ], 409),
+                VisitReorderService::ERR_SCOPE_MISMATCH => response()->json([
+                    'error' => 'One or more visits do not belong to this event.',
+                    'code'  => 'scope_mismatch',
+                ], 422),
+                default => throw $e,
+            };
         }
 
-        return response()->json(['ok' => true]);
+        // Echo back the new updated_at per affected visit so the client can
+        // refresh its optimistic-lock tokens without a full re-poll.
+        $ids   = array_column($validated['moves'], 'id');
+        $fresh = Visit::whereIn('id', $ids)
+            ->get(['id', 'updated_at'])
+            ->map(fn ($v) => [
+                'id'         => $v->id,
+                'updated_at' => $v->updated_at?->toIso8601String(),
+            ])
+            ->values();
+
+        return response()->json(['ok' => true, 'visits' => $fresh]);
     }
 
     // ─── Status transitions ───────────────────────────────────────────────────
