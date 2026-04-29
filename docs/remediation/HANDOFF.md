@@ -4,100 +4,92 @@
 
 ---
 
-## Current state — 2026-04-29 (end of Session 3, **Phase 1.1 closed**)
+## Current state — 2026-04-29 (mid-Session 3, Phase 1.1 merged + 1.2.a landing)
 
 ### Where we are
-**Phase 1.1 is fully complete.** All four sub-tasks (1.1.a, 1.1.b, 1.1.c.1, 1.1.c.2, 1.1.c.3) are committed on `phase-1/data-integrity-foundations`. Suite is green at 37/37.
-
-The next call is **a branch decision**:
-
-- **Option A (recommended):** merge `phase-1/data-integrity-foundations` to `main` now (`git merge --no-ff`), tag the result, then start a fresh `phase-1.2/visit-households-snapshots` branch. Atomic per major sub-phase.
-- **Option B:** stay on the same branch, do all of Phase 1 (1.2 + 1.3), then merge once. Larger blast radius, fewer integration moments.
-
-User's call. Default to A unless the user prefers B.
+**Phase 1.1 is merged to `main`** (merge commit `802e955`, tagged `phase-1.1-complete`, both pushed to origin). **Phase 1.2.a (snapshot columns on `visit_households`) is committing now.** After 1.2.a, the next discrete pieces are 1.2.b (populate snapshot at attach time in `EventCheckInService`) and 1.2.c (switch `ReportAnalyticsService` to read from the snapshot).
 
 ### Active branch
-`phase-1/data-integrity-foundations` — 5 commits ahead of `main`. **Not yet merged.**
+`phase-1.2/visit-households-snapshots` — cut from the post-1.1 `main` (`802e955`). 1 commit ahead of `main` once 1.2.a lands.
 
-### Commits on the branch (oldest → newest)
-On `main` baseline:
-- `ef039fe` (merge), `4ed29fa`, `fa9abc0` — Phase 0 merged + post-0 setup
+### Commits on this branch (oldest → newest)
+On `main` baseline (already pushed):
+- `802e955` (merge) — Phase 1.1 merged via `--no-ff`
+- Tag `phase-1.1-complete` → 802e955
 
-On `phase-1/data-integrity-foundations`:
-- `4b42f8c` — Phase 1.1.a: unique index on (event_id, lane, queue_position) + 4 tests
-- `2681c50` — Phase 1.1.b: EventCheckInService::checkIn transaction + lockForUpdate + 5 tests
-- `a353b4c` — Phase 1.1.c.1: queue_position nullable + null-on-exit + 3 tests
-- `57de2ca` — Phase 1.1.c.2: VisitReorderService + EventDayController::reorder + scanner/loader JS + 8 tests
-- `f2a7377` — docs: record 57de2ca SHA in LOG/HANDOFF
-- `381c080` — Phase 1.1.c.3: VisitMonitorController::reorder → VisitReorderService + monitor.blade.php + 7 HTTP tests
-
-### What's done in Phase 1.1
-- ✅ **1.1.a** — DB-level unique index. Found and fixed 3 pre-existing duplicate-position groups in dev DB.
-- ✅ **1.1.b** — `checkIn` transaction + lockForUpdate. Rollback proven via FK-violation test.
-- ✅ **1.1.c.1** — `queue_position` nullable; exited visits release their position. 26 exited rows nulled in dev DB.
-- ✅ **1.1.c.2** — `VisitReorderService` (transaction + lockForUpdate + NULL-stage swaps + optimistic `updated_at`); `EventDayController::reorder` ported; scanner + loader JS updated with `pendingReorder` flag and 409 handling.
-- ✅ **1.1.c.3** — `VisitMonitorController::reorder` ported to the same service. Monitor blade updated with `data-updated-at`, `pendingReorder` flag, and `allLanes` cache token-refresh on success. HTTP feature tests cover the unique monitor branch (`allow_queue_reorder=false` 403). **Both reorder endpoints now share a single hardened code path.**
+On `phase-1.2/visit-households-snapshots`:
+- `<pending>` — Phase 1.2.a: snapshot columns migration + `withPivot()` on Visit/Household + 4 tests
 
 ### What's next — start here on resume
 
-**Phase 1.2 — Demographics + vehicle snapshot on `visit_households`.**
+**Phase 1.2.b** — populate the snapshot at attach time in [EventCheckInService.php](app/Services/EventCheckInService.php).
 
-Spec: AUDIT_REPORT.md Part 13 §1.2 (around lines 397-404). Three sub-tasks tracked in LOG.md as 1.2.a / 1.2.b / 1.2.c.
+The check-in service already does `$visit->households()->attach($household->id)` and `$visit->households()->attach($toAttach->toArray())` (lines ~112 and ~118). After 1.2.a, both calls need to pass a pivot payload that captures the household's demographics + vehicle at that exact moment.
 
-**Concrete plan (high-level — refine on resume):**
+**Concrete plan for 1.2.b:**
 
-1. **1.2.a — Migration**: add `children_count`, `adults_count`, `seniors_count`, `household_size`, `vehicle_make`, `vehicle_color` columns to the `visit_households` pivot. Backfill from current `households.*` for existing rows. As before: defensive skip-on-empty for sqlite test runs; `mysqldump` the dev DB before applying.
-2. **1.2.b — Snapshot at attach time**: in [EventCheckInService.php](app/Services/EventCheckInService.php), update the `attach()` calls to include the pivot payload with the snapshot fields. Existing `EventCheckInServiceTest` tests will keep passing because they don't assert on pivot columns; add new tests for the snapshot specifically.
-3. **1.2.c — Read from snapshot**: in [ReportAnalyticsService.php](app/Services/ReportAnalyticsService.php) (around lines 57-62 per the audit), switch from `JOIN households ... SUM(households.household_size)` to `SUM(visit_households.household_size)`. Same pattern for children/adults/seniors. **Acceptance**: editing a household's size after a visit must NOT change historical reports.
+1. **Build the pivot payload** for each household being attached. The household model is already loaded (via `Household` model param or `findOrFail` upstream), so its fields (`household_size`, `children_count`, `adults_count`, `seniors_count`, `vehicle_make`, `vehicle_color`) are in memory — no extra query needed. For represented households attached via `$toAttach` array of IDs, you DO need to pull them from the DB to capture demographics. Either:
+   - `Household::whereIn('id', $toAttach)->get()->keyBy('id')` once, then attach each with its own pivot payload.
+   - Or call `$visit->households()->attach($id, $pivotPayload)` per-id in a loop, which is simpler but does 1 query per attach.
+   The first approach (one bulk read, then sync attach with pivot map) is preferable.
 
-Notes:
-- This is a 3-commit phase. Don't bundle.
-- Migration should backfill snapshot columns from `households.*` for ALL existing `visit_households` rows. Verify against dev DB before touching prod. Check the column types match (int vs. unsignedSmallInteger etc).
-- ReportAnalyticsService is currently untracked user pre-existing work (per git status); same caveat as the controllers/services in Phase 1.1.
+2. **Tests to add** (extend `EventCheckInServiceTest` rather than a new file):
+   - `test_check_in_snapshots_demographics_on_pivot` — check primary household's pivot has matching demographics + vehicle
+   - `test_check_in_snapshots_represented_household_demographics` — pivot for a represented household captures its OWN demographics, not the primary's
+   - `test_editing_household_after_check_in_does_not_change_pivot_snapshot` — the headline regression: change `household.household_size` after attach, assert pivot still has the original
+   - `test_pivot_snapshot_columns_are_non_null_after_check_in` — pin that the service always populates them (the 1.2.a migration left columns nullable; 1.2.b is the layer that guarantees non-null going forward)
 
-After 1.2 lands, 1.3 (one-visit-per-household-per-event guard) closes Phase 1. Then we move to Phase 2 (reporting truth / DistributionPostingService).
+3. **No migration in 1.2.b** — pure service-layer change. No mysqldump needed.
+
+4. **Open question carried into 1.2.c**: report queries must use `COALESCE(vh.household_size, 0)` defensively because pivot columns are nullable. Without COALESCE, a single bad row poisons the whole report SUM (NULL propagates). Logged as a deviation in LOG.md.
+
+### Phase 1.2 sub-task plan (what's left)
+- ✅ **1.2.a** — Schema + backfill on `visit_households` (108 dev-DB rows backfilled, NULL count 0). Pivot columns exposed via `withPivot()` on both relationships.
+- ⬜ **1.2.b** — `EventCheckInService::checkIn` writes the snapshot at attach time. Service-layer tests only.
+- ⬜ **1.2.c** — `ReportAnalyticsService::*` (lines ~57-62 per audit) switches to `SUM(visit_households.household_size)` etc, with `COALESCE(...,0)` defensively. Acceptance: editing a household after a visit must NOT change historical report totals. Add a regression test that proves it.
 
 ### Branch / merge guidance
-After 1.1.c.3 commits, **strongly recommend merging to `main` before starting 1.2** (option A above). The data-integrity-foundations branch has been the right scope for 1.1; 1.2 is a different concern (reporting accuracy via snapshots) and deserves its own branch.
+After 1.2.c lands and 1.2 is fully done, merge `phase-1.2/visit-households-snapshots` to `main` with `--no-ff`, tag as `phase-1.2-complete`, push. Then cut `phase-1.3/...` for the one-visit-per-household guard.
 
 ### Environment state
 - PHP 8.2.12 via XAMPP, working directory `c:\xampp\htdocs\Foodbank`.
-- MySQL DB `foodbank` is the dev DB. **Migrations 1.1.a and 1.1.c.1 have been applied to MySQL.** No new migration in 1.1.c.2 or 1.1.c.3 (pure code changes).
-- Tests use sqlite `:memory:`. **37 tests passing** (30 service-level + 7 HTTP).
-- Node/npm still not installed on host. Blade JS edits are server-rendered and don't need Vite — picked up on page reload.
+- MySQL DB `foodbank` is the dev DB. **Migrations applied to MySQL so far in Phase 1**: 1.1.a, 1.1.c.1, 1.2.a. Pre-1.2 mysqldump at `backups/foodbank-pre-phase-1.2-20260429-134049.sql` (140KB).
+- Tests use sqlite `:memory:`. **41 tests passing** (37 prior + 4 new in 1.2.a).
+- Node/npm still not installed on host. Pure server-side work in 1.2 — no Vite needed.
 - Windows scheduled task `FoodBank Schedule Runner` is live (every 1 min).
 - Git identity per-command: `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"`.
 - `/backups/` is in `.gitignore`.
 
 ### In-flight files / unfinished work
-None. All staged/committed cleanly.
+None — 1.2.a will commit cleanly.
 
 ### Blockers
-None for 1.2.a. Phase 5 UI work will need Node when we get there.
+None for 1.2.b. Phase 5 UI work will need Node when we get there.
 
 ### User's pre-existing uncommitted work
-Still substantial — many controllers, views, services remain modified/untracked. Phase 1.1 commits have organically pulled in `EventCheckInService.php`, `EventDayController.php`, `VisitMonitorController.php`, `scanner.blade.php`, `loader.blade.php`, `monitor.blade.php` (those came in as "new files" since they were untracked before). 1.2 will likely pull in `ReportAnalyticsService.php` the same way. Stage explicitly via `git add <path>` — never `git add .`.
+Many controllers, views, services remain modified/untracked. Phase 1 commits have organically pulled in `EventCheckInService.php`, `EventDayController.php`, `VisitMonitorController.php`, `scanner.blade.php`, `loader.blade.php`, `monitor.blade.php`, `Visit.php`, `Household.php` (all came in as "new files" or modifications). 1.2.b will pull more of `EventCheckInService.php`'s usage; 1.2.c will likely pull in `ReportAnalyticsService.php` for the first time. Stage explicitly via `git add <path>` — never `git add .`.
 
 ### Open questions for the user
-- **Branch decision** before starting 1.2: merge to `main` first (recommended) or continue on the same branch?
+None for 1.2.b. After 1.2.c, branch decision: merge to main now or continue to 1.3 first.
 
 ### ADR index
 - ADR-001 — AUDIT_REPORT.md Part 13 is the spec
 - ADR-002 — UserController is admin-only
-- (no new ADRs in Session 3 — both 1.1.c.2 and 1.1.c.3 reviewer findings were architectural reuses or local fixes, logged as Deviations in LOG.md rather than ADRs)
+- (no new ADRs in 1.1 or 1.2.a — all reviewer findings were architectural reuses or local fixes, logged as Deviations in LOG.md rather than ADRs)
 
 ### Coverage gaps and known issues (carry forward)
-- **HTTP feature tests for event-day routes** (`markExited`, `transition`, `EventDayController::reorder`) are deferred to Phase 5 because they need session auth-code scaffolding. Service-level unit tests cover the underlying logic. Note: `VisitMonitorController::reorder` is now HTTP-tested because it uses standard admin auth, not session codes.
-- **Pre-existing quirk in monitor.blade.php**: the loader column's `onEnd` calls `sendReorder()` which reads from `#scanner-list`, not `#loader-list`. Loader drags in the monitor view silently send scanner positions (or nothing if scanner is empty). Pre-existing behavior, NOT a 1.1.c.3 regression. Phase 5 UX cleanup item.
-- **Monitor route is `auth`-gated only** (no `permission:` middleware). Any logged-in user can POST to `monitor.reorder`. The data + index endpoints are equally permissive, so the controller is internally consistent. Phase 4 RBAC will tighten this if needed.
+- **HTTP feature tests for event-day routes** (`markExited`, `transition`, `EventDayController::reorder`) deferred to Phase 5 due to session auth-code scaffolding cost. Service-level coverage is comprehensive.
+- **Pre-existing quirk in monitor.blade.php**: loader column's `onEnd` calls `sendReorder()` reading `#scanner-list`, not `#loader-list`. Pre-existing; flagged for Phase 5 UX cleanup.
+- **Monitor route is `auth`-only** (no `permission:` middleware). Internally consistent with the data + index endpoints. Phase 4 RBAC will tighten.
+- **1.2.c COALESCE requirement**: pivot snapshot columns are nullable; report queries must `COALESCE(...,0)` and log NULL pivot rows. Logged as a deviation in LOG.md so it doesn't drift.
 
 ### Working rules carried across sessions
 - **Thoroughness over speed.** Decompose any sub-task touching >4 files into smaller commits.
-- **Migration safety.** `mysqldump` before destructive operations; every migration has a working `down()`; skip-on-empty patterns for MySQL-specific backfills.
-- **Code-reviewer subagent** before each commit (Session 1: DELETE gap; Session 2: redundant `default(null)` + overflow risk; Session 3 1.1.c.2: client poll race + validator scope leak + Carbon parse-on-garbage; Session 3 1.1.c.3: missing 403 test + `allLanes` cache leak — both fixed).
-- **Commit messages** reference `AUDIT_REPORT.md` Part/Phase. ADRs for non-obvious decisions; Deviations log in LOG.md for spec divergences.
-- **Subagent delegation** for read-only research (Explore agent) to keep main context lean.
-- **Stage Phase paths explicitly** — never `git add .`, it pulls user's pre-existing uncommitted work.
+- **Migration safety.** `mysqldump` before destructive operations; every migration has working `down()`; skip-on-empty patterns for backfills.
+- **Code-reviewer subagent** before each commit. Findings caught so far: DELETE gap (P0); redundant `default(null)` + overflow risk (1.1.c.1); client poll race + validator scope leak + Carbon parse-on-garbage + unique-violation 500 vs 409 (1.1.c.2); missing 403 test + `allLanes` cache leak (1.1.c.3); missing `withPivot()` (1.2.a).
+- **Commit messages** reference `AUDIT_REPORT.md` Part/Phase. ADRs for non-obvious decisions; Deviations log in LOG.md.
+- **Subagent delegation** for read-only research to keep main context lean.
+- **Stage Phase paths explicitly** — never `git add .`.
 
 ### Context budget at handoff
-~55-65% used. Comfortably below yellow. 1.2 is a 3-commit phase with one schema change — manageable in a fresh session, possibly without `/clear` if context permits.
+~60-70% used. Approaching yellow. 1.2.b is moderately complex (service change + pivot payload construction + 4 tests). Recommend `/clear` and resume from this HANDOFF before starting 1.2.b.

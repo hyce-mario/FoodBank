@@ -4,6 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Household extends Model
 {
@@ -16,9 +19,23 @@ class Household extends Model
         'city',
         'state',
         'zip',
+        'vehicle_make',
+        'vehicle_color',
         'household_size',
+        'children_count',
+        'adults_count',
+        'seniors_count',
+        'representative_household_id',
         'notes',
         'qr_token',
+    ];
+
+    protected $casts = [
+        'household_size'              => 'integer',
+        'children_count'              => 'integer',
+        'adults_count'                => 'integer',
+        'seniors_count'               => 'integer',
+        'representative_household_id' => 'integer',
     ];
 
     // ─── Accessors ────────────────────────────────────────────────────────────
@@ -31,6 +48,25 @@ class Household extends Model
     public function getLocationAttribute(): string
     {
         return collect([$this->city, $this->state])->filter()->implode(', ');
+    }
+
+    /** "Silver Toyota" — returns null when neither field is set. */
+    public function getVehicleLabelAttribute(): ?string
+    {
+        $parts = array_filter([$this->vehicle_color, $this->vehicle_make]);
+        return count($parts) ? implode(' ', $parts) : null;
+    }
+
+    /** True when this household is being represented by another household. */
+    public function getIsRepresentedAttribute(): bool
+    {
+        return $this->representative_household_id !== null;
+    }
+
+    /** True when this household represents at least one other household. */
+    public function getIsRepresentativeAttribute(): bool
+    {
+        return $this->representedHouseholds()->exists();
     }
 
     // ─── Scopes ───────────────────────────────────────────────────────────────
@@ -47,8 +83,37 @@ class Household extends Model
         });
     }
 
-    // ─── Relationships (placeholders for future phases) ───────────────────────
+    // ─── Relationships ────────────────────────────────────────────────────────
 
-    // public function visits(): HasMany  { return $this->hasMany(Visit::class); }
-    // public function distributions(): HasMany { ... }
+    public function visits(): BelongsToMany
+    {
+        return $this->belongsToMany(Visit::class, 'visit_households')
+            ->withTimestamps()
+            // Phase 1.2.a snapshot columns — see Visit::households() for context.
+            ->withPivot([
+                'household_size',
+                'children_count',
+                'adults_count',
+                'seniors_count',
+                'vehicle_make',
+                'vehicle_color',
+            ]);
+    }
+
+    /**
+     * The household that is picking up on behalf of this household.
+     * Null when this household visits on its own.
+     */
+    public function representative(): BelongsTo
+    {
+        return $this->belongsTo(Household::class, 'representative_household_id');
+    }
+
+    /**
+     * All households that this household picks up food for.
+     */
+    public function representedHouseholds(): HasMany
+    {
+        return $this->hasMany(Household::class, 'representative_household_id');
+    }
 }
