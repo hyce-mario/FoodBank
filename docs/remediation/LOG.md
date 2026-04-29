@@ -13,6 +13,7 @@
 | 2026-04-29 | 0 | — | Scaffolding (`docs/remediation/`) | ✅ | d257731 | Created LOG, HANDOFF, ADR template + ADR-001. |
 | 2026-04-29 | 1 | 0.1 | Lock down UserController (admin-only) | ✅ | b1ad1d7 | StoreUserRequest + UpdateUserRequest + UserController.update + UserController.destroy. 8 regression tests pass. ADR-002. Code-review caught DELETE gap. |
 | 2026-04-29 | 1 | 0.2 | Schedule SyncEventStatuses + README setup docs | ✅ | b9143fc | routes/console.php gains `withoutOverlapping()`. README adds Linux cron + Windows Task Scheduler instructions. Verified via `schedule:list` and a manual run that synced 1→current, 5→past against dev DB. |
+| 2026-04-29 | 1 | post-0 | Merge Phase 0 → main + DB backup + register Win Task Scheduler entry | ✅ | ef039fe (merge), 4ed29fa (gitignore) | Phase 0 merged via `--no-ff`. mysqldump saved to `backups/foodbank-pre-phase-1-20260429-114638.sql` (140KB, 31 tables). `backups/` added to .gitignore. Windows scheduled task `FoodBank Schedule Runner` registered (every 1 min, hidden, 10-year duration); test fire returned exit 0. |
 
 ---
 

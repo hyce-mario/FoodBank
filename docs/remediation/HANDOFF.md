@@ -4,18 +4,22 @@
 
 ---
 
-## Current state — 2026-04-29 (end of Session 1)
+## Current state — 2026-04-29 (end of Session 1, after merge)
 
 ### Where we are
-**Phase 0 complete.** Both 0.1 (UserController lockdown) and 0.2 (scheduler wiring) are committed. Privilege escalation is closed; the daily event-status transition is registered and documented.
+**Phase 0 complete and merged to `main`.** Privilege escalation is closed; the daily event-status transition is registered, documented, and **actually wired up** via a live Windows scheduled task. DB backed up before Phase 1.
 
 ### Active branch
-`phase-0/lockdown-and-scheduler` — two commits ahead of `main`. **Not yet merged or pushed.**
+`main` — merge commit `ef039fe` carries Phase 0 work. The `phase-0/lockdown-and-scheduler` branch still exists locally and can be deleted once we're sure nothing's broken.
 
-### Commits in this branch (oldest → newest)
-- `d257731` (on main) — docs: add operational audit + remediation scaffolding
+### Commits on main (oldest → newest)
+- `333f2cb` — secondcommit (pre-existing)
+- `d257731` — docs: add operational audit + remediation scaffolding
 - `b1ad1d7` — fix(security): close UserController privilege-escalation hole [Phase 0.1]
 - `b9143fc` — chore(scheduling): wire SyncEventStatuses + document scheduler setup [Phase 0.2]
+- `af1bdc9` — docs(remediation): finalize Phase 0 handoff state
+- `ef039fe` — Merge Phase 0 (UserController lockdown + scheduler wiring)
+- `4ed29fa` — chore: ignore /backups directory
 
 ### What's done
 - ✅ Phase 0.1: `StoreUserRequest`, `UpdateUserRequest`, `UserController` (update + destroy) all admin-only. 8 regression tests in `tests/Feature/UserAuthorizationTest.php` pin the headline self-promotion exploit closed.
@@ -40,19 +44,16 @@ Per **AUDIT_REPORT.md Part 13 Phase 1** — Data integrity foundations.
 3. **Phase 1.3** — One-visit-per-household-per-event guard with explicit `force` override.
 
 ### Branch / merge guidance
-The user originally said "commit baseline on main, then branch for code." Phase 0 lives on `phase-0/lockdown-and-scheduler`. Recommendation before starting Phase 1:
-- **Option A (preferred):** merge `phase-0/lockdown-and-scheduler` → `main`, then branch `phase-1/data-integrity-foundations` from main. Keeps phases as logical units.
-- **Option B:** keep stacking commits on the same branch. Simpler but harder to revert one phase.
-
-Ask the user which they prefer before starting Phase 1.
+User chose merge-then-branch (Option A). Phase 0 has been merged to `main` via `--no-ff` (commit `ef039fe`). Phase 1 should branch from `main` as `phase-1/data-integrity-foundations`.
 
 ### Environment state
 - PHP 8.2.12 via XAMPP, working directory `c:\xampp\htdocs\Foodbank`.
-- MySQL DB `foodbank` is the dev DB. SyncEventStatuses just ran against it (1 → current, 5 → past).
+- MySQL DB `foodbank` is the dev DB. SyncEventStatuses ran once during Phase 0.2 verification (1 → current, 5 → past). Backed up before Phase 1: `backups/foodbank-pre-phase-1-20260429-114638.sql` (140KB, 31 tables).
 - Tests use sqlite `:memory:` (configured in phpunit.xml). All 8 tests passing.
 - Node/npm still not installed on host. UI changes that need Vite rebuild remain blocked.
-- Laravel scheduler is registered; `php artisan schedule:run` is NOT being triggered by any cron / Task Scheduler entry yet — the user must add one (instructions in README). Until then the schedule is metadata only.
+- **Windows scheduled task `FoodBank Schedule Runner`** is now live: runs `php artisan schedule:run` every 1 minute, hidden, current user, 10-year repetition duration. Test fire returned exit 0. Inspect via `Get-ScheduledTask -TaskName "FoodBank Schedule Runner"` or `Get-ScheduledTaskInfo -TaskName "FoodBank Schedule Runner"`. To remove: `Unregister-ScheduledTask -TaskName "FoodBank Schedule Runner" -Confirm:$false`.
 - Git identity is provided per-command via `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"`. No persistent git config has been set.
+- `/backups/` is in `.gitignore` (commit `4ed29fa`).
 
 ### In-flight files / unfinished work
 None.
@@ -64,9 +65,7 @@ None right now. Future Phase 5 UI work will be blocked until Node is installed.
 A large portion of the project (controllers, views, services for Household, Event, Volunteer, Inventory, Finance, Reports) is untracked or modified-uncommitted on `main`. Phase 0 only committed the specific files my work touched (`UserController`, `StoreUserRequest`, etc.) — those came in as new files in their first commit. The rest of the user's work remains uncommitted. **Phase 1 will pull in more of their code organically as it modifies more files** (e.g. `EventCheckInService`, `EventDayController`, `ReportAnalyticsService`, the relevant migrations).
 
 ### Open questions for the user
-1. Merge Phase 0 to `main` before starting Phase 1, or keep stacking on the same branch?
-2. Does the dev DB need a `mysqldump` snapshot before Phase 1 (which adds migrations and column snapshots)? Recommendation: yes.
-3. Cron / Task Scheduler — has the user actually wired this up locally or in production yet? If not, none of the Phase 0.2 benefit is realized in practice.
+None right now — all three pre-Phase-1 questions have been answered and resolved (merge done, DB backed up, Task Scheduler entry live). Next session can dive straight into Phase 1.1.
 
 ### Working rules carried across sessions
 - **Thoroughness over speed.** Decompose any sub-task touching >4 files. Tests per sub-task, not just at phase end.
