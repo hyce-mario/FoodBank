@@ -36,8 +36,8 @@
 
 | Sub-task | Status | Commit | Acceptance |
 |---|---|---|---|
-| 1.1.a Migration: unique index `(event_id, lane, queue_position)` | ✅ | 42e58b3 | ✅ DB-level constraint exists; duplicate insert raises QueryException; renumbered 3 pre-existing duplicate groups in dev DB |
-| 1.1.b `EventCheckInService::checkIn` transaction + lockForUpdate | ✅ | 42e58b3 | ✅ Position read+insert serialized via DB::transaction + lockForUpdate; 5 tests incl. FK-rollback proof. Real concurrent test guarded by 1.1.a unique index. |
+| 1.1.a Migration: unique index `(event_id, lane, queue_position)` | ✅ | 4b42f8c | ✅ DB-level constraint exists; duplicate insert raises QueryException; renumbered 3 pre-existing duplicate groups in dev DB |
+| 1.1.b `EventCheckInService::checkIn` transaction + lockForUpdate | ✅ | 2681c50 | ✅ Position read+insert serialized via DB::transaction + lockForUpdate; 5 tests incl. FK-rollback proof. Real concurrent test guarded by 1.1.a unique index. |
 | 1.1.c.1 queue_position nullable + null-on-exit (precondition for safe reorder) | ✅ | a353b4c | ✅ Position is now meaningful only for active visits; exited rows hold NULL; unique index naturally allows multiple NULLs |
 | 1.1.c.2 `EventDayController::reorder` transaction + version check | ✅ | 57de2ca | ✅ Reorder runs inside `DB::transaction` + `lockForUpdate`; NULL-stage allows two-row swaps; per-move `updated_at` enforces optimistic versioning; concurrent reorders that lose the version race get 409 + auto-refetch in the client |
 | 1.1.c.3 `VisitMonitorController::reorder` swap to `VisitReorderService` | ✅ | 381c080 | ✅ Same race fix applied to admin monitor endpoint via shared service; HTTP feature tests cover all branches incl. `allow_queue_reorder=false → 403` |
