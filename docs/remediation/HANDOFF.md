@@ -29,7 +29,7 @@ On `phase-1/data-integrity-foundations`:
 - `a353b4c` — Phase 1.1.c.1: queue_position nullable + null-on-exit + 3 tests
 - `57de2ca` — Phase 1.1.c.2: VisitReorderService + EventDayController::reorder + scanner/loader JS + 8 tests
 - `f2a7377` — docs: record 57de2ca SHA in LOG/HANDOFF
-- `<pending>` — Phase 1.1.c.3: VisitMonitorController::reorder → VisitReorderService + monitor.blade.php + 7 HTTP tests
+- `381c080` — Phase 1.1.c.3: VisitMonitorController::reorder → VisitReorderService + monitor.blade.php + 7 HTTP tests
 
 ### What's done in Phase 1.1
 - ✅ **1.1.a** — DB-level unique index. Found and fixed 3 pre-existing duplicate-position groups in dev DB.
