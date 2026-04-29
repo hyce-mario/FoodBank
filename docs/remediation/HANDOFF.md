@@ -4,77 +4,93 @@
 
 ---
 
-## Current state — 2026-04-29 (end of Session 1, after merge)
+## Current state — 2026-04-29 (end of Session 2, mid-Phase-1)
 
 ### Where we are
-**Phase 0 complete and merged to `main`.** Privilege escalation is closed; the daily event-status transition is registered, documented, and **actually wired up** via a live Windows scheduled task. DB backed up before Phase 1.
+**Phase 1.1.a, 1.1.b, and 1.1.c.1 are complete and committed.** Phase 1.1.c.2 (the actual reorder transaction + version check) is the next discrete piece. After 1.1.c.2 closes, Phase 1.1 is done and we move to 1.2 (visit_households snapshots).
 
 ### Active branch
-`main` — merge commit `ef039fe` carries Phase 0 work. The `phase-0/lockdown-and-scheduler` branch still exists locally and can be deleted once we're sure nothing's broken.
+`phase-1/data-integrity-foundations` — 3 commits ahead of `main`. **Not yet merged.**
 
-### Commits on main (oldest → newest)
-- `333f2cb` — secondcommit (pre-existing)
-- `d257731` — docs: add operational audit + remediation scaffolding
-- `b1ad1d7` — fix(security): close UserController privilege-escalation hole [Phase 0.1]
-- `b9143fc` — chore(scheduling): wire SyncEventStatuses + document scheduler setup [Phase 0.2]
-- `af1bdc9` — docs(remediation): finalize Phase 0 handoff state
-- `ef039fe` — Merge Phase 0 (UserController lockdown + scheduler wiring)
-- `4ed29fa` — chore: ignore /backups directory
+### Commits on the branch (oldest → newest)
+On `main` baseline:
+- `ef039fe` (merge), `4ed29fa`, `fa9abc0` — Phase 0 merged + post-0 setup
 
-### What's done
-- ✅ Phase 0.1: `StoreUserRequest`, `UpdateUserRequest`, `UserController` (update + destroy) all admin-only. 8 regression tests in `tests/Feature/UserAuthorizationTest.php` pin the headline self-promotion exploit closed.
-- ✅ Phase 0.2: `routes/console.php` schedule has `withoutOverlapping()`. README has cron + Windows Task Scheduler setup. Verified via `php artisan schedule:list` and a manual run.
-- ✅ ADR-001 (audit-as-spec) and ADR-002 (admin-only UserController) recorded.
-- ✅ Migration portability fixes (3 files made sqlite-compatible) — incidental but documented in LOG deviations.
-- ✅ phpunit.xml uses sqlite + `:memory:` so feature tests don't touch dev DB.
+On `phase-1/data-integrity-foundations`:
+- `4b42f8c` — Phase 1.1.a: unique index on (event_id, lane, queue_position) + 4 tests
+- `2681c50` — Phase 1.1.b: EventCheckInService::checkIn transaction + lockForUpdate + 5 tests
+- `a353b4c` — Phase 1.1.c.1: queue_position nullable + null-on-exit + 3 tests
 
-### What's next (the next 3 sub-tasks)
-Per **AUDIT_REPORT.md Part 13 Phase 1** — Data integrity foundations.
+22 PHPUnit tests pass total.
 
-1. **Phase 1.1** — Queue-position race + reorder transaction.
-   - Migration adding unique index on `(event_id, lane, queue_position)` to `visits`.
-   - `EventCheckInService::checkIn` wrapped in `DB::transaction` with `lockForUpdate`.
-   - `EventDayController::reorder` wrapped in transaction with version check.
-   - Sub-tasks 1.1.a, 1.1.b, 1.1.c — each its own commit.
-2. **Phase 1.2** — Demographics + vehicle snapshot on `visit_households`.
-   - Migration adds `children_count`, `adults_count`, `seniors_count`, `household_size`, `vehicle_make`, `vehicle_color` columns.
-   - Backfill from current household values.
-   - `EventCheckInService` writes snapshot at attach time.
-   - `ReportAnalyticsService` switched to read from snapshot.
-3. **Phase 1.3** — One-visit-per-household-per-event guard with explicit `force` override.
+### What's done in Phase 1 so far
+- ✅ **1.1.a** — DB-level unique index. Found and fixed 3 pre-existing duplicate-position groups in dev DB (real race-induced corruption). Migration is idempotent (defensive ROW_NUMBER renumber before applying constraint).
+- ✅ **1.1.b** — `checkIn` is now wrapped in `DB::transaction` with `lockForUpdate` on the position SELECT. `loadMissing` correctly stays outside the transaction. Rollback proven via FK-violation test.
+- ✅ **1.1.c.1** — `queue_position` is nullable; exited visits release their position (NULL). Three exit paths updated: `EventCheckInService::markDone`, `EventDayController::markExited`, `VisitMonitorController::transition` (supervisor override). Migration nulled 26 exited rows in dev DB; 81 active kept positions.
+- 📋 **Deviation logged** in LOG.md: 1.1.c was split into two commits because the spec didn't anticipate the active-vs-exited position collision.
+
+### What's next — start here on resume
+
+**Phase 1.1.c.2** — `EventDayController::reorder` transaction + version check.
+
+The current method ([EventDayController.php:180-206](app/Http/Controllers/EventDayController.php#L180-L206)) does individual `UPDATE` statements in a foreach loop with **no transaction wrapping**. Two concurrent reorder POSTs (e.g., scanner and loader both dragging) silently overwrite each other.
+
+**Concrete plan for 1.1.c.2:**
+
+1. **Server change** — wrap the foreach in `DB::transaction`. Add optimistic version check: each `move` payload should include the visit's `updated_at` (or a dedicated `version` field) the client last saw. Server `SELECT ... FOR UPDATE` each row, compare `updated_at`, return 409 if any row has been touched since.
+
+2. **Position-collision avoidance** — even within one transaction, applying `[{id:1, pos:2}, {id:2, pos:1}]` sequentially trips the unique index at the intermediate `pos:2` step. Two workable approaches:
+   - **Two-phase update**: phase 1 sets each affected row's `lane = 100 + lane` (offsets out of valid range, since lanes are 1-4, this temporarily moves rows to "phantom" lanes that don't conflict). Phase 2 sets final lane + position. Wrap both in the same transaction.
+   - **NULL-stage**: phase 1 sets each affected row's `queue_position = NULL`. Phase 2 sets final position. Cleaner since we already made queue_position nullable in 1.1.c.1.
+   The NULL-stage approach is preferable.
+
+3. **Client change** — JS in [scanner.blade.php](resources/views/event-day/scanner.blade.php) and [loader.blade.php](resources/views/event-day/loader.blade.php) needs to send the `updated_at` per move. The `data()` JSON response already returns visits but check whether `updated_at` is included; if not, add it.
+
+4. **Tests:**
+   - Reorder updates positions correctly within one user's call.
+   - Reorder swaps `[{id:1,pos:2},{id:2,pos:1}]` — currently impossible because of unique index, must work after the NULL-stage fix.
+   - Stale version check: if you call reorder with an old `updated_at`, get 409.
+   - Reorder is rejected if any move's id doesn't belong to the event.
+
+5. **Caveat to flag** — UI changes in scanner/loader blade templates will need Vite rebuild for the JS to hot-reload, but **Node is not installed on host**. The blade `.blade.php` files are server-rendered without Vite, so JS edits there are picked up on page reload. No build needed — flag this in the commit message.
 
 ### Branch / merge guidance
-User chose merge-then-branch (Option A). Phase 0 has been merged to `main` via `--no-ff` (commit `ef039fe`). Phase 1 should branch from `main` as `phase-1/data-integrity-foundations`.
+After 1.1.c.2 closes, Phase 1.1 is done. Recommend a merge of `phase-1/data-integrity-foundations` to `main` between 1.1 and 1.2 to keep merges atomic per major sub-phase. Or finish all of Phase 1 before merging — user's call.
 
 ### Environment state
 - PHP 8.2.12 via XAMPP, working directory `c:\xampp\htdocs\Foodbank`.
-- MySQL DB `foodbank` is the dev DB. SyncEventStatuses ran once during Phase 0.2 verification (1 → current, 5 → past). Backed up before Phase 1: `backups/foodbank-pre-phase-1-20260429-114638.sql` (140KB, 31 tables).
-- Tests use sqlite `:memory:` (configured in phpunit.xml). All 8 tests passing.
-- Node/npm still not installed on host. UI changes that need Vite rebuild remain blocked.
-- **Windows scheduled task `FoodBank Schedule Runner`** is now live: runs `php artisan schedule:run` every 1 minute, hidden, current user, 10-year repetition duration. Test fire returned exit 0. Inspect via `Get-ScheduledTask -TaskName "FoodBank Schedule Runner"` or `Get-ScheduledTaskInfo -TaskName "FoodBank Schedule Runner"`. To remove: `Unregister-ScheduledTask -TaskName "FoodBank Schedule Runner" -Confirm:$false`.
-- Git identity is provided per-command via `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"`. No persistent git config has been set.
-- `/backups/` is in `.gitignore` (commit `4ed29fa`).
+- MySQL DB `foodbank` is the dev DB. **Migrations 1.1.a and 1.1.c.1 have been applied to MySQL** (in addition to running cleanly on sqlite test DB). Dev DB now has unique index live and 26 exited rows with NULL position.
+- Tests use sqlite `:memory:`. 22 tests passing.
+- Node/npm still not installed on host. UI work that needs Vite rebuild is blocked.
+- Windows scheduled task `FoodBank Schedule Runner` is live (every 1 min).
+- Git identity per-command: `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"`.
+- `/backups/` is in `.gitignore`.
 
 ### In-flight files / unfinished work
-None.
+None. All staged/committed cleanly.
 
 ### Blockers
-None right now. Future Phase 5 UI work will be blocked until Node is installed.
+None for 1.1.c.2. Phase 5 UI work will need Node when we get there.
 
 ### User's pre-existing uncommitted work
-A large portion of the project (controllers, views, services for Household, Event, Volunteer, Inventory, Finance, Reports) is untracked or modified-uncommitted on `main`. Phase 0 only committed the specific files my work touched (`UserController`, `StoreUserRequest`, etc.) — those came in as new files in their first commit. The rest of the user's work remains uncommitted. **Phase 1 will pull in more of their code organically as it modifies more files** (e.g. `EventCheckInService`, `EventDayController`, `ReportAnalyticsService`, the relevant migrations).
+Still substantial — many controllers, views, services remain modified/untracked on `phase-1/...` (carried over from `main`). Phase 1 commits have organically pulled in `EventCheckInService.php`, `EventDayController.php`, `VisitMonitorController.php` (those came in as "new files" since they were untracked before). Stage explicitly via `git add <path>` — never `git add .`.
 
 ### Open questions for the user
-None right now — all three pre-Phase-1 questions have been answered and resolved (merge done, DB backed up, Task Scheduler entry live). Next session can dive straight into Phase 1.1.
+None. Next session can resume Phase 1.1.c.2 directly.
+
+### ADR index
+- ADR-001 — AUDIT_REPORT.md Part 13 is the spec
+- ADR-002 — UserController is admin-only
+- (no new ADRs in this session — the 1.1.c spec deviation is logged in LOG.md "Deviations" rather than as an ADR because the architectural shape didn't change, just the commit decomposition)
 
 ### Working rules carried across sessions
-- **Thoroughness over speed.** Decompose any sub-task touching >4 files. Tests per sub-task, not just at phase end.
-- **Migration safety.** Every migration ships with `down()`. `mysqldump` before destructive operations. Skip-on-empty pattern for MySQL-only backfills if portability matters.
-- **Browser verification** for UI changes — but Node is unavailable, so flag explicitly.
-- **Code-reviewer subagent** before each commit. Phase 0.1's reviewer caught the destroy() gap that I missed.
-- **Commit messages** reference `AUDIT_REPORT.md` Part/Phase. ADRs for non-obvious decisions.
+- **Thoroughness over speed.** Decompose any sub-task touching >4 files into smaller commits.
+- **Migration safety.** `mysqldump` before destructive operations; every migration has a working `down()`; skip-on-empty patterns for MySQL-specific backfills.
+- **Code-reviewer subagent** before each commit (Session 1's caught DELETE gap; Session 2's caught redundant `default(null)` and overflow risk).
+- **Commit messages** reference `AUDIT_REPORT.md` Part/Phase. ADRs for non-obvious decisions; Deviations log in LOG.md for spec divergences.
 - **Subagent delegation** for read-only research (Explore agent) to keep main context lean.
-- **Stage Phase paths explicitly** with `git add <path1> <path2> ...`. Never `git add .` — it would pull in the user's pre-existing uncommitted work.
+- **Stage Phase paths explicitly** — never `git add .`, it pulls user's pre-existing uncommitted work.
+- **HTTP feature tests for event-day routes (markExited, transition, reorder)** are deferred to Phase 5 because they need session auth-code scaffolding. Service-layer unit tests cover the underlying logic.
 
 ### Context budget at handoff
-This session's context is approaching the yellow flag (~60-70% used) due to extensive file reads and test runs. A natural break point. Phase 1 should ideally start with `/clear` and re-load this HANDOFF.
+~70-80% used. Approaching red. Phase 1.1.c.2 is moderately complex (server change + JS change + multi-test coverage). **Recommend `/clear` and resume from this HANDOFF before attempting 1.1.c.2.**

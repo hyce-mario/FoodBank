@@ -16,7 +16,7 @@
 | 2026-04-29 | 1 | post-0 | Merge Phase 0 → main + DB backup + register Win Task Scheduler entry | ✅ | ef039fe (merge), 4ed29fa (gitignore) | Phase 0 merged via `--no-ff`. mysqldump saved to `backups/foodbank-pre-phase-1-20260429-114638.sql` (140KB, 31 tables). `backups/` added to .gitignore. Windows scheduled task `FoodBank Schedule Runner` registered (every 1 min, hidden, 10-year duration); test fire returned exit 0. |
 | 2026-04-29 | 2 | 1.1.a | Unique index `(event_id, lane, queue_position)` on visits | ✅ | 4b42f8c | Migration adds defensive ROW_NUMBER renumber + unique index. **Found and fixed 3 duplicate-position groups in dev DB** (real race-induced corruption). 4 regression tests pass: insert, duplicate rejection, different-lane OK, different-event OK. |
 | 2026-04-29 | 2 | 1.1.b | EventCheckInService::checkIn transaction + lockForUpdate | ✅ | 2681c50 | Wraps active-check + position read + Visit::create + 2 attach() calls in DB::transaction; `lockForUpdate` on the position SELECT serializes concurrent (event_id, lane) inserts. 5 regression tests including a rollback-proof for FK violation. Code-review pass: zero issues found. |
-| 2026-04-29 | 2 | 1.1.c.1 | queue_position nullable + null-on-exit | ✅ | _pending_ | Migration makes queue_position nullable + nulls all exited rows (26 rows in dev DB). markDone, markExited, transition all set queue_position=null on exit. 8 service tests all pass; verified MAX skips NULLs so new check-ins reuse low positions. Code-review caught 2 nits (fixed). **Deviation from spec:** spec didn't anticipate active-vs-exited position collision; this turned 1.1.c into a 2-commit split (1.1.c.1 schema fix, 1.1.c.2 reorder). |
+| 2026-04-29 | 2 | 1.1.c.1 | queue_position nullable + null-on-exit | ✅ | a353b4c | Migration makes queue_position nullable + nulls all exited rows (26 rows in dev DB). markDone, markExited, transition all set queue_position=null on exit. 8 service tests all pass; verified MAX skips NULLs so new check-ins reuse low positions. Code-review caught 2 nits (fixed). **Deviation from spec:** spec didn't anticipate active-vs-exited position collision; this turned 1.1.c into a 2-commit split (1.1.c.1 schema fix, 1.1.c.2 reorder). |
 
 ---
 
@@ -33,7 +33,7 @@
 |---|---|---|---|
 | 1.1.a Migration: unique index `(event_id, lane, queue_position)` | ✅ | _pending_ | ✅ DB-level constraint exists; duplicate insert raises QueryException; renumbered 3 pre-existing duplicate groups in dev DB |
 | 1.1.b `EventCheckInService::checkIn` transaction + lockForUpdate | ✅ | _pending_ | ✅ Position read+insert serialized via DB::transaction + lockForUpdate; 5 tests incl. FK-rollback proof. Real concurrent test guarded by 1.1.a unique index. |
-| 1.1.c.1 queue_position nullable + null-on-exit (precondition for safe reorder) | ✅ | _pending_ | ✅ Position is now meaningful only for active visits; exited rows hold NULL; unique index naturally allows multiple NULLs |
+| 1.1.c.1 queue_position nullable + null-on-exit (precondition for safe reorder) | ✅ | a353b4c | ✅ Position is now meaningful only for active visits; exited rows hold NULL; unique index naturally allows multiple NULLs |
 | 1.1.c.2 `EventDayController::reorder` transaction + version check | ⬜ | — | Two concurrent reorders never lose a move |
 | 1.2.a Migration: snapshot columns on `visit_households` | ⬜ | — | Columns exist; backfilled for historical visits |
 | 1.2.b Snapshot at attach time in `EventCheckInService` | ⬜ | — | New visits write demographics + vehicle to junction |
