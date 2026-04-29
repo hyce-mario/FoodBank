@@ -101,6 +101,27 @@ class Household extends Model
     }
 
     /**
+     * Build the pivot payload that snapshots this household's demographics
+     * and vehicle info onto `visit_households` at attach time. Phase 1.2.b.
+     *
+     * Single source of truth for the snapshot field set — both
+     * EventCheckInService and any seeders that bypass the service must
+     * call this so adding a snapshot column in a future phase requires
+     * touching only one place.
+     */
+    public function toVisitPivotSnapshot(): array
+    {
+        return [
+            'household_size' => $this->household_size,
+            'children_count' => $this->children_count,
+            'adults_count'   => $this->adults_count,
+            'seniors_count'  => $this->seniors_count,
+            'vehicle_make'   => $this->vehicle_make,
+            'vehicle_color'  => $this->vehicle_color,
+        ];
+    }
+
+    /**
      * The household that is picking up on behalf of this household.
      * Null when this household visits on its own.
      */
