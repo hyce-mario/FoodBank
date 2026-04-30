@@ -204,7 +204,45 @@ class EventDayMarkLoadedTest extends TestCase
         $this->assertSame(0, InventoryMovement::count());
     }
 
-    // ─── Test 5 — Wrong status ────────────────────────────────────────────────
+    // ─── Test 5 — Skip inventory ──────────────────────────────────────────────
+
+    /**
+     * When skip_inventory=1 is sent (loader chose "Skip & Mark Loaded" from
+     * the insufficient-stock modal), the visit must transition to 'loaded'
+     * without any inventory movement being posted.
+     */
+    public function test_skip_inventory_marks_loaded_without_posting_movement(): void
+    {
+        $ruleset = AllocationRuleset::create([
+            'name'               => 'Test',
+            'allocation_type'    => 'household_size',
+            'is_active'          => true,
+            'max_household_size' => 10,
+            'rules'              => [['min' => 1, 'max' => null, 'bags' => 1]],
+        ]);
+        $this->event->update(['ruleset_id' => $ruleset->id]);
+
+        $item = $this->makeItem(0);  // zero stock — would fail without skip
+        AllocationRulesetComponent::create([
+            'allocation_ruleset_id' => $ruleset->id,
+            'inventory_item_id'     => $item->id,
+            'qty_per_bag'           => 2,
+        ]);
+
+        $household = $this->makeHouseholdOfSize(2);
+        $visit = app(EventCheckInService::class)->checkIn($this->event, $household, lane: 1);
+        $visit->update(['visit_status' => 'queued']);
+
+        $this->withSession($this->loaderSession())
+             ->patchJson("/ed/{$this->event->id}/visits/{$visit->id}/loaded", ['skip_inventory' => 1])
+             ->assertOk();
+
+        $this->assertSame('loaded', $visit->fresh()->visit_status);
+        $this->assertSame(0, InventoryMovement::count(), 'no movement when skip_inventory is set');
+        $this->assertSame(0, $item->fresh()->quantity_on_hand, 'stock must be unchanged');
+    }
+
+    // ─── Test 6 — Wrong status ────────────────────────────────────────────────
 
     /**
      * A visit that is already 'loaded' or 'exited' must not be re-transitioned.

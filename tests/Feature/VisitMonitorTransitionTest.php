@@ -163,7 +163,46 @@ class VisitMonitorTransitionTest extends TestCase
         $this->assertSame(0, InventoryMovement::count());
     }
 
-    // ─── Test 3 — Non-loaded transitions do not trigger distribution ──────────
+    // ─── Test 3 — Skip inventory on supervisor path ───────────────────────────
+
+    /**
+     * When skip_inventory=1 is included in the JSON body, the supervisor can
+     * advance to 'loaded' even when stock is zero, without any movement posted.
+     */
+    public function test_skip_inventory_on_supervisor_transition_marks_loaded_without_movement(): void
+    {
+        $ruleset = AllocationRuleset::create([
+            'name'               => 'Test',
+            'allocation_type'    => 'household_size',
+            'is_active'          => true,
+            'max_household_size' => 10,
+            'rules'              => [['min' => 1, 'max' => null, 'bags' => 1]],
+        ]);
+        $this->event->update(['ruleset_id' => $ruleset->id]);
+
+        $item = $this->makeItem(0);
+        AllocationRulesetComponent::create([
+            'allocation_ruleset_id' => $ruleset->id,
+            'inventory_item_id'     => $item->id,
+            'qty_per_bag'           => 1,
+        ]);
+
+        $household = $this->makeHouseholdOfSize(2);
+        $visit = app(EventCheckInService::class)->checkIn($this->event, $household, lane: 1);
+        $visit->update(['visit_status' => 'queued']);
+
+        $this->actingAs($this->admin)
+             ->patchJson(route('monitor.transition', [$this->event, $visit]), [
+                 'status'         => 'loaded',
+                 'skip_inventory' => 1,
+             ])
+             ->assertOk();
+
+        $this->assertSame('loaded', $visit->fresh()->visit_status);
+        $this->assertSame(0, InventoryMovement::count(), 'no movement when skip_inventory is set');
+    }
+
+    // ─── Test 4 — Non-loaded transitions do not trigger distribution ──────────
 
     /**
      * Advancing checked_in → queued must never call postForVisit, even

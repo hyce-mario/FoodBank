@@ -246,6 +246,24 @@
 </div>
 </div>
 
+{{-- Phase 2.1.e: insufficient-stock modal (supervisor path) --}}
+<div id="mon-stock-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5)">
+    <div class="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
+        <h2 class="text-lg font-black text-gray-900 mb-1">Not Enough Stock</h2>
+        <p id="mon-stock-modal-msg" class="text-sm text-gray-600 mb-5"></p>
+        <div class="flex gap-3">
+            <button id="mon-stock-modal-skip"
+                    class="flex-1 py-3 rounded-xl bg-navy-700 hover:bg-navy-800 text-white font-black text-sm transition-colors">
+                Skip &amp; Mark Loaded
+            </button>
+            <button id="mon-stock-modal-cancel"
+                    class="flex-1 py-3 rounded-xl bg-white border border-gray-200 text-gray-700 font-black text-sm transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
 @endif
 @endsection
 
@@ -659,16 +677,38 @@ const Monitor = (function () {
     // ─────────────────────────────────────────────────────────────────────────
     // ── Actions (via supervisor transition endpoint) ──────────────────────────
     // ─────────────────────────────────────────────────────────────────────────
-    async function transition(visitId, status, btn, originalLabel) {
+    // skipInventory=true is set when the supervisor taps "Skip & Mark Loaded"
+    // on the insufficient-stock modal (Phase 2.1.e).
+    async function transition(visitId, status, btn, originalLabel, skipInventory) {
         btn.disabled = true; btn.textContent = 'Saving…';
         try {
+            const body = { status };
+            if (skipInventory) body.skip_inventory = 1;
             const res = await fetch(`${TRANSITION_URL}/${visitId}/transition`, {
                 method:  'PATCH',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
-                body:    JSON.stringify({ status }),
+                body:    JSON.stringify(body),
             });
             if (res.ok) {
                 await load(); // refresh data
+            } else if (res.status === 422 && status === 'loaded') {
+                const data = await res.json().catch(() => ({}));
+                if (data.error === 'insufficient_stock') {
+                    el('mon-stock-modal-msg').textContent =
+                        `Needed ${data.needed}, available ${data.available}. Skip the inventory deduction and mark as loaded anyway?`;
+                    const modal = el('mon-stock-modal');
+                    modal.classList.remove('hidden');
+                    el('mon-stock-modal-skip').onclick = () => {
+                        modal.classList.add('hidden');
+                        transition(visitId, 'loaded', btn, originalLabel, true);
+                    };
+                    el('mon-stock-modal-cancel').onclick = () => {
+                        modal.classList.add('hidden');
+                        btn.disabled = false; btn.textContent = originalLabel;
+                    };
+                } else {
+                    btn.disabled = false; btn.textContent = originalLabel;
+                }
             } else {
                 btn.disabled = false; btn.textContent = originalLabel;
             }

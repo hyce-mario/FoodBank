@@ -62,6 +62,24 @@
     <p id="loader-empty" class="hidden text-center text-gray-400 text-sm py-12">No vehicles in queue</p>
 
 </div>
+
+{{-- Phase 2.1.e: insufficient-stock modal --}}
+<div id="stock-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5)">
+    <div class="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
+        <h2 class="text-lg font-black text-gray-900 mb-1">Not Enough Stock</h2>
+        <p id="stock-modal-msg" class="text-sm text-gray-600 mb-5"></p>
+        <div class="flex gap-3">
+            <button id="stock-modal-skip"
+                    class="flex-1 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-sm transition-colors">
+                Skip &amp; Mark Loaded
+            </button>
+            <button id="stock-modal-cancel"
+                    class="flex-1 py-3 rounded-xl bg-white border border-gray-200 text-gray-700 font-black text-sm transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
 @endsection
 
 @push('scripts')
@@ -191,19 +209,42 @@
     }
 
     // ── Mark loaded ───────────────────────────────────────────────────────────
-    window._markLoaded = async function(id, btn) {
+    // skipInventory=true is set when the supervisor taps "Skip & Mark Loaded"
+    // on the insufficient-stock modal (Phase 2.1.e).
+    window._markLoaded = async function(id, btn, skipInventory) {
         btn.disabled = true; btn.textContent = 'Saving…';
+        const headers = { 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' };
+        const fetchOpts = { method: 'PATCH', headers };
+        if (skipInventory) {
+            headers['Content-Type'] = 'application/json';
+            fetchOpts.body = JSON.stringify({ skip_inventory: 1 });
+        }
         try {
-            const r = await fetch(`${LOADED_URL}/${id}/loaded`, {
-                method: 'PATCH',
-                headers: { 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
-            });
+            const r = await fetch(`${LOADED_URL}/${id}/loaded`, fetchOpts);
             if (r.ok) {
                 visits = visits.filter(v => v.id !== id);
                 render();
                 if (stats.queued > 0) stats.queued--;
                 if (typeof stats.loaded === 'number') stats.loaded++;
                 updateStats(stats);
+            } else if (r.status === 422) {
+                const data = await r.json().catch(() => ({}));
+                if (data.error === 'insufficient_stock') {
+                    document.getElementById('stock-modal-msg').textContent =
+                        `Needed ${data.needed}, available ${data.available}. Skip the inventory deduction and mark as loaded anyway?`;
+                    const modal = document.getElementById('stock-modal');
+                    modal.classList.remove('hidden');
+                    document.getElementById('stock-modal-skip').onclick = () => {
+                        modal.classList.add('hidden');
+                        window._markLoaded(id, btn, true);
+                    };
+                    document.getElementById('stock-modal-cancel').onclick = () => {
+                        modal.classList.add('hidden');
+                        btn.disabled = false; btn.textContent = 'Loading Complete';
+                    };
+                } else {
+                    btn.disabled = false; btn.textContent = 'Loading Complete';
+                }
             } else {
                 btn.disabled = false; btn.textContent = 'Loading Complete';
             }

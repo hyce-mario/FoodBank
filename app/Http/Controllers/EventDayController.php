@@ -267,9 +267,12 @@ class EventDayController extends Controller
             // Status flip + inventory deduction in a single transaction so a
             // stock shortage rolls back the status change — the visit stays
             // queued and the loader can choose to skip or substitute (2.1.e).
-            DB::transaction(function () use ($visit) {
+            // skip_inventory=1 is set by the "Skip & Mark Loaded" modal button.
+            DB::transaction(function () use ($visit, $request) {
                 $visit->update(['visit_status' => 'loaded', 'loading_completed_at' => now()]);
-                app(DistributionPostingService::class)->postForVisit($visit);
+                if (! $request->boolean('skip_inventory')) {
+                    app(DistributionPostingService::class)->postForVisit($visit);
+                }
             });
         } catch (InsufficientStockException $e) {
             return response()->json([

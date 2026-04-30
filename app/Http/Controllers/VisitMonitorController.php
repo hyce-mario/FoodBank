@@ -199,9 +199,10 @@ class VisitMonitorController extends Controller
         try {
             // Wrap status flip + distribution in one transaction so an
             // InsufficientStockException rolls back the status change too.
-            DB::transaction(function () use ($visit, $update, $newStatus) {
+            // skip_inventory=1 is set by the "Skip & Mark Loaded" modal button.
+            DB::transaction(function () use ($visit, $update, $newStatus, $request) {
                 $visit->update($update);
-                if ($newStatus === 'loaded') {
+                if ($newStatus === 'loaded' && ! $request->boolean('skip_inventory')) {
                     app(DistributionPostingService::class)->postForVisit($visit);
                 }
             });
