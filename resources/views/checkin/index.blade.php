@@ -349,16 +349,58 @@
                     </div>
 
                     <div class="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                        <span class="flex items-center gap-1">
-                            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                      d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z"/>
-                            </svg>
-                            <span x-text="(selectedHousehold?.household_size ?? 0) + ' ' + ((selectedHousehold?.household_size ?? 0) == 1 ? 'Member' : 'Members')"></span>
-                            <span class="text-xs text-gray-400 ml-0.5"
-                                  x-text="'(' + (selectedHousehold?.children_count ?? 0) + 'C ' + (selectedHousehold?.adults_count ?? 0) + 'A ' + (selectedHousehold?.seniors_count ?? 0) + 'S)'">
-                            </span>
-                        </span>
+                        {{-- Family count with hover/click-to-reveal demographics callout.
+                             Replaces the prior cryptic "(1C 2A 0S)" abbreviation with a
+                             clean dynamic label ("X Family" / "X Families") and a
+                             popover showing the breakdown vertically on hover, click,
+                             or keyboard focus. Family count = 1 (selected) + linked
+                             households the receptionist has added — updates live as
+                             they grow the pickup. Demographics in the popover are
+                             the selected household's own counts. --}}
+                        <div x-data="{ showDemo: false }" class="relative">
+                            <button @mouseenter="showDemo = true"
+                                    @mouseleave="showDemo = false"
+                                    @click="showDemo = !showDemo"
+                                    @focus="showDemo = true"
+                                    @blur="showDemo = false"
+                                    type="button"
+                                    class="flex items-center gap-1 hover:text-gray-900 transition-colors">
+                                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                          d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z"/>
+                                </svg>
+                                <span x-text="(1 + linkedHouseholds.length) + ' ' + ((1 + linkedHouseholds.length) === 1 ? 'Family' : 'Families')"></span>
+                            </button>
+
+                            {{-- Demographics callout --}}
+                            <div x-show="showDemo" style="display:none"
+                                 x-transition:enter="transition ease-out duration-150"
+                                 x-transition:enter-start="opacity-0 translate-y-1"
+                                 x-transition:enter-end="opacity-100 translate-y-0"
+                                 class="absolute top-full left-0 mt-2 z-30 min-w-32
+                                        bg-white border border-gray-200 rounded-xl shadow-lg p-3">
+                                <p class="text-sm font-semibold text-gray-900 mb-2"
+                                   x-text="(selectedHousehold?.household_size ?? 0) + ' ' + ((selectedHousehold?.household_size ?? 0) === 1 ? 'Member' : 'Members')"></p>
+                                <ul class="text-xs text-gray-600 space-y-1">
+                                    <li class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-sm bg-blue-500 flex-shrink-0"></span>
+                                        <span class="font-semibold text-gray-800" x-text="selectedHousehold?.children_count ?? 0"></span>
+                                        <span x-text="(selectedHousehold?.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                    </li>
+                                    <li class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-sm bg-green-500 flex-shrink-0"></span>
+                                        <span class="font-semibold text-gray-800" x-text="selectedHousehold?.adults_count ?? 0"></span>
+                                        <span x-text="(selectedHousehold?.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                    </li>
+                                    <li class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-sm bg-amber-500 flex-shrink-0"></span>
+                                        <span class="font-semibold text-gray-800" x-text="selectedHousehold?.seniors_count ?? 0"></span>
+                                        <span x-text="(selectedHousehold?.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+
                         <span x-show="selectedHousehold?.city || selectedHousehold?.state"
                               class="flex items-center gap-1">
                             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
@@ -473,8 +515,39 @@
                                                   x-text="'#' + h.household_number"></span>
                                             <span class="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate"
                                                   x-text="h.full_name"></span>
-                                            <span class="text-xs text-gray-500 flex-shrink-0"
-                                                  x-text="h.household_size + ' ppl'"></span>
+                                            {{-- Family tag (hover-only inside this button row) --}}
+                                            <span x-data="{ showDemo: false }"
+                                                  @mouseenter="showDemo = true"
+                                                  @mouseleave="showDemo = false"
+                                                  class="relative text-xs text-gray-500 flex-shrink-0 cursor-help">
+                                                <span>1 Family</span>
+                                                <span x-show="showDemo" style="display:none"
+                                                      x-transition:enter="transition ease-out duration-150"
+                                                      x-transition:enter-start="opacity-0 translate-y-1"
+                                                      x-transition:enter-end="opacity-100 translate-y-0"
+                                                      class="absolute right-0 top-full mt-1 z-30 min-w-32
+                                                             bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                                                    <span class="block text-sm font-semibold text-gray-900 mb-2"
+                                                          x-text="(h.household_size ?? 0) + ' ' + ((h.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                                                    <span class="block text-xs text-gray-600 space-y-1">
+                                                        <span class="flex items-center gap-2">
+                                                            <span class="w-2 h-2 rounded-sm bg-blue-500 flex-shrink-0"></span>
+                                                            <span class="font-semibold text-gray-800" x-text="h.children_count ?? 0"></span>
+                                                            <span x-text="(h.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                                        </span>
+                                                        <span class="flex items-center gap-2 mt-1">
+                                                            <span class="w-2 h-2 rounded-sm bg-green-500 flex-shrink-0"></span>
+                                                            <span class="font-semibold text-gray-800" x-text="h.adults_count ?? 0"></span>
+                                                            <span x-text="(h.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                                        </span>
+                                                        <span class="flex items-center gap-2 mt-1">
+                                                            <span class="w-2 h-2 rounded-sm bg-amber-500 flex-shrink-0"></span>
+                                                            <span class="font-semibold text-gray-800" x-text="h.seniors_count ?? 0"></span>
+                                                            <span x-text="(h.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                                        </span>
+                                                    </span>
+                                                </span>
+                                            </span>
                                         </button>
                                     </template>
                                 </div>
@@ -495,8 +568,40 @@
                                     <p class="text-xs font-semibold text-amber-900 truncate" x-text="h.full_name"></p>
                                     <p class="text-[10px] text-amber-600 font-mono" x-text="'#' + h.household_number"></p>
                                 </div>
-                                <span class="text-xs text-amber-700 flex-shrink-0"
-                                      x-text="h.household_size + ' ppl'"></span>
+                                {{-- Family tag — parent is a div, supports hover + click toggle --}}
+                                <span x-data="{ showDemo: false }"
+                                      @mouseenter="showDemo = true"
+                                      @mouseleave="showDemo = false"
+                                      @click.stop="showDemo = !showDemo"
+                                      class="relative text-xs text-amber-700 flex-shrink-0 cursor-help">
+                                    <span>1 Family</span>
+                                    <span x-show="showDemo" style="display:none"
+                                          x-transition:enter="transition ease-out duration-150"
+                                          x-transition:enter-start="opacity-0 translate-y-1"
+                                          x-transition:enter-end="opacity-100 translate-y-0"
+                                          class="absolute right-0 top-full mt-1 z-30 min-w-32
+                                                 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                                        <span class="block text-sm font-semibold text-gray-900 mb-2"
+                                              x-text="(h.household_size ?? 0) + ' ' + ((h.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                                        <span class="block text-xs text-gray-600">
+                                            <span class="flex items-center gap-2">
+                                                <span class="w-2 h-2 rounded-sm bg-blue-500 flex-shrink-0"></span>
+                                                <span class="font-semibold text-gray-800" x-text="h.children_count ?? 0"></span>
+                                                <span x-text="(h.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                            </span>
+                                            <span class="flex items-center gap-2 mt-1">
+                                                <span class="w-2 h-2 rounded-sm bg-green-500 flex-shrink-0"></span>
+                                                <span class="font-semibold text-gray-800" x-text="h.adults_count ?? 0"></span>
+                                                <span x-text="(h.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                            </span>
+                                            <span class="flex items-center gap-2 mt-1">
+                                                <span class="w-2 h-2 rounded-sm bg-amber-500 flex-shrink-0"></span>
+                                                <span class="font-semibold text-gray-800" x-text="h.seniors_count ?? 0"></span>
+                                                <span x-text="(h.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                            </span>
+                                        </span>
+                                    </span>
+                                </span>
                                 <span x-show="h.bags_needed !== null && h.bags_needed !== undefined"
                                       style="display:none"
                                       class="text-xs font-bold text-orange-600 flex-shrink-0"
@@ -529,8 +634,40 @@
                 <div class="flex items-center gap-2 py-1 text-sm">
                     <span class="w-4 flex-shrink-0 text-center text-amber-300 font-bold">★</span>
                     <span class="flex-1 font-semibold text-gray-900" x-text="selectedHousehold?.full_name"></span>
-                    <span class="text-gray-600 text-xs flex-shrink-0"
-                          x-text="selectedHousehold ? selectedHousehold.household_size + ' ppl' : ''"></span>
+                    {{-- Family tag for the representative --}}
+                    <span x-data="{ showDemo: false }"
+                          @mouseenter="showDemo = true"
+                          @mouseleave="showDemo = false"
+                          @click="showDemo = !showDemo"
+                          class="relative text-gray-600 text-xs flex-shrink-0 cursor-help">
+                        <span>1 Family</span>
+                        <span x-show="showDemo" style="display:none"
+                              x-transition:enter="transition ease-out duration-150"
+                              x-transition:enter-start="opacity-0 translate-y-1"
+                              x-transition:enter-end="opacity-100 translate-y-0"
+                              class="absolute right-0 top-full mt-1 z-30 min-w-32
+                                     bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                            <span class="block text-sm font-semibold text-gray-900 mb-2"
+                                  x-text="(selectedHousehold?.household_size ?? 0) + ' ' + ((selectedHousehold?.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                            <span class="block text-xs text-gray-600">
+                                <span class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-sm bg-blue-500 flex-shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="selectedHousehold?.children_count ?? 0"></span>
+                                    <span x-text="(selectedHousehold?.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                </span>
+                                <span class="flex items-center gap-2 mt-1">
+                                    <span class="w-2 h-2 rounded-sm bg-green-500 flex-shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="selectedHousehold?.adults_count ?? 0"></span>
+                                    <span x-text="(selectedHousehold?.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                </span>
+                                <span class="flex items-center gap-2 mt-1">
+                                    <span class="w-2 h-2 rounded-sm bg-amber-500 flex-shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="selectedHousehold?.seniors_count ?? 0"></span>
+                                    <span x-text="(selectedHousehold?.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                </span>
+                            </span>
+                        </span>
+                    </span>
                     <span x-show="selectedHousehold?.bags_needed !== null && selectedHousehold?.bags_needed !== undefined"
                           style="display:none"
                           class="text-orange-600 text-xs font-bold flex-shrink-0"
@@ -542,7 +679,40 @@
                     <div class="flex items-center gap-2 py-1 text-xs">
                         <span class="w-4 flex-shrink-0 text-center text-amber-400">↳</span>
                         <span class="flex-1 font-medium text-gray-800" x-text="h.full_name"></span>
-                        <span class="text-gray-500 flex-shrink-0" x-text="h.household_size + ' ppl'"></span>
+                        {{-- Family tag for each linked household --}}
+                        <span x-data="{ showDemo: false }"
+                              @mouseenter="showDemo = true"
+                              @mouseleave="showDemo = false"
+                              @click="showDemo = !showDemo"
+                              class="relative text-gray-500 flex-shrink-0 cursor-help">
+                            <span>1 Family</span>
+                            <span x-show="showDemo" style="display:none"
+                                  x-transition:enter="transition ease-out duration-150"
+                                  x-transition:enter-start="opacity-0 translate-y-1"
+                                  x-transition:enter-end="opacity-100 translate-y-0"
+                                  class="absolute right-0 top-full mt-1 z-30 min-w-32
+                                         bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                                <span class="block text-sm font-semibold text-gray-900 mb-2"
+                                      x-text="(h.household_size ?? 0) + ' ' + ((h.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                                <span class="block text-xs text-gray-600">
+                                    <span class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-sm bg-blue-500 flex-shrink-0"></span>
+                                        <span class="font-semibold text-gray-800" x-text="h.children_count ?? 0"></span>
+                                        <span x-text="(h.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                    </span>
+                                    <span class="flex items-center gap-2 mt-1">
+                                        <span class="w-2 h-2 rounded-sm bg-green-500 flex-shrink-0"></span>
+                                        <span class="font-semibold text-gray-800" x-text="h.adults_count ?? 0"></span>
+                                        <span x-text="(h.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                    </span>
+                                    <span class="flex items-center gap-2 mt-1">
+                                        <span class="w-2 h-2 rounded-sm bg-amber-500 flex-shrink-0"></span>
+                                        <span class="font-semibold text-gray-800" x-text="h.seniors_count ?? 0"></span>
+                                        <span x-text="(h.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                    </span>
+                                </span>
+                            </span>
+                        </span>
                         <span x-show="h.bags_needed !== null && h.bags_needed !== undefined"
                               style="display:none"
                               class="text-orange-600 font-bold flex-shrink-0"
