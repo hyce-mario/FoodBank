@@ -2,9 +2,18 @@
 
 namespace App\Providers;
 
+use App\Models\Event;
+use App\Models\EventReview;
+use App\Models\Household;
+use App\Models\Volunteer;
+use App\Policies\EventPolicy;
+use App\Policies\EventReviewPolicy;
+use App\Policies\HouseholdPolicy;
+use App\Policies\VolunteerPolicy;
 use App\Services\SettingService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
@@ -19,6 +28,13 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Phase 4.1: resource policies — bridge Laravel Gate to the project's
+        // custom dot-notation permission system.
+        Gate::policy(Household::class,   HouseholdPolicy::class);
+        Gate::policy(Event::class,       EventPolicy::class);
+        Gate::policy(Volunteer::class,   VolunteerPolicy::class);
+        Gate::policy(EventReview::class, EventReviewPolicy::class);
+
         // Phase 3.1: rate limiter for event-day auth-code endpoints.
         // Keyed by IP + role + event_id so a targeted brute-force attempt against
         // one event's codes doesn't consume quota for other events on the same IP.

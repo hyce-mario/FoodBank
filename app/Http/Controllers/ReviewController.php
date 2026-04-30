@@ -12,6 +12,7 @@ class ReviewController extends Controller
 {
     public function index(Request $request): View
     {
+        $this->authorize('viewAny', EventReview::class);
         $eventId = $request->get('event_id');
         $rating  = $request->get('rating');
         $search  = $request->get('search');
@@ -52,6 +53,7 @@ class ReviewController extends Controller
 
     public function toggleVisibility(EventReview $review): RedirectResponse
     {
+        $this->authorize('update', $review);
         $review->is_visible = ! $review->is_visible;
         $review->save();
 

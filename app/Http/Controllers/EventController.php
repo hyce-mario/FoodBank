@@ -27,6 +27,7 @@ class EventController extends Controller
 
     public function index(Request $request): View
     {
+        $this->authorize('viewAny', Event::class);
         $query = Event::query()
                       ->withCount(['preRegistrations', 'assignedVolunteers'])
                       ->with('volunteerGroup', 'ruleset');
@@ -59,6 +60,7 @@ class EventController extends Controller
 
     public function create(): View
     {
+        $this->authorize('create', Event::class);
         [$allGroups, $groupMap, $allVolunteers, $rulesets] = $this->formData();
         $defaultLaneCount = max(1, (int) SettingService::get('event_queue.default_lane_count', 1));
         return view('events.create', compact('allGroups', 'groupMap', 'allVolunteers', 'rulesets', 'defaultLaneCount'));
@@ -68,6 +70,7 @@ class EventController extends Controller
 
     public function store(StoreEventRequest $request): RedirectResponse
     {
+        $this->authorize('create', Event::class);
         $data = $request->validated();
         $volunteerIds = $data['volunteer_ids'] ?? [];
         unset($data['volunteer_ids']);
@@ -99,6 +102,7 @@ class EventController extends Controller
 
     public function show(Event $event): View
     {
+        $this->authorize('view', $event);
         $event->loadMissing('volunteerGroup', 'assignedVolunteers');
         $event->load([
             'preRegistrations.household',
@@ -139,6 +143,7 @@ class EventController extends Controller
 
     public function edit(Event $event): View
     {
+        $this->authorize('update', $event);
         abort_if($event->isLocked(), 403, 'Past events cannot be edited.');
 
         [$allGroups, $groupMap, $allVolunteers, $rulesets] = $this->formData();
@@ -150,6 +155,7 @@ class EventController extends Controller
 
     public function update(UpdateEventRequest $request, Event $event): RedirectResponse
     {
+        $this->authorize('update', $event);
         abort_if($event->isLocked(), 403, 'Past events cannot be edited.');
 
         $data = $request->validated();
@@ -174,6 +180,7 @@ class EventController extends Controller
 
     public function updateStatus(Request $request, Event $event): JsonResponse
     {
+        $this->authorize('update', $event);
         $request->validate([
             'status' => ['required', 'string', 'in:upcoming,current,past,undo'],
         ]);
@@ -229,6 +236,7 @@ class EventController extends Controller
 
     public function matchAttendee(Event $event, EventPreRegistration $attendee): RedirectResponse
     {
+        $this->authorize('update', $event);
         $attendee->update([
             'household_id' => $attendee->potential_household_id,
             'match_status' => 'matched',
@@ -241,6 +249,7 @@ class EventController extends Controller
 
     public function deleteAttendee(Event $event, EventPreRegistration $attendee): RedirectResponse
     {
+        $this->authorize('update', $event);
         $attendee->delete();
         return back()->with('success', 'Attendee removed.');
     }
@@ -249,6 +258,7 @@ class EventController extends Controller
 
     public function detachVolunteer(Event $event, Volunteer $volunteer): JsonResponse
     {
+        $this->authorize('update', $event);
         $event->assignedVolunteers()->detach($volunteer->id);
 
         return response()->json([
@@ -261,6 +271,7 @@ class EventController extends Controller
 
     public function regenerateCodes(Event $event): RedirectResponse
     {
+        $this->authorize('update', $event);
         abort_unless($event->isCurrent(), 403, 'Auth codes can only be regenerated for active events.');
         abort_unless(
             SettingService::get('public_access.allow_code_regeneration', true),
@@ -278,6 +289,7 @@ class EventController extends Controller
 
     public function destroy(Event $event): RedirectResponse
     {
+        $this->authorize('delete', $event);
         $name = $event->name;
         $event->delete();
 

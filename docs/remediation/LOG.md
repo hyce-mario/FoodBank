@@ -127,6 +127,7 @@ Tracked separately; pulled in only when capacity allows. See AUDIT_REPORT.md Par
 |---|---|---|---|
 | 001 | [AUDIT_REPORT.md Part 13 is the spec](adr/001-audit-report-is-spec.md) | 2026-04-29 | accepted |
 | 002 | [UserController is admin-only](adr/002-usercontroller-admin-only.md) | 2026-04-29 | accepted |
+| 003 | [checkin_overrides stays separate from audit_logs](adr/003-checkin-overrides-stays-separate.md) | 2026-04-30 | accepted |
 
 ---
 
