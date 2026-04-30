@@ -388,14 +388,14 @@ class SettingService
                     'description' => 'Lets staff reorder households within a lane.',
                 ],
                 're_checkin_policy' => [
-                    'label'       => 'Re-Check-In Policy (after exit)',
+                    'label'       => 'Re-Check-In Policy',
                     'type'        => 'select',
                     'default'     => 'override',
-                    'description' => 'When a household has already been served and exited at this event, what should happen if they try to check in again? (Active duplicates are always blocked regardless of this setting.)',
+                    'description' => '',
                     'options'     => [
-                        'allow'    => 'Allow — re-check-in proceeds normally',
-                        'override' => 'Require Supervisor Override — staff must confirm with a reason',
-                        'deny'     => 'Deny — block re-check-in entirely',
+                        'allow'    => 'Allow',
+                        'override' => 'Require Supervisor Override',
+                        'deny'     => 'Deny',
                     ],
                 ],
                 'queue_poll_interval' => [

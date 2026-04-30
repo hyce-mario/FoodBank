@@ -867,9 +867,10 @@
 
         {{-- Panel. NOTE: only Tailwind classes present in the prebuilt CSS
              (public/build/) work — Node isn't installed in this environment
-             so a tailwind rebuild can't add new classes. Width capped via
-             sm:max-w-sm (the only sm:max-w-* responsive variant compiled). --}}
-        <div class="relative z-10 bg-white w-full sm:max-w-sm rounded-t-3xl rounded-2xl shadow-2xl"
+             so a tailwind rebuild can't add new classes. Width is capped via
+             the base `max-w-md` (~448px) since the responsive `sm:max-w-md`
+             variant isn't compiled; on mobile, w-full takes precedence. --}}
+        <div class="relative z-10 bg-white w-full max-w-md rounded-t-3xl rounded-2xl shadow-2xl"
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="translate-y-full sm:translate-y-4 sm:opacity-0"
              x-transition:enter-end="translate-y-0 sm:opacity-100"
@@ -877,36 +878,33 @@
              x-transition:leave-start="translate-y-0 sm:opacity-100"
              x-transition:leave-end="translate-y-full sm:translate-y-4 sm:opacity-0">
 
-            {{-- Header --}}
-            <div class="flex items-start gap-3 p-6 pb-4">
-                <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                    <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
-                    </svg>
-                </div>
-                <div class="flex-1 min-w-0">
+            {{-- Header: icon + title together, then household info on its own line below --}}
+            <div class="p-6 pb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+                        </svg>
+                    </div>
                     <h3 class="text-base font-semibold text-gray-900">Already served at this event</h3>
-                    <template x-if="overrideModal.households.length === 1">
-                        <p class="text-sm text-gray-600 mt-1">
-                            <span class="font-medium" x-text="overrideModal.households[0].full_name"></span>
-                            <span class="text-gray-500" x-text="'(#' + overrideModal.households[0].household_number + ')'"></span>
-                            has already been checked in and exited at this event.
-                        </p>
-                    </template>
-                    <template x-if="overrideModal.households.length > 1">
-                        <div class="text-sm text-gray-600 mt-1">
-                            <p>The following households have already been served at this event:</p>
-                            <ul class="list-disc list-inside mt-1 space-y-1">
-                                <template x-for="h in overrideModal.households" :key="h.id">
-                                    <li>
-                                        <span class="font-medium" x-text="h.full_name"></span>
-                                        <span class="text-gray-500" x-text="'(#' + h.household_number + ')'"></span>
-                                    </li>
-                                </template>
-                            </ul>
-                        </div>
-                    </template>
                 </div>
+
+                <template x-if="overrideModal.households.length === 1">
+                    <p class="text-sm text-gray-600 mt-3">
+                        <span class="font-medium" x-text="overrideModal.households[0].full_name"></span>
+                        <span class="text-gray-500" x-text="'(#' + overrideModal.households[0].household_number + ')'"></span>
+                    </p>
+                </template>
+                <template x-if="overrideModal.households.length > 1">
+                    <ul class="text-sm text-gray-600 mt-3 list-disc list-inside space-y-1">
+                        <template x-for="h in overrideModal.households" :key="h.id">
+                            <li>
+                                <span class="font-medium" x-text="h.full_name"></span>
+                                <span class="text-gray-500" x-text="'(#' + h.household_number + ')'"></span>
+                            </li>
+                        </template>
+                    </ul>
+                </template>
             </div>
 
             {{-- Override-allowed body: reason textarea + Confirm button --}}
@@ -928,9 +926,6 @@
                                          resize-none"></textarea>
                         <p x-show="overrideModal.reasonError" style="display:none"
                            class="text-xs text-red-600 mt-1" x-text="overrideModal.reasonError"></p>
-                        <p class="text-xs text-gray-500 mt-1">
-                            This will be recorded in the audit log along with your username.
-                        </p>
                     </div>
 
                     <div class="flex gap-2 pt-1">
