@@ -444,12 +444,11 @@ class SettingService
 
             // ── Public Access ─────────────────────────────────────────────────
             'public_access' => [
-                'auth_code_length' => [
-                    'label'       => 'Event Auth Code Length',
-                    'type'        => 'integer',
-                    'default'     => 4,
-                    'description' => 'Number of characters for event-day role auth codes.',
-                ],
+                // `auth_code_length` was previously a configurable integer here.
+                // Removed because the schema fixes auth-code columns at char(4)
+                // and there was no upper bound on the setting — bumping it past
+                // 4 silently broke event creation with "Data too long for column"
+                // errors. Length is now hard-coded as Event::AUTH_CODE_LENGTH.
                 'allow_code_regeneration' => [
                     'label'       => 'Allow Auth Code Regeneration',
                     'type'        => 'boolean',
