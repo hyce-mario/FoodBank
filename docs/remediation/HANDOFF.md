@@ -121,6 +121,14 @@ Phase 2 will likely pull in for the first time:
 
 (No new ADRs in Phase 1.3 — all reviewer findings logged as Deviations.)
 
+### Constraints discovered during the Phase 1.3.d browser walkthrough (2026-04-30)
+
+These are *environmental* constraints, not phase work. Future-you should be aware before adding any UI:
+
+- **Tailwind classes must be verified against the prebuilt CSS.** Node/npm aren't installed, so `public/build/assets/app-*.css` is frozen at whatever was compiled before. Any new Tailwind class that wasn't already referenced somewhere in the project's source CSS doesn't exist in the build and renders as nothing. Bit us hard with `sm:max-w-md`, `bg-amber-600` (base), `hover:bg-amber-700`, `gap-1.5`, `py-2.5`, `space-y-0.5`, `pb-safe`, `min-w-40`. **Quick check before using a new class:** `grep -o "[.]CLASSNAME" public/build/assets/app-*.css`. Verified-present alternatives that have been useful: `sm:max-w-sm` (only sm:max-w-* responsive variant), `max-w-md` (base), `bg-brand-600 hover:bg-brand-700` (project orange), `gap-2`, `py-2`, `space-y-1`, `min-w-32`.
+- **Settings pages use hardcoded section blades.** `resources/views/settings/sections/<group>.blade.php` lists each setting field by key with an `@include('settings._field', …)` line. Adding a new key to `SettingService::definitions()` is NOT enough — the section blade must be edited too, OR the field stays invisible in the admin UI. Conversely, removing a key from definitions breaks any section blade that still references it (undefined-index error). Bit us twice: once removing `auth_code_length` from public_access (caught), once adding `re_checkin_policy` to event_queue (missed in 1.3.a, caught in walkthrough).
+- **JS in checkin/index.blade.php now uses `appUrl(path)` for all fetches.** Don't reintroduce raw `fetch('/checkin/...')` patterns — they break under subdirectory deployment (e.g. `/Foodbank/public/`). The `event-day` and `monitor` blades likely have the same latent bug (their fetches weren't audited); fix when next touching those views.
+
 ### Coverage gaps and known issues (carry forward)
 
 - **HTTP feature tests for event-day routes** (markExited, transition, EventDayController::reorder) deferred to Phase 5 due to session auth-code scaffolding cost. Phase 2.1.c will add hooks here, so this gap may need closing if changing markLoaded breaks observable behavior in untested ways.
@@ -142,4 +150,13 @@ Phase 2 will likely pull in for the first time:
 
 ### Context budget at handoff
 
-Session 3 ran long: from Phase 1.2 close through all of Phase 1.3 (a, b, c, d) + the auth_code_length drive-by fix + Phase 1.3 merge + this HANDOFF rewrite. Recommend `/clear` and resume from this HANDOFF before starting Phase 2.
+Session 3 ran long: from Phase 1.2 close through all of Phase 1.3 (a, b, c, d) + the auth_code_length drive-by fix + Phase 1.3 merge + a browser walkthrough that surfaced 3 pre-existing bugs (subdir-deployment JS, prebuilt-CSS class limits, hardcoded settings section blades) + UX polish to the override modal and the new "family tag" pattern across 4 sites of checkin/index.blade.php. User cleared at end of session.
+
+Recent commits on main since the Phase 1.3 merge (98c7ce0):
+- `af6ca04` — docs: Phase 1 close handoff rewrite
+- `e359707` — fix: subdir-deployment-aware JS in checkin (appUrl helper)
+- `61a28f1` — fix: override modal visibility + expose policy in settings UI
+- `f12cca2` — fix: tighten override modal copy + widen panel + brief setting label
+- `17112d1` — feat: replace cryptic "X ppl" with family-tag callouts (4 sites)
+
+The "family tag" pattern (Alpine x-data scoped popover with hover/click trigger, member count + 3 colored dots for children/adults/seniors with proper pluralization) lives in `resources/views/checkin/index.blade.php` at 4 sites. If a new place wants the same pattern, the user calls it the **family tag**.
