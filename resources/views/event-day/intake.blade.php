@@ -91,7 +91,39 @@
                                 </span>
                                 <span class="text-xs font-semibold text-gray-500" x-show="vehicleLabel(h)" style="display:none" x-text="vehicleLabel(h)"></span>
                             </span>
-                            <span class="text-xs text-gray-400 shrink-0 mt-0.5" x-text="h.household_size + ' ppl'"></span>
+                            {{-- Family tag — hover-only inside this button row --}}
+                            <span x-data="{ showDemo: false }"
+                                  @mouseenter="showDemo = true"
+                                  @mouseleave="showDemo = false"
+                                  class="relative text-xs text-gray-400 shrink-0 mt-0.5 cursor-help">
+                                <span>1 Family</span>
+                                <span x-show="showDemo" style="display:none"
+                                      x-transition:enter="transition ease-out duration-150"
+                                      x-transition:enter-start="opacity-0 translate-y-1"
+                                      x-transition:enter-end="opacity-100 translate-y-0"
+                                      class="absolute right-0 top-full mt-1 z-30 min-w-32
+                                             bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                                    <span class="block text-sm font-semibold text-gray-900 mb-2"
+                                          x-text="(h.household_size ?? 0) + ' ' + ((h.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                                    <span class="block text-xs text-gray-600">
+                                        <span class="flex items-center gap-2">
+                                            <span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span>
+                                            <span class="font-semibold text-gray-800" x-text="h.children_count ?? 0"></span>
+                                            <span x-text="(h.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                        </span>
+                                        <span class="flex items-center gap-2 mt-1">
+                                            <span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span>
+                                            <span class="font-semibold text-gray-800" x-text="h.adults_count ?? 0"></span>
+                                            <span x-text="(h.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                        </span>
+                                        <span class="flex items-center gap-2 mt-1">
+                                            <span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span>
+                                            <span class="font-semibold text-gray-800" x-text="h.seniors_count ?? 0"></span>
+                                            <span x-text="(h.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                        </span>
+                                    </span>
+                                </span>
+                            </span>
                         </button>
                     </template>
                     <div x-show="searched && results.length === 0" style="display:none"
@@ -251,10 +283,45 @@
                     </span>
                 </div>
                 <div class="flex gap-4 text-sm text-gray-600 font-medium mt-1">
-                    <span><strong class="text-gray-900" x-text="selected?.household_size"></strong> people</span>
-                    <span class="text-gray-400"
-                          x-text="(selected?.children_count ?? 0) + 'C ' + (selected?.adults_count ?? 0) + 'A ' + (selected?.seniors_count ?? 0) + 'S'">
-                    </span>
+                    {{-- Family tag — runtime live count (selected + linked); reveals
+                         the selected household's demographic breakdown on hover/click. --}}
+                    <div x-data="{ showDemo: false }" class="relative">
+                        <button @mouseenter="showDemo = true"
+                                @mouseleave="showDemo = false"
+                                @click="showDemo = !showDemo"
+                                @focus="showDemo = true"
+                                @blur="showDemo = false"
+                                type="button"
+                                class="hover:text-gray-900 transition-colors">
+                            <span x-text="(1 + linkedHouseholds.length) + ' ' + ((1 + linkedHouseholds.length) === 1 ? 'Family' : 'Families')"></span>
+                        </button>
+                        <div x-show="showDemo" style="display:none"
+                             x-transition:enter="transition ease-out duration-150"
+                             x-transition:enter-start="opacity-0 translate-y-1"
+                             x-transition:enter-end="opacity-100 translate-y-0"
+                             class="absolute top-full left-0 mt-2 z-30 min-w-32
+                                    bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                            <p class="text-sm font-semibold text-gray-900 mb-2"
+                               x-text="(selected?.household_size ?? 0) + ' ' + ((selected?.household_size ?? 0) === 1 ? 'Member' : 'Members')"></p>
+                            <ul class="text-xs text-gray-600 space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="selected?.children_count ?? 0"></span>
+                                    <span x-text="(selected?.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="selected?.adults_count ?? 0"></span>
+                                    <span x-text="(selected?.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="selected?.seniors_count ?? 0"></span>
+                                    <span x-text="(selected?.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
             <button @click="clearSelection()" type="button" class="text-gray-400 hover:text-gray-600 p-1">
@@ -358,8 +425,39 @@
                                       x-text="'#' + h.household_number"></span>
                                 <span class="flex-1 min-w-0 text-sm font-semibold text-gray-800 truncate"
                                       x-text="h.full_name"></span>
-                                <span class="text-xs text-gray-500 shrink-0"
-                                      x-text="h.household_size + ' ppl'"></span>
+                                {{-- Family tag — hover-only inside this button row --}}
+                                <span x-data="{ showDemo: false }"
+                                      @mouseenter="showDemo = true"
+                                      @mouseleave="showDemo = false"
+                                      class="relative text-xs text-gray-500 shrink-0 cursor-help">
+                                    <span>1 Family</span>
+                                    <span x-show="showDemo" style="display:none"
+                                          x-transition:enter="transition ease-out duration-150"
+                                          x-transition:enter-start="opacity-0 translate-y-1"
+                                          x-transition:enter-end="opacity-100 translate-y-0"
+                                          class="absolute right-0 top-full mt-1 z-30 min-w-32
+                                                 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                                        <span class="block text-sm font-semibold text-gray-900 mb-2"
+                                              x-text="(h.household_size ?? 0) + ' ' + ((h.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                                        <span class="block text-xs text-gray-600">
+                                            <span class="flex items-center gap-2">
+                                                <span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span>
+                                                <span class="font-semibold text-gray-800" x-text="h.children_count ?? 0"></span>
+                                                <span x-text="(h.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                            </span>
+                                            <span class="flex items-center gap-2 mt-1">
+                                                <span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span>
+                                                <span class="font-semibold text-gray-800" x-text="h.adults_count ?? 0"></span>
+                                                <span x-text="(h.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                            </span>
+                                            <span class="flex items-center gap-2 mt-1">
+                                                <span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span>
+                                                <span class="font-semibold text-gray-800" x-text="h.seniors_count ?? 0"></span>
+                                                <span x-text="(h.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                            </span>
+                                        </span>
+                                    </span>
+                                </span>
                             </button>
                         </template>
                     </div>
@@ -380,7 +478,40 @@
                         <p class="text-xs font-bold text-amber-900 truncate" x-text="h.full_name"></p>
                         <p class="text-[10px] text-amber-600 font-mono" x-text="'#' + h.household_number"></p>
                     </div>
-                    <span class="text-xs text-amber-700 shrink-0" x-text="h.household_size + ' ppl'"></span>
+                    {{-- Family tag — hover + click toggle (chip parent is a div) --}}
+                    <span x-data="{ showDemo: false }"
+                          @mouseenter="showDemo = true"
+                          @mouseleave="showDemo = false"
+                          @click.stop="showDemo = !showDemo"
+                          class="relative text-xs text-amber-700 shrink-0 cursor-help">
+                        <span>1 Family</span>
+                        <span x-show="showDemo" style="display:none"
+                              x-transition:enter="transition ease-out duration-150"
+                              x-transition:enter-start="opacity-0 translate-y-1"
+                              x-transition:enter-end="opacity-100 translate-y-0"
+                              class="absolute right-0 top-full mt-1 z-30 min-w-32
+                                     bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                            <span class="block text-sm font-semibold text-gray-900 mb-2"
+                                  x-text="(h.household_size ?? 0) + ' ' + ((h.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                            <span class="block text-xs text-gray-600">
+                                <span class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="h.children_count ?? 0"></span>
+                                    <span x-text="(h.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                                </span>
+                                <span class="flex items-center gap-2 mt-1">
+                                    <span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="h.adults_count ?? 0"></span>
+                                    <span x-text="(h.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                                </span>
+                                <span class="flex items-center gap-2 mt-1">
+                                    <span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span>
+                                    <span class="font-semibold text-gray-800" x-text="h.seniors_count ?? 0"></span>
+                                    <span x-text="(h.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                                </span>
+                            </span>
+                        </span>
+                    </span>
                     <span x-show="h.bags_needed !== null && h.bags_needed !== undefined"
                           style="display:none"
                           class="text-xs font-bold text-orange-600 shrink-0"
@@ -417,7 +548,40 @@
         <div class="flex items-center gap-2 py-1 text-sm">
             <span class="w-4 shrink-0 text-center text-amber-300 font-bold">★</span>
             <span class="flex-1 font-bold text-gray-900" x-text="selected?.full_name"></span>
-            <span class="text-gray-600 text-xs shrink-0" x-text="(selected?.household_size ?? 0) + ' ppl'"></span>
+            {{-- Family tag for the representative --}}
+            <span x-data="{ showDemo: false }"
+                  @mouseenter="showDemo = true"
+                  @mouseleave="showDemo = false"
+                  @click="showDemo = !showDemo"
+                  class="relative text-gray-600 text-xs shrink-0 cursor-help">
+                <span>1 Family</span>
+                <span x-show="showDemo" style="display:none"
+                      x-transition:enter="transition ease-out duration-150"
+                      x-transition:enter-start="opacity-0 translate-y-1"
+                      x-transition:enter-end="opacity-100 translate-y-0"
+                      class="absolute right-0 top-full mt-1 z-30 min-w-32
+                             bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                    <span class="block text-sm font-semibold text-gray-900 mb-2"
+                          x-text="(selected?.household_size ?? 0) + ' ' + ((selected?.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                    <span class="block text-xs text-gray-600">
+                        <span class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span>
+                            <span class="font-semibold text-gray-800" x-text="selected?.children_count ?? 0"></span>
+                            <span x-text="(selected?.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                        </span>
+                        <span class="flex items-center gap-2 mt-1">
+                            <span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span>
+                            <span class="font-semibold text-gray-800" x-text="selected?.adults_count ?? 0"></span>
+                            <span x-text="(selected?.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                        </span>
+                        <span class="flex items-center gap-2 mt-1">
+                            <span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span>
+                            <span class="font-semibold text-gray-800" x-text="selected?.seniors_count ?? 0"></span>
+                            <span x-text="(selected?.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                        </span>
+                    </span>
+                </span>
+            </span>
             <span x-show="selected?.bags_needed != null" style="display:none"
                   class="text-orange-600 text-xs font-bold shrink-0"
                   x-text="selected?.bags_needed + ' bags'"></span>
@@ -427,7 +591,40 @@
             <div class="flex items-center gap-2 py-1 text-xs">
                 <span class="w-4 shrink-0 text-center text-amber-400">↳</span>
                 <span class="flex-1 font-medium text-gray-800" x-text="h.full_name"></span>
-                <span class="text-gray-500 shrink-0" x-text="h.household_size + ' ppl'"></span>
+                {{-- Family tag for each linked household --}}
+                <span x-data="{ showDemo: false }"
+                      @mouseenter="showDemo = true"
+                      @mouseleave="showDemo = false"
+                      @click="showDemo = !showDemo"
+                      class="relative text-gray-500 shrink-0 cursor-help">
+                    <span>1 Family</span>
+                    <span x-show="showDemo" style="display:none"
+                          x-transition:enter="transition ease-out duration-150"
+                          x-transition:enter-start="opacity-0 translate-y-1"
+                          x-transition:enter-end="opacity-100 translate-y-0"
+                          class="absolute right-0 top-full mt-1 z-30 min-w-32
+                                 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                        <span class="block text-sm font-semibold text-gray-900 mb-2"
+                              x-text="(h.household_size ?? 0) + ' ' + ((h.household_size ?? 0) === 1 ? 'Member' : 'Members')"></span>
+                        <span class="block text-xs text-gray-600">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span>
+                                <span class="font-semibold text-gray-800" x-text="h.children_count ?? 0"></span>
+                                <span x-text="(h.children_count ?? 0) === 1 ? 'Child' : 'Children'"></span>
+                            </span>
+                            <span class="flex items-center gap-2 mt-1">
+                                <span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span>
+                                <span class="font-semibold text-gray-800" x-text="h.adults_count ?? 0"></span>
+                                <span x-text="(h.adults_count ?? 0) === 1 ? 'Adult' : 'Adults'"></span>
+                            </span>
+                            <span class="flex items-center gap-2 mt-1">
+                                <span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span>
+                                <span class="font-semibold text-gray-800" x-text="h.seniors_count ?? 0"></span>
+                                <span x-text="(h.seniors_count ?? 0) === 1 ? 'Senior' : 'Seniors'"></span>
+                            </span>
+                        </span>
+                    </span>
+                </span>
                 <span x-show="h.bags_needed != null" style="display:none"
                       class="text-orange-600 font-bold shrink-0"
                       x-text="h.bags_needed + ' bags'"></span>
@@ -622,6 +819,138 @@
     </div>
 </div>{{-- /showCreatePanel --}}
 
+{{-- ════════════════════════════════════════════════════════════════════
+     ALREADY-SERVED OVERRIDE MODAL  (mirrored from admin /checkin Phase 1.3.d)
+     Triggered when /checkin returns 422 with error: 'household_already_served'.
+     Two states:
+       - allowOverride=true  → reason textarea + Confirm Override button.
+                               On confirm, re-POST with force=1 + reason.
+                               Server records an audit row in checkin_overrides.
+       - allowOverride=false → close-only (deny policy mode).
+═══════════════════════════════════════════════════════════════════════ --}}
+<div x-show="overrideModal.show" style="display:none"
+     class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+     @keydown.escape.window="overrideModal.show && cancelOverride()">
+
+    {{-- Backdrop. Click-outside cancels EXCEPT during submission — silent
+         dismiss mid-flight would hide a validator error from the user. --}}
+    <div class="absolute inset-0 bg-black/50"
+         x-transition:enter="transition duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         @click="!overrideModal.submitting && cancelOverride()"></div>
+
+    {{-- Panel — base max-w-md (sm:max-w-md responsive variant isn't in the
+         prebuilt CSS; on mobile, w-full takes precedence for the bottom sheet). --}}
+    <div class="relative z-10 bg-white w-full max-w-md rounded-t-3xl rounded-2xl shadow-2xl"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="translate-y-full sm:translate-y-4 sm:opacity-0"
+         x-transition:enter-end="translate-y-0 sm:opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="translate-y-0 sm:opacity-100"
+         x-transition:leave-end="translate-y-full sm:translate-y-4 sm:opacity-0">
+
+        {{-- Header: icon + title together; household info on its own line below. --}}
+        <div class="p-6 pb-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+                    </svg>
+                </div>
+                <h3 class="text-base font-semibold text-gray-900">Already served at this event</h3>
+            </div>
+
+            <template x-if="overrideModal.households.length === 1">
+                <p class="text-sm text-gray-600 mt-3">
+                    <span class="font-medium" x-text="overrideModal.households[0].full_name"></span>
+                    <span class="text-gray-500" x-text="'(#' + overrideModal.households[0].household_number + ')'"></span>
+                </p>
+            </template>
+            <template x-if="overrideModal.households.length > 1">
+                <ul class="text-sm text-gray-600 mt-3 list-disc list-inside space-y-1">
+                    <template x-for="h in overrideModal.households" :key="h.id">
+                        <li>
+                            <span class="font-medium" x-text="h.full_name"></span>
+                            <span class="text-gray-500" x-text="'(#' + h.household_number + ')'"></span>
+                        </li>
+                    </template>
+                </ul>
+            </template>
+        </div>
+
+        {{-- Override-allowed body: reason textarea + Confirm button --}}
+        <template x-if="overrideModal.allowOverride">
+            <div class="px-6 pb-6 space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">
+                        Reason for override <span class="text-red-500">*</span>
+                    </label>
+                    <textarea x-model="overrideModal.reason"
+                              x-ref="reasonTextarea"
+                              x-init="$watch('overrideModal.show', v => v && $nextTick(() => $refs.reasonTextarea?.focus()))"
+                              :disabled="overrideModal.submitting"
+                              rows="3"
+                              maxlength="500"
+                              placeholder="e.g., Forgotten item; supervisor confirmed."
+                              class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm
+                                     focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent
+                                     resize-none"></textarea>
+                    <p x-show="overrideModal.reasonError" style="display:none"
+                       class="text-xs text-red-600 mt-1" x-text="overrideModal.reasonError"></p>
+                </div>
+
+                <div class="flex gap-2 pt-1">
+                    <button @click="confirmOverride()"
+                            :disabled="overrideModal.submitting || !overrideModal.reason.trim()"
+                            type="button"
+                            class="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl
+                                   bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm
+                                   transition-colors disabled:opacity-60">
+                        <template x-if="overrideModal.submitting">
+                            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                            </svg>
+                        </template>
+                        <span x-text="overrideModal.submitting ? 'Saving…' : 'Confirm Override (Supervisor)'"></span>
+                    </button>
+                    <button @click="cancelOverride()"
+                            :disabled="overrideModal.submitting"
+                            type="button"
+                            class="px-4 py-3 rounded-xl bg-gray-100 hover:bg-gray-200
+                                   text-gray-700 font-semibold text-sm transition-colors disabled:opacity-60">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </template>
+
+        {{-- Deny-policy body: close-only --}}
+        <template x-if="!overrideModal.allowOverride">
+            <div class="px-6 pb-6 space-y-3">
+                <p class="text-sm text-gray-600">
+                    The current re-check-in policy does not permit overrides. To allow re-check-ins,
+                    an administrator can change the policy in
+                    <span class="font-medium">Settings &rsaquo; Event &amp; Queue &rsaquo; Re-Check-In Policy</span>.
+                </p>
+                <div class="flex pt-1">
+                    <button @click="cancelOverride()"
+                            type="button"
+                            class="flex-1 py-3 rounded-xl bg-navy-700 hover:bg-navy-800
+                                   text-white font-semibold text-sm transition-colors">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </template>
+
+    </div>
+</div>
+
 </div>{{-- /intakePage --}}
 
 @endsection
@@ -661,6 +990,20 @@ function intakePage() {
 
         // ── Log ───────────────────────────────────────────────────────────────
         log: [],
+
+        // ── Override Modal ────────────────────────────────────────────────────
+        // Triggered when /checkin returns 422 with error: 'household_already_served'.
+        // pendingPayload holds the original request body so confirmOverride can
+        // re-POST with force=1 + override_reason without rebuilding it.
+        overrideModal: {
+            show:           false,
+            allowOverride:  true,
+            households:     [],   // [{id, household_number, full_name}, ...]
+            reason:         '',
+            reasonError:    null,
+            submitting:     false,
+            pendingPayload: null,
+        },
 
         // ── Toast ─────────────────────────────────────────────────────────────
         toast: { show: false, message: '', type: 'success' },
@@ -949,6 +1292,24 @@ function intakePage() {
                     this.showToast(msg, 'success');
                     this.clearSelection();
                     this.fetchLog();
+                } else if (r.status === 422 && data.error === 'household_already_served') {
+                    // Re-check-in policy fired. Open the override modal so the
+                    // supervisor can confirm + give a reason. Capture body so
+                    // confirmOverride() can re-POST with force=1 + reason.
+                    const offending = Array.isArray(data.households) ? data.households : [];
+                    if (offending.length === 0) {
+                        this.checkInError = data.message ?? 'Already served at this event.';
+                    } else {
+                        this.overrideModal = {
+                            show:           true,
+                            allowOverride:  !!data.allow_override,
+                            households:     offending,
+                            reason:         '',
+                            reasonError:    null,
+                            submitting:     false,
+                            pendingPayload: body,
+                        };
+                    }
                 } else {
                     this.checkInError = data.message ?? 'Check-in failed.';
                 }
@@ -957,6 +1318,63 @@ function intakePage() {
             } finally {
                 this.checkingIn = false;
             }
+        },
+
+        // Re-POST the captured check-in body with force=1 + reason. Server
+        // logs an audit row in checkin_overrides and proceeds with the visit.
+        async confirmOverride() {
+            if (this.overrideModal.submitting) return;
+            const reason = this.overrideModal.reason.trim();
+            if (!reason) {
+                this.overrideModal.reasonError = 'Please enter a reason.';
+                return;
+            }
+            if (!this.overrideModal.pendingPayload) {
+                this.overrideModal.reasonError = 'Lost the original check-in details. Please cancel and try again.';
+                return;
+            }
+            this.overrideModal.submitting  = true;
+            this.overrideModal.reasonError = null;
+            try {
+                const body = {
+                    ...this.overrideModal.pendingPayload,
+                    force:           1,
+                    override_reason: reason,
+                };
+                const r = await fetch("{{ url('/checkin') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept':       'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    },
+                    body: JSON.stringify(body),
+                });
+                const data = await r.json();
+                if (r.ok) {
+                    this.cancelOverride();
+                    this.showToast('Override recorded. Check-in successful.', 'success');
+                    this.clearSelection();
+                    this.fetchLog();
+                } else {
+                    const validatorMsg = data.errors?.override_reason?.[0];
+                    this.overrideModal.reasonError =
+                        validatorMsg || data.message || 'Override failed. Please try again.';
+                }
+            } catch {
+                this.overrideModal.reasonError = 'Network error. Please try again.';
+            }
+            this.overrideModal.submitting = false;
+        },
+
+        cancelOverride() {
+            this.overrideModal.show           = false;
+            this.overrideModal.allowOverride  = true;
+            this.overrideModal.households     = [];
+            this.overrideModal.reason         = '';
+            this.overrideModal.reasonError    = null;
+            this.overrideModal.submitting     = false;
+            this.overrideModal.pendingPayload = null;
         },
 
         // ── Log ───────────────────────────────────────────────────────────────
