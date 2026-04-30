@@ -76,15 +76,50 @@ class DistributionPostingService
      *   - inventory_item_id (int)
      *   - quantity          (int) — total units to post for this visit
      *
-     * Phase 2.1.a stub: returns [] so no movements are posted until the
-     * bag_composition schema is decided and 2.1.b fills in the real resolver.
-     * See HANDOFF.md "Open questions" for the pending design decision
-     * (new allocation_ruleset_components table vs. extending rules JSON).
+     * Calculation:
+     *   1. Load the event's AllocationRuleset and its components (Option A schema:
+     *      allocation_ruleset_components table, one row per item per ruleset).
+     *   2. For each household in the visit, call getBagsFor(snapshot_size) using
+     *      the Phase 1.2 pivot snapshot so edits made after the visit do not
+     *      retroactively change the distribution quantity.
+     *   3. Total bags × each component's qty_per_bag = quantity to post.
+     *
+     * Returns [] when the event has no ruleset, the ruleset has no components,
+     * or the total bags calculation yields zero.
+     *
+     * Refs: AUDIT_REPORT.md Part 13 §2.1.b.
      *
      * @return array<int, array{inventory_item_id: int, quantity: int}>
      */
     protected function resolveBagComposition(Visit $visit): array
     {
-        return [];
+        $visit->loadMissing(['event.ruleset.components', 'households']);
+
+        $ruleset = optional($visit->event)->ruleset;
+
+        if (! $ruleset) {
+            return [];
+        }
+
+        $components = $ruleset->components;
+
+        if ($components->isEmpty()) {
+            return [];
+        }
+
+        // Use the Phase 1.2 snapshot household_size so that editing a household
+        // record after the visit does not change how much inventory gets posted.
+        $totalBags = $visit->households->sum(
+            fn ($h) => $ruleset->getBagsFor((int) $h->pivot->household_size)
+        );
+
+        if ($totalBags === 0) {
+            return [];
+        }
+
+        return $components->map(fn ($c) => [
+            'inventory_item_id' => $c->inventory_item_id,
+            'quantity'          => $totalBags * $c->qty_per_bag,
+        ])->values()->all();
     }
 }

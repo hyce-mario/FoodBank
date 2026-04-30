@@ -3,33 +3,47 @@
 namespace Tests\Feature;
 
 use App\Exceptions\InsufficientStockException;
+use App\Models\AllocationRuleset;
+use App\Models\AllocationRulesetComponent;
 use App\Models\Event;
 use App\Models\EventInventoryAllocation;
+use App\Models\Household;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Models\Visit;
 use App\Services\DistributionPostingService;
+use App\Services\EventCheckInService;
+use App\Services\SettingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
  * Coverage for DistributionPostingService::postForVisit().
  *
- * Phase 2.1.a: service skeleton + unit tests. The bag-composition resolver
- * is stubbed (returns []) in production; tests use an anonymous subclass to
- * inject explicit compositions so the transaction and stock-check logic can be
- * exercised before Phase 2.1.b fills in the real resolver.
+ * Phase 2.1.a + 2.1.b: service skeleton, unit tests, and resolver tests.
  *
- * Four contracts pinned here:
+ * Tests 1–4 (Phase 2.1.a): anonymous-subclass injection to test the transaction
+ * and stock-check logic independently of the resolver.
  *   - Empty composition is a no-op (no movements, no exceptions).
  *   - Happy path: correct movement created, quantity_on_hand decremented,
  *     EventInventoryAllocation.distributed_quantity incremented.
  *   - Insufficient stock: InsufficientStockException thrown with correct fields;
  *     transaction ensures no movement is created and no stock is changed.
- *   - Transaction atomicity: a failure on the second component (non-existent
- *     item ID) rolls back the first component's movement and stock decrement.
+ *   - Transaction atomicity: a failure on the second component rolls back
+ *     the first component's movement and stock decrement.
  *
- * Refs: AUDIT_REPORT.md Part 13 §2.1.a.
+ * Tests 5–10 (Phase 2.1.b): real resolver via allocation_ruleset_components
+ * table (Option A schema). Uses EventCheckInService::checkIn() to create
+ * visits with proper Phase 1.2 pivot snapshots.
+ *   - No ruleset → no-op.
+ *   - Ruleset with no components → no-op.
+ *   - Single household: correct quantity via getBagsFor × qty_per_bag.
+ *   - Snapshot isolation: editing household after check-in does not change
+ *     the distributed quantity.
+ *   - Multi-household: bags summed across representative + represented.
+ *   - M5 deferred: two real items, second insufficient → first rolled back.
+ *
+ * Refs: AUDIT_REPORT.md Part 13 §2.1.a, §2.1.b.
  */
 class DistributionPostingServiceTest extends TestCase
 {
@@ -41,6 +55,10 @@ class DistributionPostingServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // SettingService caches across RefreshDatabase cycles; flush so
+        // EventCheckInService::checkIn() reads the correct policy defaults.
+        SettingService::flush();
 
         $this->event = Event::create([
             'name'  => 'Distribution Test Event',
@@ -212,5 +230,222 @@ class DistributionPostingServiceTest extends TestCase
             $item1->fresh()->quantity_on_hand,
             'stock decrement for the first item must be rolled back'
         );
+    }
+
+    // ─── Phase 2.1.b — Real resolver tests ───────────────────────────────────
+
+    /**
+     * Create a minimal Household with the given snapshot-ready household_size.
+     * EventCheckInService::checkIn() writes these fields to the pivot snapshot
+     * at attach time (Phase 1.2.b), so the size passed here is what the
+     * resolver will read from $household->pivot->household_size.
+     */
+    private function makeHouseholdOfSize(int $size): Household
+    {
+        static $hCounter = 0;
+        $hCounter++;
+
+        return Household::create([
+            'household_number' => 'HH' . str_pad((string) $hCounter, 5, '0', STR_PAD_LEFT),
+            'first_name'       => 'Test',
+            'last_name'        => "Household{$hCounter}",
+            'household_size'   => $size,
+            'adults_count'     => $size,
+            'children_count'   => 0,
+            'seniors_count'    => 0,
+        ]);
+    }
+
+    /**
+     * Create a minimal AllocationRuleset whose rules give $bagsFor1to3 bags
+     * for households of size 1–3 and $bagsFor4plus for size 4+.
+     */
+    private function makeRuleset(int $bagsFor1to3 = 1, int $bagsFor4plus = 2): AllocationRuleset
+    {
+        return AllocationRuleset::create([
+            'name'               => 'Test Ruleset',
+            'allocation_type'    => 'household_size',
+            'is_active'          => true,
+            'max_household_size' => 20,
+            'rules'              => [
+                ['min' => 1, 'max' => 3,    'bags' => $bagsFor1to3],
+                ['min' => 4, 'max' => null,  'bags' => $bagsFor4plus],
+            ],
+        ]);
+    }
+
+    // ─── Test 5 — No ruleset on event ────────────────────────────────────────
+
+    /**
+     * When the event has no AllocationRuleset, resolveBagComposition returns []
+     * and postForVisit is a no-op.
+     */
+    public function test_resolver_returns_empty_when_event_has_no_ruleset(): void
+    {
+        // $this->event has no ruleset_id.
+        $service = app(DistributionPostingService::class);
+        $service->postForVisit($this->visit);
+
+        $this->assertSame(0, InventoryMovement::count());
+    }
+
+    // ─── Test 6 — Ruleset with no components ─────────────────────────────────
+
+    /**
+     * A ruleset that has no AllocationRulesetComponent rows returns [] and
+     * postForVisit is a no-op even when households have been served.
+     */
+    public function test_resolver_returns_empty_when_ruleset_has_no_components(): void
+    {
+        $ruleset = $this->makeRuleset();
+        $this->event->update(['ruleset_id' => $ruleset->id]);
+
+        $service = app(DistributionPostingService::class);
+        $service->postForVisit($this->visit);
+
+        $this->assertSame(0, InventoryMovement::count());
+    }
+
+    // ─── Test 7 — Single household, correct quantity ─────────────────────────
+
+    /**
+     * Ruleset rule: household size 1–3 → 1 bag. Component: 2 units per bag.
+     * Visit has one household of size 2 → 1 bag × 2 = 2 units posted.
+     */
+    public function test_resolver_calculates_correct_quantity_for_single_household(): void
+    {
+        $ruleset = $this->makeRuleset(bagsFor1to3: 1);
+        $this->event->update(['ruleset_id' => $ruleset->id]);
+
+        $item = $this->makeItem(quantityOnHand: 20);
+        AllocationRulesetComponent::create([
+            'allocation_ruleset_id' => $ruleset->id,
+            'inventory_item_id'     => $item->id,
+            'qty_per_bag'           => 2,
+        ]);
+
+        $household = $this->makeHouseholdOfSize(2);  // size 2 → 1 bag
+        $visit = app(EventCheckInService::class)->checkIn($this->event, $household, lane: 1);
+
+        app(DistributionPostingService::class)->postForVisit($visit);
+
+        $this->assertSame(1, InventoryMovement::count());
+        $this->assertSame(-2, InventoryMovement::first()->quantity);
+        $this->assertSame(18, $item->fresh()->quantity_on_hand);
+    }
+
+    // ─── Test 8 — Snapshot isolation ─────────────────────────────────────────
+
+    /**
+     * Editing a household's size AFTER check-in must NOT change how many items
+     * get posted. The resolver reads the Phase 1.2 pivot snapshot, not the live
+     * household record.
+     *
+     * Household checked in at size 2 (1 bag, 2 units). Then bumped to size 5
+     * (which would be 2 bags / 4 units under the ruleset). Distribution must
+     * still post 2 units.
+     */
+    public function test_resolver_uses_snapshot_size_not_live_household_size(): void
+    {
+        $ruleset = $this->makeRuleset(bagsFor1to3: 1, bagsFor4plus: 2);
+        $this->event->update(['ruleset_id' => $ruleset->id]);
+
+        $item = $this->makeItem(quantityOnHand: 20);
+        AllocationRulesetComponent::create([
+            'allocation_ruleset_id' => $ruleset->id,
+            'inventory_item_id'     => $item->id,
+            'qty_per_bag'           => 2,
+        ]);
+
+        $household = $this->makeHouseholdOfSize(2);
+        $visit = app(EventCheckInService::class)->checkIn($this->event, $household, lane: 1);
+
+        // Edit the household to a larger size after check-in.
+        $household->update(['household_size' => 5, 'adults_count' => 5]);
+
+        app(DistributionPostingService::class)->postForVisit($visit);
+
+        // Snapshot was size 2 → 1 bag × 2 = 2 units, NOT size 5 → 2 bags × 2 = 4.
+        $this->assertSame(-2, InventoryMovement::first()->quantity);
+        $this->assertSame(18, $item->fresh()->quantity_on_hand);
+    }
+
+    // ─── Test 9 — Multi-household visit ──────────────────────────────────────
+
+    /**
+     * A representative picks up for two represented households. Bags are summed
+     * across all three using each household's own snapshot size.
+     *
+     * Rep (size 2) → 1 bag, Rep1 (size 2) → 1 bag, Rep2 (size 5) → 2 bags.
+     * Total = 4 bags. Component: 3 units per bag → 12 units posted.
+     */
+    public function test_resolver_sums_bags_across_multiple_households(): void
+    {
+        $ruleset = $this->makeRuleset(bagsFor1to3: 1, bagsFor4plus: 2);
+        $this->event->update(['ruleset_id' => $ruleset->id]);
+
+        $item = $this->makeItem(quantityOnHand: 50);
+        AllocationRulesetComponent::create([
+            'allocation_ruleset_id' => $ruleset->id,
+            'inventory_item_id'     => $item->id,
+            'qty_per_bag'           => 3,
+        ]);
+
+        $rep  = $this->makeHouseholdOfSize(2);  // 1 bag
+        $rep1 = $this->makeHouseholdOfSize(2);  // 1 bag
+        $rep2 = $this->makeHouseholdOfSize(5);  // 2 bags
+
+        $visit = app(EventCheckInService::class)->checkIn(
+            $this->event, $rep, lane: 1,
+            representedIds: [$rep1->id, $rep2->id]
+        );
+
+        app(DistributionPostingService::class)->postForVisit($visit);
+
+        // 4 bags × 3 qty_per_bag = 12 units
+        $this->assertSame(1, InventoryMovement::count());
+        $this->assertSame(-12, InventoryMovement::first()->quantity);
+        $this->assertSame(38, $item->fresh()->quantity_on_hand);
+    }
+
+    // ─── Test 10 — M5 deferred: two-item insufficient-stock rollback ──────────
+
+    /**
+     * Two items in the real composition. Item 1 has enough stock; item 2 does
+     * not. The InsufficientStockException on item 2 must roll back item 1's
+     * movement and stock decrement — proving the transaction wraps all
+     * components atomically (M5 deferred from Phase 2.1.a code review).
+     */
+    public function test_insufficient_stock_on_second_item_rolls_back_first(): void
+    {
+        $ruleset = $this->makeRuleset(bagsFor1to3: 1);
+        $this->event->update(['ruleset_id' => $ruleset->id]);
+
+        $item1 = $this->makeItem(quantityOnHand: 20);  // plenty of stock
+        $item2 = $this->makeItem(quantityOnHand: 0);   // zero stock — will fail
+
+        AllocationRulesetComponent::create([
+            'allocation_ruleset_id' => $ruleset->id,
+            'inventory_item_id'     => $item1->id,
+            'qty_per_bag'           => 2,
+        ]);
+        AllocationRulesetComponent::create([
+            'allocation_ruleset_id' => $ruleset->id,
+            'inventory_item_id'     => $item2->id,
+            'qty_per_bag'           => 1,
+        ]);
+
+        $household = $this->makeHouseholdOfSize(2);  // size 2 → 1 bag
+        $visit = app(EventCheckInService::class)->checkIn($this->event, $household, lane: 1);
+
+        try {
+            app(DistributionPostingService::class)->postForVisit($visit);
+            $this->fail('Expected InsufficientStockException for item2');
+        } catch (InsufficientStockException $e) {
+            $this->assertSame($item2->id, $e->inventoryItemId);
+        }
+
+        $this->assertSame(0, InventoryMovement::count(), 'item1 movement must be rolled back');
+        $this->assertSame(20, $item1->fresh()->quantity_on_hand, 'item1 stock must be unchanged');
     }
 }
