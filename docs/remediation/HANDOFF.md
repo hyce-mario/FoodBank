@@ -4,106 +4,142 @@
 
 ---
 
-## Current state — 2026-04-29 (mid-Session 3, **Phase 1.2 closed**)
+## Current state — 2026-04-30 (end of Session 3, **Phase 1 fully closed**)
 
 ### Where we are
-**Phase 1.2 is fully complete.** All three sub-tasks (1.2.a schema, 1.2.b service write + NOT NULL, 1.2.c report read switch) committed on `phase-1.2/visit-households-snapshots`. Suite is green at 48/48.
 
-The next call is **a branch decision**:
+**Phase 1 is fully complete.** All three sub-phases (1.1 race conditions, 1.2 snapshot demographics, 1.3 one-visit-per-event guard) are merged to `main` and tagged. Suite is green at 67/67 on main.
 
-- **Option A (recommended):** merge `phase-1.2/visit-households-snapshots` to `main` now (`git merge --no-ff`), tag as `phase-1.2-complete`, then start a fresh `phase-1.3/...` branch for the one-visit-per-household guard. Atomic per major sub-phase.
-- **Option B:** stay on the same branch and do 1.3 too, then merge once.
-
-User's call. Default to A unless preferring B.
+The next call is **start Phase 2 — Reporting Truth.** This is the biggest single lift in the audit (~3 days estimated; AUDIT_REPORT.md §2). It introduces a brand-new service class (`DistributionPostingService`) and rewires the visit-completion flow to auto-decrement inventory. The primary acceptance criterion is "running a 50-visit event causes `InventoryItem.quantity_on_hand` to decrease by exactly the rule-derived quantity." Everything in Phase 2 hangs off that.
 
 ### Active branch
-`phase-1.2/visit-households-snapshots` — 5 commits ahead of `main`.
 
-### Commits on this branch (oldest → newest)
-On `main` baseline (already pushed):
-- `802e955` (merge) — Phase 1.1, tagged `phase-1.1-complete`
+`main` — Phase 1.3 just merged. No active feature branch yet.
 
-On `phase-1.2/visit-households-snapshots`:
-- `33d73e2` — Phase 1.2.a: snapshot columns migration + `withPivot()` + 4 tests
-- `11dc65d` — docs: 1.2.a SHA backfill
-- `42e58b3` — Phase 1.2.b: snapshot at attach + NOT NULL flip + shared helper + 4 service tests
-- `7272c23` — docs: 1.2.b SHA backfill
-- `7ca9728` — docs: fix 1.1.a/1.1.b SHA placeholders that sed swept
-- `f37dc03` — Phase 1.2.c: ReportAnalyticsService snapshot reads + 4 temporal-stability tests
+### Tags on main (pushed to origin)
 
-### What's done in Phase 1.2
-- ✅ **1.2.a** — Schema + backfill on `visit_households` (108 dev-DB rows backfilled). Pivot columns exposed via `withPivot()`.
-- ✅ **1.2.b** — Service writes snapshot at attach via shared `Household::toVisitPivotSnapshot()`. Demographic columns NOT NULL. Bulk-load + existence check.
-- ✅ **1.2.c** — `ReportAnalyticsService` reads demographics from `vh.*`; vehicle from `vh.vehicle_make`. Non-snapshotted fields (zip, city, names, household_number) stay live. `exportHouseholds()` deliberately stays live (current-roster semantic). 4 regression tests pin temporal stability.
+- `phase-1.1-complete` (queue race conditions + reorder hardening)
+- `phase-1.2-complete` (visit-households snapshot demographics)
+- `phase-1.3-complete` (one-visit-per-event guard + override flow + auth_code_length fix)
+
+### What's done in Phase 1
+- ✅ **1.1.a** — Unique index `(event_id, lane, queue_position)` on visits
+- ✅ **1.1.b** — `EventCheckInService::checkIn` transaction + `lockForUpdate`
+- ✅ **1.1.c.1** — `queue_position` nullable + null-on-exit (precondition for safe reorder)
+- ✅ **1.1.c.2** — `EventDayController::reorder` + new `VisitReorderService` with optimistic versioning
+- ✅ **1.1.c.3** — `VisitMonitorController::reorder` swap to shared service
+- ✅ **1.2.a** — Snapshot columns on `visit_households` + `withPivot()`
+- ✅ **1.2.b** — Snapshot at attach time + NOT NULL flip + shared `Household::toVisitPivotSnapshot()`
+- ✅ **1.2.c** — `ReportAnalyticsService` switched to pivot-snapshot reads
+- ✅ **1.3.a** — Re-check-in policy setting + `HouseholdAlreadyServedException` (3-mode user extension)
+- ✅ **1.3.b** — `CheckInController::store` catch + 422 override-modal payload
+- ✅ **1.3.c** — `checkin_overrides` table + `CheckInOverride` model (replaces `Log::warning`)
+- ✅ **1.3.d** — Override modal in `checkin/index.blade.php` (Alpine.js)
+- ✅ **drive-by fix** — Removed configurable `auth_code_length` setting; pinned to `Event::AUTH_CODE_LENGTH = 4`
 
 ### What's next — start here on resume
 
-**Phase 1.3** — One-visit-per-household-per-event guard with explicit `force` override.
+**Phase 2.1.a — `DistributionPostingService` skeleton + unit tests.**
 
-Spec: AUDIT_REPORT.md Part 13 §1.3 (lines ~406-412):
-1. **In `EventCheckInService`**, before attaching: check `Visit::where('event_id', $event->id)->whereHas('households', fn($q) => $q->whereIn('households.id', $allIds))->exists()`. If true and `$force === false`, throw a `HouseholdAlreadyServedException`.
-2. **Surface in the check-in UI**: a "this family was already served today — override?" modal.
-3. **Log every override** with user id + reason. Phase 4 will formalize `audit_logs`; for now `Log::warning` is sufficient.
+Spec: AUDIT_REPORT.md Part 13 §2.1 (lines ~420-432):
+1. **Create `app/Services/DistributionPostingService.php`** with a single method `postForVisit(Visit $visit): void`.
+2. **Inside a `DB::transaction`:**
+   - Resolve event's `AllocationRuleset` and bag composition (define a `bag_composition` schema if not already explicit — see open question below).
+   - For each component: `(item_id, qty_per_household × household_count)`.
+   - Verify `InventoryItem::lockForUpdate()->find($itemId)->quantity_on_hand >= needed`. If insufficient, throw `InsufficientStockException` and **do not** post the movement.
+   - Create `InventoryMovement::create([... 'movement_type' => 'event_distributed' ...])`.
+   - Update `EventInventoryAllocation::distributed_quantity += needed` and `InventoryItem::quantity_on_hand -= needed`.
 
-**Concrete plan for 1.3:**
+**Concrete plan for 2.1.a (skeleton + unit tests):**
 
-1. Add `force` parameter (default false) to `EventCheckInService::checkIn()`. Most existing `checkIn` callers won't pass it.
-2. New `App\Exceptions\HouseholdAlreadyServedException` (extends RuntimeException). Carries the offending household IDs and event ID for the controller to render.
-3. The check happens **inside** the existing `DB::transaction` wrapping `checkIn` — same lockForUpdate window so no race between "already served" check and insert.
-4. Existing `EventCheckInServiceTest::test_already_active_check_in_throws_and_does_not_create_a_second_visit` already pins one variant of this (already-active). Extend to:
-   - same household, same event, AFTER exit (currently allowed per `test_re_check_in_after_exit_succeeds_with_next_position`) → now blocks unless force
-   - representative pickup where one of the represented IDs already has a visit in the event → blocks
-   - `force=true` allows the second check-in and logs the override
-5. Update [CheckInController.php](app/Http/Controllers/CheckInController.php) (`checkin.store`) to catch `HouseholdAlreadyServedException` and either return a 422 with the conflict info (for the UI modal) or accept a `force=1` request parameter.
-6. UI modal in the check-in flow — flag if Node-blocked (it's a server-rendered blade, no Vite needed).
+1. Create `app/Exceptions/InsufficientStockException.php` (extends `RuntimeException`). Carries `eventId`, `inventoryItemId`, `needed`, `available` for the controller to render a "skip / substitute / cancel" modal in 2.1.e.
+2. Create `app/Services/DistributionPostingService.php` with the `postForVisit(Visit $visit): void` skeleton. Implementation can stub the bag-composition resolver in 2.1.a (return hardcoded `[]` or throw NotImplemented) and fill it in 2.1.b — split per the established sub-task pattern.
+3. Service tests: empty-allocation (no posting, no error), happy-path (one item, correct movement created), insufficient stock (throws + rolls back), transaction rollback proof (FK violation on InventoryMovement → no allocation update).
 
-**Caveat**: The existing `test_re_check_in_after_exit_succeeds_with_next_position` test will need to be updated. It currently asserts that re-check-in after exit succeeds — under 1.3's contract, it succeeds only with `force=true`. That's a behavior change.
+**Critical open question for the user before 2.1.b:**
+- The audit spec says "Resolve event's `AllocationRuleset` and bag composition" but the `AllocationRuleset` model today only has a `getBagsFor(int $size)` method returning a number of bags. There's no schema for *what's in a bag* (which inventory items, how many of each). The audit explicitly says **"define a `bag_composition` schema if not already explicit"**. So 2.1.b will require either:
+  - A new `allocation_ruleset_components` table (one row per item-per-ruleset, with qty per household), OR
+  - Embedding bag composition in the existing `AllocationRuleset.rules` JSON column (denser but harder to query).
+- This is a meaningful design decision that should not be made unilaterally. **Surface this question early in 2.1.b.**
 
-### Phase 1.2 sub-task status
-- ✅ **1.2.a / 1.2.b / 1.2.c** — all committed and tested. Phase 1.2 closed.
+### Phase 2 sub-task status
+- ⬜ **2.1.a** Service skeleton + unit tests
+- ⬜ **2.1.b** Bag-composition resolver from `AllocationRuleset`
+- ⬜ **2.1.c** Hook into `markLoaded` happy path
+- ⬜ **2.1.d** Hook into supervisor override path (`VisitMonitorController`)
+- ⬜ **2.1.e** `InsufficientStockException` UX (modal with skip/substitute/cancel)
+- ⬜ **2.1.f** Backfill + reconciliation artisan command (`inventory:reconcile {event}`)
+- ⬜ **2.2** Nightly reconciliation schedule
 
 ### Branch / merge guidance
-After 1.2.c commits, recommend `git merge --no-ff phase-1.2/visit-households-snapshots` to `main`, tag `phase-1.2-complete`, push. Cut `phase-1.3/one-visit-per-event-guard` off the new main.
+
+Cut `phase-2.1/distribution-posting-service` off the new main. Sub-task commits land on this branch; merge `--no-ff` to main + tag `phase-2.1-complete` once 2.1.a–f close. 2.2 is a separate sub-phase, separate branch.
+
+Per the established convention:
+- Per-phase branch name: `phase-N.M/short-descriptive-name`
+- `--no-ff` merge with title `Merge Phase N.M (short description)`
+- Tag `phase-N.M-complete` on the merge commit, push tag
 
 ### Environment state
+
 - PHP 8.2.12 via XAMPP, working directory `c:\xampp\htdocs\Foodbank`.
-- MySQL DB `foodbank` is the dev DB. **Migrations applied to MySQL so far in Phase 1**: 1.1.a, 1.1.c.1, 1.2.a, 1.2.b. Demographic columns on `visit_households` are NOT NULL; vehicle stays nullable. Pre-1.2 mysqldump at `backups/foodbank-pre-phase-1.2-20260429-134049.sql`.
-- Tests use sqlite `:memory:`. **48 tests passing**.
-- Node/npm not installed. Phase 1.3 has a UI modal — server-rendered blade is fine, but a Vue/SPA component would need Node. Confirm shape with user before building.
-- Windows scheduled task `FoodBank Schedule Runner` is live (every 1 min).
+- MySQL DB `foodbank` is the dev DB. **Migrations applied to MySQL through Phase 1**: 1.1.a, 1.1.c.1, 1.2.a, 1.2.b, 1.3.c (`checkin_overrides`), drive-by `remove_auth_code_length_setting_row`. Phase 2 will need its own backups before any new schema work.
+- Tests use sqlite `:memory:`. **67 tests passing** on main.
+- Node/npm not installed. Phase 2.1.e has a UI modal — server-rendered Alpine.js Blade is fine, no Vite needed (same pattern used for the Phase 1.3.d override modal).
+- Windows scheduled task `FoodBank Schedule Runner` runs `php artisan schedule:run` every minute, hidden (LogonType=S4U as of 2026-04-30).
 - Git identity per-command: `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"`.
+- Pre-Phase-2 mysqldump backups will be taken before any schema-altering work begins.
 
 ### In-flight files / unfinished work
-None — 1.2.c will commit cleanly.
+
+None. Phase 1 is closed; main is clean.
 
 ### Blockers
-None for 1.3. Phase 5 UI work will need Node when we get there.
+
+None for 2.1.a. The bag-composition schema decision (see open question above) blocks 2.1.b but not the skeleton.
 
 ### User's pre-existing uncommitted work
-Many controllers, views, services remain modified/untracked. Phase 1 commits have organically pulled in `EventCheckInService.php`, `EventDayController.php`, `VisitMonitorController.php`, `scanner.blade.php`, `loader.blade.php`, `monitor.blade.php`, `Visit.php`, `Household.php`, `DemoSeeder.php`, `ReportAnalyticsService.php`. Phase 1.3 will likely pull in `CheckInController.php` for the first time. Stage explicitly via `git add <path>`.
+
+Many files remain modified/untracked from before Phase 0 began. Phase 1 commits have organically pulled in over a dozen of these (Visit.php, EventCheckInService.php, ReportAnalyticsService.php, DemoSeeder.php, SettingService.php, CheckInController.php, CheckInRequest.php, checkin/index.blade.php, settings/sections/public_access.blade.php, Event.php, etc.) as the work touched them.
+
+Phase 2 will likely pull in for the first time:
+- `app/Services/InventoryService.php` (untracked; if 2.1.a integrates with it)
+- `app/Http/Controllers/EventDayController.php` (untracked; 2.1.c hooks `markLoaded` here)
+- `app/Http/Controllers/VisitMonitorController.php` (untracked; 2.1.d hooks the supervisor override path)
+- Possibly `app/Models/EventInventoryAllocation.php`, `app/Models/InventoryItem.php`, `app/Models/InventoryMovement.php`, `app/Models/AllocationRuleset.php`
+
+**Stage explicitly via `git add <path>`** — never `git add .`.
 
 ### Open questions for the user
-- **Branch decision before starting 1.3**: merge to `main` first (recommended, atomic per phase) or continue on the same branch?
+- **Bag composition schema** (2.1.b prerequisite): new `allocation_ruleset_components` table, or extend the existing `AllocationRuleset.rules` JSON? Surface this before starting 2.1.b.
+- **Backfill scope** (2.1.f): historical exited visits — backfill `event_distributed` movements for them, or leave history alone and only post forward? Audit says "**only if** ops confirms historical data was zeroed elsewhere." Need to confirm with the user what's been zeroed.
+- **(at session start)** verify the override modal manual walkthrough was successful (HANDOFF assumed it was, but if you find a UI bug, fix BEFORE Phase 2).
 
 ### ADR index
 - ADR-001 — AUDIT_REPORT.md Part 13 is the spec
 - ADR-002 — UserController is admin-only
-- (no new ADRs in 1.2 — all reviewer findings logged as Deviations)
+
+(No new ADRs in Phase 1.3 — all reviewer findings logged as Deviations.)
 
 ### Coverage gaps and known issues (carry forward)
-- **HTTP feature tests for event-day routes** (markExited, transition, EventDayController::reorder) deferred to Phase 5 due to session auth-code scaffolding cost.
+
+- **HTTP feature tests for event-day routes** (markExited, transition, EventDayController::reorder) deferred to Phase 5 due to session auth-code scaffolding cost. Phase 2.1.c will add hooks here, so this gap may need closing if changing markLoaded breaks observable behavior in untested ways.
 - **Pre-existing quirk in monitor.blade.php**: loader column's `onEnd` calls `sendReorder()` reading `#scanner-list`, not `#loader-list`.
 - **Monitor route is `auth`-only** (no `permission:` middleware).
-- **(NEW) `overview()` / `overviewTrend()` / `trends()` regression coverage gap**: their MySQL-only SQL (`TIMESTAMPDIFF`, `DATE_FORMAT`, `YEARWEEK`) doesn't run on the in-memory sqlite test DB. The 1.2.c snapshot-side changes in those methods are visually identical to the `demographics()` and `eventPerformance()` tests that DO run. Future cleanup: factor pivot-SUM into a small private helper and add a sqlite-portable unit test, or add MySQL CI environment.
-- **(retired)** ~~1.2.c COALESCE requirement~~ — closed by 1.2.b NOT NULL flip.
+- **(carried from 1.2.c)** `overview()` / `overviewTrend()` / `trends()` regression coverage gap: their MySQL-only SQL doesn't run on the in-memory sqlite test DB. Phase 2 won't directly touch these but should be aware.
+- **(carried from 1.3.d)** **Browser-level coverage gap on the override modal**: the JS reading the 422 payload is not exercised by PHPUnit. Future Phase 5 could add Laravel Dusk tests for the check-in flow if browser-level coverage becomes a priority. Manual test plan in commit message of 360e406.
+- **(carried from 1.3.c)** PII retention TODO on the `checkin_overrides.reason` column: supervisor free-text may contain household member names. Phase 4's broader `audit_logs` viewer will need a retention policy + purge job.
+- **A11y on Alpine modals** (createPanel, override modal): missing `role="dialog"`, `aria-modal`, focus trap. Project-wide gap; address in a Phase 5 a11y pass.
 
 ### Working rules carried across sessions
 - **Thoroughness over speed.** Decompose any sub-task touching >4 files into smaller commits.
-- **Migration safety.** `mysqldump` before destructive operations; every migration has working `down()`; skip-on-empty patterns.
-- **Code-reviewer subagent** before each commit. Findings caught: DELETE gap (P0); redundant `default(null)` + overflow risk (1.1.c.1); client poll race + validator scope leak + Carbon parse-on-garbage + unique-violation 500 vs 409 (1.1.c.2); missing 403 test + `allLanes` cache leak (1.1.c.3); missing `withPivot()` (1.2.a); shared snapshot helper + Log::warning + COALESCE safety net (1.2.b); doc comments on dead-weight join + roster-vs-analytical semantic (1.2.c).
-- **Commit messages** reference `AUDIT_REPORT.md` Part/Phase. ADRs for non-obvious decisions; Deviations log in LOG.md.
-- **Subagent delegation** for read-only research to keep main context lean.
-- **Stage Phase paths explicitly** — never `git add .`.
+- **Migration safety.** `mysqldump` before destructive operations; every migration has working `down()`; skip-on-empty patterns for backfills.
+- **Code-reviewer subagent before each commit.** Findings have been load-bearing in every Phase 1 sub-task — keep doing this.
+- **Commit messages reference `AUDIT_REPORT.md` Part/Phase.** ADRs for non-obvious decisions; Deviations log in LOG.md for everything that diverges from spec.
+- **Subagent delegation for read-only research** to keep main context lean.
+- **Stage Phase paths explicitly** — never `git add .`. Lots of unrelated uncommitted work in the tree.
+- **Plain-English orientation before each step** (per user feedback memory `feedback_explain_before_doing.md`): explain what's about to happen and why, framed in food-bank-operational terms, before tool calls. Apply to non-trivial reads too.
 
 ### Context budget at handoff
-~80%+ used. Red. Phase 1.3 introduces an exception class + service-flow change + controller catch + UI modal — moderate complexity. **Strongly recommend `/clear` and resume from this HANDOFF before starting 1.3.**
+
+Session 3 ran long: from Phase 1.2 close through all of Phase 1.3 (a, b, c, d) + the auth_code_length drive-by fix + Phase 1.3 merge + this HANDOFF rewrite. Recommend `/clear` and resume from this HANDOFF before starting Phase 2.
