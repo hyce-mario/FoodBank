@@ -34,7 +34,9 @@ use Illuminate\Support\Facades\Route;
 // Simple typeable URLs: /intake/9, /scanner/9, /loader/9, /exit/9
 foreach (['intake', 'scanner', 'loader', 'exit'] as $_edRole) {
     Route::get("/{$_edRole}/{event}",        [EventDayController::class, 'page'])       ->name("event-day.{$_edRole}");
-    Route::post("/{$_edRole}/{event}/auth",  [EventDayController::class, 'submitAuth']) ->name("event-day.{$_edRole}.auth");
+    // Phase 3.1: auth-code POST is throttled per IP + role + event to prevent brute-force.
+    Route::post("/{$_edRole}/{event}/auth",  [EventDayController::class, 'submitAuth']) ->name("event-day.{$_edRole}.auth")
+         ->middleware('throttle:auth-code');
     Route::post("/{$_edRole}/{event}/out",   [EventDayController::class, 'logout'])     ->name("event-day.{$_edRole}.logout");
     Route::get("/{$_edRole}/{event}/data",   [EventDayController::class, 'data'])       ->name("event-day.{$_edRole}.data");
 }
@@ -52,14 +54,18 @@ Route::prefix('ed')->name('event-day.')->group(function () {
 Route::prefix('register')->name('public.')->group(function () {
     Route::get('/',              [PublicEventController::class, 'index'])    ->name('events');
     Route::get('/{event}',       [PublicEventController::class, 'register']) ->name('register');
-    Route::post('/{event}',      [PublicEventController::class, 'submit'])   ->name('submit');
+    // Phase 3.1: throttle submission to prevent form spam / duplicate registrations.
+    Route::post('/{event}',      [PublicEventController::class, 'submit'])   ->name('submit')
+         ->middleware('throttle:5,1');
     Route::get('/{event}/success',[PublicEventController::class, 'success']) ->name('success');
 });
 
 // ─── Public Review Submission (no auth required) ──────────────────────────────
 Route::prefix('review')->name('public.reviews.')->group(function () {
     Route::get('/',  [PublicReviewController::class, 'create'])->name('create');
-    Route::post('/', [PublicReviewController::class, 'store']) ->name('store');
+    // Phase 3.1: throttle to prevent review spam.
+    Route::post('/', [PublicReviewController::class, 'store']) ->name('store')
+         ->middleware('throttle:5,1');
 });
 
 // ─── Public Volunteer Check-In (no auth required) ─────────────────────────────
@@ -68,8 +74,11 @@ Route::prefix('review')->name('public.reviews.')->group(function () {
 Route::prefix('volunteer-checkin')->name('volunteer-checkin.')->group(function () {
     Route::get('/',         [PublicVolunteerCheckInController::class, 'index'])   ->name('index');
     Route::get('/search',   [PublicVolunteerCheckInController::class, 'search'])  ->name('search');
-    Route::post('/checkin', [PublicVolunteerCheckInController::class, 'checkIn']) ->name('checkin');
-    Route::post('/signup',  [PublicVolunteerCheckInController::class, 'signUp'])  ->name('signup');
+    // Phase 3.1: throttle write endpoints to prevent check-in spam.
+    Route::post('/checkin', [PublicVolunteerCheckInController::class, 'checkIn']) ->name('checkin')
+         ->middleware('throttle:5,1');
+    Route::post('/signup',  [PublicVolunteerCheckInController::class, 'signUp'])  ->name('signup')
+         ->middleware('throttle:5,1');
 });
 
 // ─── Guest Routes ─────────────────────────────────────────────────────────────
