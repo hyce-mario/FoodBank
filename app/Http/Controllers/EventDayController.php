@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\InsufficientStockException;
 use App\Models\Event;
 use App\Models\Visit;
+use App\Services\DistributionPostingService;
 use App\Services\VisitReorderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class EventDayController extends Controller
@@ -260,7 +263,25 @@ class EventDayController extends Controller
             return response()->json(['error' => 'Visit is not in a loadable status.'], 422);
         }
 
-        $visit->update(['visit_status' => 'loaded', 'loading_completed_at' => now()]);
+        try {
+            // Status flip + inventory deduction in a single transaction so a
+            // stock shortage rolls back the status change — the visit stays
+            // queued and the loader can choose to skip or substitute (2.1.e).
+            DB::transaction(function () use ($visit) {
+                $visit->update(['visit_status' => 'loaded', 'loading_completed_at' => now()]);
+                app(DistributionPostingService::class)->postForVisit($visit);
+            });
+        } catch (InsufficientStockException $e) {
+            return response()->json([
+                'error'             => 'insufficient_stock',
+                'message'           => 'Not enough stock to complete this distribution.',
+                'inventory_item_id' => $e->inventoryItemId,
+                'needed'            => $e->needed,
+                'available'         => $e->available,
+                'event_id'          => $e->eventId,
+            ], 422);
+        }
+
         return response()->json(['ok' => true]);
     }
 
