@@ -5,10 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name', 'FoodBank') }} &mdash; @yield('title', 'Dashboard')</title>
+    @php $faviconPath = \App\Services\SettingService::get('branding.favicon_path', ''); @endphp
+    @if($faviconPath)
+        <link rel="icon" href="{{ \Illuminate\Support\Facades\Storage::url($faviconPath) }}">
+    @endif
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    {{-- ── Brand CSS variables from settings ──────────────────────────── --}}
+    <style>
+        :root {
+            --brand-primary:   {{ $brandingSettings['primary_color']   ?? '#f97316' }};
+            --brand-secondary: {{ $brandingSettings['secondary_color'] ?? '#1b2b4b' }};
+            --brand-accent:    {{ $brandingSettings['accent_color']    ?? '#ea6b0a' }};
+            --sidebar-bg:      {{ $brandingSettings['sidebar_bg']      ?? '#ffffff' }};
+            --nav-text:        {{ $brandingSettings['nav_text_color']  ?? '#374151' }};
+        }
+    </style>
     @stack('styles')
 </head>
 <body class="h-full bg-gray-50 font-sans"
@@ -33,24 +47,32 @@
 {{-- ═══════════════════════════════════════════════════════════
      SIDEBAR
 ═══════════════════════════════════════════════════════════ --}}
-<aside class="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200
+<aside class="fixed inset-y-0 left-0 z-50 w-64 border-r border-gray-200
                flex flex-col transition-transform duration-300 ease-in-out
                lg:translate-x-0"
-       :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'">
+       :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+       style="background-color: var(--sidebar-bg); color: var(--nav-text);">
 
     {{-- Logo ──────────────────────────────────────────────────────── --}}
     <div class="flex items-center gap-3 px-5 py-5 border-b border-gray-100 flex-shrink-0">
-        <div class="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center flex-shrink-0">
-            {{-- Gift / food bundle icon --}}
-            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 1 0 9.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1 1 14.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
-            </svg>
-        </div>
-        <div>
-            <span class="text-navy-700 font-bold text-base tracking-tight">FoodBank</span>
-            <span class="block text-[10px] text-gray-400 font-medium -mt-0.5 tracking-wide uppercase">Management</span>
-        </div>
+        @php $logoPath = \App\Services\SettingService::get('branding.logo_path', ''); @endphp
+        @if($logoPath)
+            <img src="{{ \Illuminate\Support\Facades\Storage::url($logoPath) }}"
+                 alt="{{ config('app.name') }}"
+                 class="h-9 w-auto max-w-[140px] object-contain flex-shrink-0">
+        @else
+            <div class="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center flex-shrink-0">
+                {{-- Gift / food bundle icon --}}
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 1 0 9.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1 1 14.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
+                </svg>
+            </div>
+            <div>
+                <span class="text-navy-700 font-bold text-base tracking-tight">{{ config('app.name', 'FoodBank') }}</span>
+                <span class="block text-[10px] text-gray-400 font-medium -mt-0.5 tracking-wide uppercase">Management</span>
+            </div>
+        @endif
         {{-- Close button on mobile --}}
         <button @click="sidebarOpen = false"
                 class="ml-auto lg:hidden text-gray-400 hover:text-gray-600 p-1 rounded-lg">
@@ -80,19 +102,26 @@
                     </a>
                 </li>
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('checkin.index') }}" class="nav-item {{ request()->routeIs('checkin.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
                         </svg>
                         <span>Check-in</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
                     </a>
                 </li>
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('events.index') }}"
+                       class="nav-item {{ request()->routeIs('events.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/>
                         </svg>
                         <span>Events</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
                     </a>
                 </li>
                 <li>
@@ -107,31 +136,33 @@
                         </svg>
                     </a>
                 </li>
+                
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('monitor.index') }}"
+                       class="nav-item {{ request()->routeIs('monitor.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/>
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
                         </svg>
                         <span>Visit Monitor</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
                     </a>
                 </li>
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('visit-log.index') }}"
+                       class="nav-item {{ request()->routeIs('visit-log.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"/>
                         </svg>
                         <span>Visit Log</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" class="nav-item nav-item-inactive">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
                         </svg>
-                        <span>Inventory</span>
                     </a>
                 </li>
+                
             </ul>
         </div>
 
@@ -140,7 +171,8 @@
             <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-3 mb-2">Management</p>
             <ul class="space-y-0.5">
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('allocation-rulesets.index') }}"
+                       class="nav-item {{ request()->routeIs('allocation-rulesets.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"/>
                         </svg>
@@ -148,39 +180,68 @@
                     </a>
                 </li>
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('volunteers.index') }}"
+                       class="nav-item {{ request()->routeIs('volunteers.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z"/>
                         </svg>
                         <span>Volunteers</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" class="nav-item nav-item-inactive">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 3.75 9.375v-4.5ZM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 0 1-1.125-1.125v-4.5ZM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 13.5 9.375v-4.5Z"/>
-                            <path d="M6.75 6.75h.75v.75h-.75v-.75ZM6.75 16.5h.75v.75h-.75v-.75ZM16.5 6.75h.75v.75h-.75v-.75Z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 16.875h3.375a3 3 0 0 0 3-3V13.5M13.5 16.875v3M13.5 16.875H12m4.125-5.625H13.5m0-3.375v3.375m0-3.375h3.375"/>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
                         </svg>
-                        <span>QR Code</span>
                     </a>
                 </li>
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('finance.dashboard') }}"
+                       class="nav-item {{ request()->routeIs('finance.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z"/>
+                        </svg>
+                        <span>Finance</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ route('inventory.items.index') }}"
+                       class="nav-item {{ request()->routeIs('inventory.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
+                        </svg>
+                        <span>Inventory</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ route('reviews.index') }}"
+                       class="nav-item {{ request()->routeIs('reviews.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z"/>
+                        </svg>
+                        <span>Reviews</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
+                    </a>
+                </li>
+                
+                
+                <li>
+                    <a href="{{ route('reports.overview') }}"
+                       class="nav-item {{ request()->routeIs('reports.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
                         </svg>
-                        <span>Report</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="#" class="nav-item nav-item-inactive">
-                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z"/>
+                        <span>Reports</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
                         </svg>
-                        <span>Print Center</span>
                     </a>
                 </li>
+                
             </ul>
         </div>
 
@@ -189,23 +250,32 @@
             <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-3 mb-2">Administration</p>
             <ul class="space-y-0.5">
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('users.index') }}"
+                       class="nav-item {{ request()->routeIs('users.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z"/>
                         </svg>
                         <span>Users</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
                     </a>
                 </li>
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('roles.index') }}"
+                       class="nav-item {{ request()->routeIs('roles.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
                         </svg>
                         <span>Roles &amp; Permissions</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
                     </a>
                 </li>
                 <li>
-                    <a href="#" class="nav-item nav-item-inactive">
+                    <a href="{{ route('settings.index') }}"
+                       class="nav-item {{ request()->routeIs('settings.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"/>
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
@@ -216,6 +286,20 @@
                         </svg>
                     </a>
                 </li>
+                @can('viewAny', App\Models\AuditLog::class)
+                <li>
+                    <a href="{{ route('audit-logs.index') }}"
+                       class="nav-item {{ request()->routeIs('audit-logs.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
+                        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
+                        </svg>
+                        <span>Audit Log</span>
+                        <svg class="w-4 h-4 ml-auto opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+                        </svg>
+                    </a>
+                </li>
+                @endcan
                 <li>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
@@ -232,20 +316,22 @@
     </nav>
 
     {{-- Bottom user strip ─────────────────────────────────────────── --}}
-    <div class="flex-shrink-0 border-t border-gray-100 px-4 py-3 flex items-center gap-3">
-        <div class="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+    <a href="{{ route('profile') }}"
+       class="flex-shrink-0 border-t border-gray-100 px-4 py-3 flex items-center gap-3
+              hover:bg-gray-50 transition-colors group"
+       title="My Profile">
+        <div class="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0 select-none">
             {{ strtoupper(substr(auth()->user()->name ?? 'A', 0, 1)) }}
         </div>
         <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium text-gray-900 truncate">{{ auth()->user()->name ?? '' }}</p>
+            <p class="text-sm font-medium text-gray-900 truncate group-hover:text-brand-600 transition-colors">{{ auth()->user()->name ?? '' }}</p>
             <p class="text-xs text-gray-400 truncate">{{ auth()->user()->role?->display_name ?? '' }}</p>
         </div>
-        <button class="text-gray-400 hover:text-gray-600 p-1 rounded-lg flex-shrink-0">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
-            </svg>
-        </button>
-    </div>
+        <svg class="w-4 h-4 text-gray-400 group-hover:text-brand-500 transition-colors flex-shrink-0"
+             fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/>
+        </svg>
+    </a>
 </aside>
 
 {{-- ═══════════════════════════════════════════════════════════
@@ -342,7 +428,7 @@
                         <p class="text-sm font-semibold text-gray-900 truncate">{{ auth()->user()->name ?? '' }}</p>
                         <p class="text-xs text-gray-400 truncate">{{ auth()->user()->email ?? '' }}</p>
                     </div>
-                    <a href="#" class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                    <a href="{{ route('profile') }}" class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                         <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
                         </svg>
@@ -380,8 +466,11 @@
     {{-- FOOTER ──────────────────────────────────────────────────────── --}}
     <footer class="px-6 py-4 border-t border-gray-200 bg-white">
         <div class="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-400">
-            <span>{{ date('Y') }} &copy; Food Bank. All Right Reserved</span>
-            <span>Designed &amp; Developed by <span class="text-brand-500 font-medium">Tecfe</span></span>
+            <span>{{ date('Y') }} &copy; {{ $orgSettings['name'] ?? config('app.name', 'FoodBank') }}. All Rights Reserved</span>
+            @if(! empty($orgSettings['website']))
+                <a href="{{ $orgSettings['website'] }}" target="_blank" rel="noopener"
+                   class="hover:text-brand-500 transition-colors">{{ $orgSettings['website'] }}</a>
+            @endif
         </div>
     </footer>
 </div>
