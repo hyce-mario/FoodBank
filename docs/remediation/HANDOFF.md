@@ -4,17 +4,19 @@
 
 ---
 
-## Current state — 2026-04-30 (end of Session 3, **Phase 1 fully closed**)
+## Current state — 2026-04-30 (Session 4, **Phase 2.1.a closed**)
 
 ### Where we are
 
-**Phase 1 is fully complete.** All three sub-phases (1.1 race conditions, 1.2 snapshot demographics, 1.3 one-visit-per-event guard) are merged to `main` and tagged. Suite is green at 67/67 on main.
+**Phase 1 is fully complete** (tagged). **Phase 2.1.a is done** — `DistributionPostingService` skeleton + `InsufficientStockException` committed to `main` (14e1fd7). Suite is green at 77/77.
 
-The next call is **start Phase 2 — Reporting Truth.** This is the biggest single lift in the audit (~3 days estimated; AUDIT_REPORT.md §2). It introduces a brand-new service class (`DistributionPostingService`) and rewires the visit-completion flow to auto-decrement inventory. The primary acceptance criterion is "running a 50-visit event causes `InventoryItem.quantity_on_hand` to decrease by exactly the rule-derived quantity." Everything in Phase 2 hangs off that.
+The next call is **Phase 2.1.b — bag-composition resolver**. This is where the stub `resolveBagComposition()` gets replaced with real data. It requires a design decision (see open question below) that must be surfaced to the user before writing a line of code.
 
 ### Active branch
 
-`main` — Phase 1.3 just merged. No active feature branch yet.
+`main` — 2.1.a just committed directly to main. No feature branch yet for 2.1.b.
+
+> **Note on branching:** HANDOFF previously said to cut `phase-2.1/distribution-posting-service` off main before starting. Since 2.1.a landed directly on main in this session, confirm with the user whether to cut a branch for 2.1.b–f or continue landing sub-tasks on main.
 
 ### Tags on main (pushed to origin)
 
@@ -22,11 +24,18 @@ The next call is **start Phase 2 — Reporting Truth.** This is the biggest sing
 - `phase-1.2-complete` (visit-households snapshot demographics)
 - `phase-1.3-complete` (one-visit-per-event guard + override flow + auth_code_length fix)
 
+*(No phase-2.x tag yet — 2.1 is in-progress.)*
+
+### What's done in Phase 2
+
+- ✅ **2.1.a** — `DistributionPostingService` skeleton + `InsufficientStockException` + 4 unit tests (14e1fd7)
+
 ### What's done in Phase 1
+
 - ✅ **1.1.a** — Unique index `(event_id, lane, queue_position)` on visits
 - ✅ **1.1.b** — `EventCheckInService::checkIn` transaction + `lockForUpdate`
-- ✅ **1.1.c.1** — `queue_position` nullable + null-on-exit (precondition for safe reorder)
-- ✅ **1.1.c.2** — `EventDayController::reorder` + new `VisitReorderService` with optimistic versioning
+- ✅ **1.1.c.1** — `queue_position` nullable + null-on-exit
+- ✅ **1.1.c.2** — `EventDayController::reorder` + `VisitReorderService` with optimistic versioning
 - ✅ **1.1.c.3** — `VisitMonitorController::reorder` swap to shared service
 - ✅ **1.2.a** — Snapshot columns on `visit_households` + `withPivot()`
 - ✅ **1.2.b** — Snapshot at attach time + NOT NULL flip + shared `Household::toVisitPivotSnapshot()`
@@ -35,45 +44,47 @@ The next call is **start Phase 2 — Reporting Truth.** This is the biggest sing
 - ✅ **1.3.b** — `CheckInController::store` catch + 422 override-modal payload
 - ✅ **1.3.c** — `checkin_overrides` table + `CheckInOverride` model (replaces `Log::warning`)
 - ✅ **1.3.d** — Override modal in `checkin/index.blade.php` (Alpine.js)
-- ✅ **drive-by fix** — Removed configurable `auth_code_length` setting; pinned to `Event::AUTH_CODE_LENGTH = 4`
+- ✅ **drive-by fix** — Removed configurable `auth_code_length`; pinned to `Event::AUTH_CODE_LENGTH = 4`
 
 ### What's next — start here on resume
 
-**Phase 2.1.a — `DistributionPostingService` skeleton + unit tests.**
+**Phase 2.1.b — bag-composition resolver from `AllocationRuleset`.**
 
-Spec: AUDIT_REPORT.md Part 13 §2.1 (lines ~420-432):
-1. **Create `app/Services/DistributionPostingService.php`** with a single method `postForVisit(Visit $visit): void`.
-2. **Inside a `DB::transaction`:**
-   - Resolve event's `AllocationRuleset` and bag composition (define a `bag_composition` schema if not already explicit — see open question below).
-   - For each component: `(item_id, qty_per_household × household_count)`.
-   - Verify `InventoryItem::lockForUpdate()->find($itemId)->quantity_on_hand >= needed`. If insufficient, throw `InsufficientStockException` and **do not** post the movement.
-   - Create `InventoryMovement::create([... 'movement_type' => 'event_distributed' ...])`.
-   - Update `EventInventoryAllocation::distributed_quantity += needed` and `InventoryItem::quantity_on_hand -= needed`.
+Before writing a single line, surface the open question below to the user and get a decision. Then:
 
-**Concrete plan for 2.1.a (skeleton + unit tests):**
+1. Implement the chosen schema (migration + model, or JSON extension).
+2. Fill in `DistributionPostingService::resolveBagComposition(Visit $visit): array` to query the real composition.
+3. Add tests that use the real resolver path (not the anonymous-subclass injection trick from 2.1.a) — including the deferred M5 test: two real items where the second has insufficient stock → both movements rolled back.
 
-1. Create `app/Exceptions/InsufficientStockException.php` (extends `RuntimeException`). Carries `eventId`, `inventoryItemId`, `needed`, `available` for the controller to render a "skip / substitute / cancel" modal in 2.1.e.
-2. Create `app/Services/DistributionPostingService.php` with the `postForVisit(Visit $visit): void` skeleton. Implementation can stub the bag-composition resolver in 2.1.a (return hardcoded `[]` or throw NotImplemented) and fill it in 2.1.b — split per the established sub-task pattern.
-3. Service tests: empty-allocation (no posting, no error), happy-path (one item, correct movement created), insufficient stock (throws + rolls back), transaction rollback proof (FK violation on InventoryMovement → no allocation update).
+**Critical open question — must be answered before 2.1.b:**
 
-**Critical open question for the user before 2.1.b:**
-- The audit spec says "Resolve event's `AllocationRuleset` and bag composition" but the `AllocationRuleset` model today only has a `getBagsFor(int $size)` method returning a number of bags. There's no schema for *what's in a bag* (which inventory items, how many of each). The audit explicitly says **"define a `bag_composition` schema if not already explicit"**. So 2.1.b will require either:
-  - A new `allocation_ruleset_components` table (one row per item-per-ruleset, with qty per household), OR
-  - Embedding bag composition in the existing `AllocationRuleset.rules` JSON column (denser but harder to query).
-- This is a meaningful design decision that should not be made unilaterally. **Surface this question early in 2.1.b.**
+The `AllocationRuleset` model today only has `getBagsFor(int $size): int` which returns a *count of bags* for a household size. There is no schema for *what's in a bag* — which inventory items, how many of each. Two options:
+
+- **Option A: new `allocation_ruleset_components` table** — one row per item per ruleset, with `qty_per_bag` (integer). Clean relational model; easy to query; requires a migration and a new model.
+- **Option B: extend `AllocationRuleset.rules` JSON** — embed item composition inside the existing JSON alongside the min/max/bags rules, e.g. `{"min":1,"max":1,"bags":1,"components":[{"inventory_item_id":3,"qty_per_bag":2}]}`. No new table; denser; harder to query and validate.
+
+**Do not choose unilaterally. Ask the user.**
 
 ### Phase 2 sub-task status
-- ⬜ **2.1.a** Service skeleton + unit tests
-- ⬜ **2.1.b** Bag-composition resolver from `AllocationRuleset`
+- ✅ **2.1.a** Service skeleton + unit tests (14e1fd7)
+- ⬜ **2.1.b** Bag-composition resolver from `AllocationRuleset` — **BLOCKED on schema decision**
 - ⬜ **2.1.c** Hook into `markLoaded` happy path
 - ⬜ **2.1.d** Hook into supervisor override path (`VisitMonitorController`)
 - ⬜ **2.1.e** `InsufficientStockException` UX (modal with skip/substitute/cancel)
 - ⬜ **2.1.f** Backfill + reconciliation artisan command (`inventory:reconcile {event}`)
 - ⬜ **2.2** Nightly reconciliation schedule
 
-### Branch / merge guidance
+### Key implementation details from 2.1.a (carry into 2.1.b–f)
 
-Cut `phase-2.1/distribution-posting-service` off the new main. Sub-task commits land on this branch; merge `--no-ff` to main + tag `phase-2.1-complete` once 2.1.a–f close. 2.2 is a separate sub-phase, separate branch.
+- `postForVisit(Visit $visit): void` is the single public entry point.
+- Inside `DB::transaction`, iterates `resolveBagComposition()` result: each component is `['inventory_item_id' => int, 'quantity' => int]` where `quantity` is the **total for this visit** (not per-household — the resolver handles multiplication).
+- `InventoryItem::lockForUpdate()->findOrFail($itemId)` serialises concurrent calls for the same item.
+- `InsufficientStockException` is thrown *before* any movement is written — the transaction has no partial state to roll back.
+- `EventInventoryAllocation::where(...)->increment(...)` is a delta SQL UPDATE (no row lock needed; immune to phantom reads because it is not a SELECT-then-UPDATE).
+- `inventory_movements` schema: no `visit_id` column. Movement is linked to event only.
+- `resolveBagComposition()` is `protected` — anonymous subclass injection in tests is the approved pattern for this service.
+
+### Branch / merge guidance
 
 Per the established convention:
 - Per-phase branch name: `phase-N.M/short-descriptive-name`
@@ -83,27 +94,27 @@ Per the established convention:
 ### Environment state
 
 - PHP 8.2.12 via XAMPP, working directory `c:\xampp\htdocs\Foodbank`.
-- MySQL DB `foodbank` is the dev DB. **Migrations applied to MySQL through Phase 1**: 1.1.a, 1.1.c.1, 1.2.a, 1.2.b, 1.3.c (`checkin_overrides`), drive-by `remove_auth_code_length_setting_row`. Phase 2 will need its own backups before any new schema work.
-- Tests use sqlite `:memory:`. **67 tests passing** on main.
-- Node/npm not installed. Phase 2.1.e has a UI modal — server-rendered Alpine.js Blade is fine, no Vite needed (same pattern used for the Phase 1.3.d override modal).
+- MySQL DB `foodbank` is the dev DB. **Migrations applied to MySQL through Phase 1**: 1.1.a, 1.1.c.1, 1.2.a, 1.2.b, 1.3.c (`checkin_overrides`), drive-by `remove_auth_code_length_setting_row`. Phase 2.1.b will introduce a new migration — take a mysqldump backup first.
+- Tests use sqlite `:memory:`. **77 tests passing** on main.
+- Node/npm not installed. Phase 2.1.e has a UI modal — server-rendered Alpine.js Blade is fine, no Vite needed (same pattern used for Phase 1.3.d override modal).
 - Windows scheduled task `FoodBank Schedule Runner` runs `php artisan schedule:run` every minute, hidden (LogonType=S4U as of 2026-04-30).
 - Git identity per-command: `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"`.
-- Pre-Phase-2 mysqldump backups will be taken before any schema-altering work begins.
 
 ### In-flight files / unfinished work
 
-None. Phase 1 is closed; main is clean.
+None from Phase 1. Phase 2.1.a added three new tracked files:
+- `app/Exceptions/InsufficientStockException.php`
+- `app/Services/DistributionPostingService.php`
+- `tests/Feature/DistributionPostingServiceTest.php`
 
 ### Blockers
 
-None for 2.1.a. The bag-composition schema decision (see open question above) blocks 2.1.b but not the skeleton.
+- **2.1.b is blocked** on the bag-composition schema decision. Surface to user at start of next step.
+- **2.1.f backfill scope**: historical exited visits — backfill `event_distributed` movements for them, or leave history alone and only post forward? Audit says "**only if** ops confirms historical data was zeroed elsewhere." Confirm with user before 2.1.f.
 
 ### User's pre-existing uncommitted work
 
-Many files remain modified/untracked from before Phase 0 began. Phase 1 commits have organically pulled in over a dozen of these (Visit.php, EventCheckInService.php, ReportAnalyticsService.php, DemoSeeder.php, SettingService.php, CheckInController.php, CheckInRequest.php, checkin/index.blade.php, settings/sections/public_access.blade.php, Event.php, etc.) as the work touched them.
-
-Phase 2 will likely pull in for the first time:
-- `app/Services/InventoryService.php` (untracked; if 2.1.a integrates with it)
+Many files remain modified/untracked from before Phase 0 began. Phase 2 will likely pull in for the first time:
 - `app/Http/Controllers/EventDayController.php` (untracked; 2.1.c hooks `markLoaded` here)
 - `app/Http/Controllers/VisitMonitorController.php` (untracked; 2.1.d hooks the supervisor override path)
 - Possibly `app/Models/EventInventoryAllocation.php`, `app/Models/InventoryItem.php`, `app/Models/InventoryMovement.php`, `app/Models/AllocationRuleset.php`
@@ -111,52 +122,50 @@ Phase 2 will likely pull in for the first time:
 **Stage explicitly via `git add <path>`** — never `git add .`.
 
 ### Open questions for the user
-- **Bag composition schema** (2.1.b prerequisite): new `allocation_ruleset_components` table, or extend the existing `AllocationRuleset.rules` JSON? Surface this before starting 2.1.b.
-- **Backfill scope** (2.1.f): historical exited visits — backfill `event_distributed` movements for them, or leave history alone and only post forward? Audit says "**only if** ops confirms historical data was zeroed elsewhere." Need to confirm with the user what's been zeroed.
-- **(at session start)** verify the override modal manual walkthrough was successful (HANDOFF assumed it was, but if you find a UI bug, fix BEFORE Phase 2).
+- **Bag composition schema** (2.1.b prerequisite, BLOCKER): new `allocation_ruleset_components` table (Option A), or extend `AllocationRuleset.rules` JSON (Option B)? Ask before doing anything.
+- **Backfill scope** (2.1.f): historical exited visits — forward-only or include history?
 
 ### ADR index
 - ADR-001 — AUDIT_REPORT.md Part 13 is the spec
 - ADR-002 — UserController is admin-only
 
-(No new ADRs in Phase 1.3 — all reviewer findings logged as Deviations.)
-
 ### Constraints discovered during the Phase 1.3.d browser walkthrough (2026-04-30)
 
 These are *environmental* constraints, not phase work. Future-you should be aware before adding any UI:
 
-- **Tailwind classes must be verified against the prebuilt CSS.** Node/npm aren't installed, so `public/build/assets/app-*.css` is frozen at whatever was compiled before. Any new Tailwind class that wasn't already referenced somewhere in the project's source CSS doesn't exist in the build and renders as nothing. Bit us hard with `sm:max-w-md`, `bg-amber-600` (base), `hover:bg-amber-700`, `gap-1.5`, `py-2.5`, `space-y-0.5`, `pb-safe`, `min-w-40`. **Quick check before using a new class:** `grep -o "[.]CLASSNAME" public/build/assets/app-*.css`. Verified-present alternatives that have been useful: `sm:max-w-sm` (only sm:max-w-* responsive variant), `max-w-md` (base), `bg-brand-600 hover:bg-brand-700` (project orange), `gap-2`, `py-2`, `space-y-1`, `min-w-32`.
-- **Settings pages use hardcoded section blades.** `resources/views/settings/sections/<group>.blade.php` lists each setting field by key with an `@include('settings._field', …)` line. Adding a new key to `SettingService::definitions()` is NOT enough — the section blade must be edited too, OR the field stays invisible in the admin UI. Conversely, removing a key from definitions breaks any section blade that still references it (undefined-index error). Bit us twice: once removing `auth_code_length` from public_access (caught), once adding `re_checkin_policy` to event_queue (missed in 1.3.a, caught in walkthrough).
-- **JS in checkin/index.blade.php now uses `appUrl(path)` for all fetches.** Don't reintroduce raw `fetch('/checkin/...')` patterns — they break under subdirectory deployment (e.g. `/Foodbank/public/`). The `event-day` and `monitor` blades likely have the same latent bug (their fetches weren't audited); fix when next touching those views.
+- **Tailwind classes must be verified against the prebuilt CSS.** Node/npm aren't installed, so `public/build/assets/app-*.css` is frozen. Any new Tailwind class not already referenced somewhere in the project's source CSS renders as nothing. Bad: `sm:max-w-md`, `bg-amber-600`, `hover:bg-amber-700`, `gap-1.5`, `py-2.5`, `space-y-0.5`, `pb-safe`, `min-w-40`. Good: `sm:max-w-sm`, `max-w-md`, `bg-brand-600 hover:bg-brand-700`, `gap-2`, `py-2`, `space-y-1`, `min-w-32`. **Check:** `grep -o "[.]CLASSNAME" public/build/assets/app-*.css`.
+- **Settings pages use hardcoded section blades.** `resources/views/settings/sections/<group>.blade.php` must be edited when adding/removing keys from `SettingService::definitions()`. Adding a key is not enough on its own.
+- **JS in checkin/index.blade.php uses `appUrl(path)` for all fetches.** Don't reintroduce raw `fetch('/checkin/...')` — breaks under subdirectory deployment. The `event-day` and `monitor` blades likely have the same latent bug; fix when next touching those views.
 
 ### Coverage gaps and known issues (carry forward)
 
-- **HTTP feature tests for event-day routes** (markExited, transition, EventDayController::reorder) deferred to Phase 5 due to session auth-code scaffolding cost. Phase 2.1.c will add hooks here, so this gap may need closing if changing markLoaded breaks observable behavior in untested ways.
+- **HTTP feature tests for event-day routes** (markExited, transition, EventDayController::reorder) deferred to Phase 5. Phase 2.1.c will add hooks here — may need closing if `markLoaded` changes break observable behavior.
 - **Pre-existing quirk in monitor.blade.php**: loader column's `onEnd` calls `sendReorder()` reading `#scanner-list`, not `#loader-list`.
 - **Monitor route is `auth`-only** (no `permission:` middleware).
-- **(carried from 1.2.c)** `overview()` / `overviewTrend()` / `trends()` regression coverage gap: their MySQL-only SQL doesn't run on the in-memory sqlite test DB. Phase 2 won't directly touch these but should be aware.
-- **(carried from 1.3.d)** **Browser-level coverage gap on the override modal**: the JS reading the 422 payload is not exercised by PHPUnit. Future Phase 5 could add Laravel Dusk tests for the check-in flow if browser-level coverage becomes a priority. Manual test plan in commit message of 360e406.
-- **(carried from 1.3.c)** PII retention TODO on the `checkin_overrides.reason` column: supervisor free-text may contain household member names. Phase 4's broader `audit_logs` viewer will need a retention policy + purge job.
-- **A11y on Alpine modals** (createPanel, override modal): missing `role="dialog"`, `aria-modal`, focus trap. Project-wide gap; address in a Phase 5 a11y pass.
+- **(carried from 1.2.c)** `overview()` / `overviewTrend()` / `trends()` regression coverage gap: MySQL-only SQL doesn't run on sqlite test DB.
+- **(carried from 1.3.d)** Browser-level coverage gap on the override modal: PHPUnit doesn't exercise the Alpine.js JS path. Future Phase 5 Dusk tests.
+- **(carried from 1.3.c)** PII retention TODO on `checkin_overrides.reason`: Phase 4 audit-log viewer will need a retention policy + purge job.
+- **A11y on Alpine modals**: missing `role="dialog"`, `aria-modal`, focus trap. Phase 5 a11y pass.
+- **(from 2.1.a reviewer, M5)** No test for two real items where the second has insufficient stock → first rolled back. Deferred to 2.1.b when the resolver is live.
 
 ### Working rules carried across sessions
 - **Thoroughness over speed.** Decompose any sub-task touching >4 files into smaller commits.
 - **Migration safety.** `mysqldump` before destructive operations; every migration has working `down()`; skip-on-empty patterns for backfills.
-- **Code-reviewer subagent before each commit.** Findings have been load-bearing in every Phase 1 sub-task — keep doing this.
+- **Code-reviewer subagent before each commit.** Findings have been load-bearing in every phase — keep doing this.
 - **Commit messages reference `AUDIT_REPORT.md` Part/Phase.** ADRs for non-obvious decisions; Deviations log in LOG.md for everything that diverges from spec.
 - **Subagent delegation for read-only research** to keep main context lean.
 - **Stage Phase paths explicitly** — never `git add .`. Lots of unrelated uncommitted work in the tree.
-- **Plain-English orientation before each step** (per user feedback memory `feedback_explain_before_doing.md`): explain what's about to happen and why, framed in food-bank-operational terms, before tool calls. Apply to non-trivial reads too.
+- **Plain-English orientation before each step**: explain what's about to happen and why, framed in food-bank-operational terms, before tool calls.
 
 ### Context budget at handoff
 
-Session 3 ran long: from Phase 1.2 close through all of Phase 1.3 (a, b, c, d) + the auth_code_length drive-by fix + Phase 1.3 merge + a browser walkthrough that surfaced 3 pre-existing bugs (subdir-deployment JS, prebuilt-CSS class limits, hardcoded settings section blades) + UX polish to the override modal and the new "family tag" pattern across 4 sites of checkin/index.blade.php. User cleared at end of session.
+Session 4 was focused: read all docs for context, then implemented Phase 2.1.a (InsufficientStockException + DistributionPostingService skeleton + 4 tests). Code-review pass confirmed M1–M4 were non-issues; M5 deferred. Committed 14e1fd7.
 
-Recent commits on main since the Phase 1.3 merge (98c7ce0):
-- `af6ca04` — docs: Phase 1 close handoff rewrite
-- `e359707` — fix: subdir-deployment-aware JS in checkin (appUrl helper)
-- `61a28f1` — fix: override modal visibility + expose policy in settings UI
-- `f12cca2` — fix: tighten override modal copy + widen panel + brief setting label
-- `17112d1` — feat: replace cryptic "X ppl" with family-tag callouts (4 sites)
+Recent commits on main (since Phase 1.3 merge):
+- `14e1fd7` — feat(inventory): Phase 2.1.a — DistributionPostingService skeleton + unit tests
+- `bdefe07` — feat(auth): EventDayOrAuth middleware lets public intake call /checkin/*
+- `3402051` — fix(register): treat same-day events as still-current, not past
+- `a3264d3` — fix(event-day): make all 4 role pages subdir-deployment-aware
+- `4237f5d` — docs(remediation): record post-1.3 polish + walkthrough constraints in HANDOFF
 
-The "family tag" pattern (Alpine x-data scoped popover with hover/click trigger, member count + 3 colored dots for children/adults/seniors with proper pluralization) lives in `resources/views/checkin/index.blade.php` at 4 sites. If a new place wants the same pattern, the user calls it the **family tag**.
+The "family tag" pattern (Alpine x-data scoped popover, member count + 3 colored dots for children/adults/seniors with pluralization) lives in `resources/views/checkin/index.blade.php` at 4 sites. User calls it the **family tag**.
