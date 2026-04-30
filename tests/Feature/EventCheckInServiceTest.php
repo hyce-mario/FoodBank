@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Exceptions\HouseholdAlreadyServedException;
+use App\Models\CheckInOverride;
 use App\Models\Event;
 use App\Models\Household;
 use App\Models\Visit;
@@ -179,8 +180,9 @@ class EventCheckInServiceTest extends TestCase
 
     /**
      * Phase 1.3, policy='override' + force=true: supervisor override succeeds
-     * and writes a Log::warning audit record (Phase 4 will replace this with
-     * formal audit_logs).
+     * and writes a structured row to checkin_overrides. Phase 1.3.c moved
+     * this from Log::warning to a real DB table so Phase 4's admin audit-log
+     * viewer inherits real history.
      */
     public function test_re_check_in_after_exit_with_policy_override_succeeds_with_force(): void
     {
@@ -190,13 +192,7 @@ class EventCheckInServiceTest extends TestCase
         $first = $this->service->checkIn($this->event, $h1, 1);
         $this->service->markDone($first);
 
-        \Illuminate\Support\Facades\Log::shouldReceive('warning')
-            ->once()
-            ->with('checkin.override', \Mockery::on(function ($ctx) use ($h1) {
-                return ($ctx['representative_id'] ?? null) === $h1->id
-                    && in_array($h1->id, $ctx['household_ids'] ?? [], true)
-                    && ($ctx['reason'] ?? null) === 'forgot a bag';
-            }));
+        $this->assertSame(0, CheckInOverride::count(), 'baseline: no override rows yet');
 
         $second = $this->service->checkIn(
             $this->event, $h1, 1,
@@ -207,6 +203,132 @@ class EventCheckInServiceTest extends TestCase
 
         $this->assertNotSame($first->id, $second->id);
         $this->assertSame(2, Visit::count());
+    }
+
+    /**
+     * Phase 1.3.c — structured override audit row. The supervisor click
+     * persists a checkin_overrides row with user_id (caller is currently
+     * unauthenticated in this test so it's NULL), event_id, the resolved
+     * representative + offending household IDs, the prior visit IDs, and
+     * the reason. Replaces the prior Log::warning approach.
+     */
+    public function test_supervisor_override_persists_checkin_override_row(): void
+    {
+        SettingService::set('event_queue.re_checkin_policy', 'override');
+
+        $h1 = $this->makeHousehold('Audrey', 'Audit');
+        $first = $this->service->checkIn($this->event, $h1, 1);
+        $this->service->markDone($first);
+
+        $second = $this->service->checkIn(
+            $this->event, $h1, 1,
+            representedIds: null,
+            force: true,
+            overrideReason: 'second bag — supervisor confirmed',
+        );
+
+        $this->assertSame(1, CheckInOverride::count());
+
+        $override = CheckInOverride::first();
+        $this->assertNull($override->user_id, 'no Auth::user in unit-test context → NULL preserves audit row');
+        $this->assertSame($this->event->id, $override->event_id);
+        $this->assertSame($h1->id, $override->representative_household_id);
+        $this->assertSame([$h1->id], $override->household_ids);
+        $this->assertSame([$first->id], $override->prior_visit_ids);
+        $this->assertSame('second bag — supervisor confirmed', $override->reason);
+        $this->assertNotNull($override->created_at);
+    }
+
+    /**
+     * Phase 1.3.c — when checkIn fails AFTER the override audit row is
+     * staged (e.g. an FK violation on attach() of a bad represented ID),
+     * the surrounding DB::transaction must roll BOTH the visit AND the
+     * audit row back. No orphan override rows for visits that never landed.
+     */
+    public function test_failed_check_in_after_override_rolls_back_audit_row(): void
+    {
+        SettingService::set('event_queue.re_checkin_policy', 'override');
+
+        $h1 = $this->makeHousehold('Roll', 'Back');
+        $first = $this->service->checkIn($this->event, $h1, 1);
+        $this->service->markDone($first);
+
+        try {
+            // 99999 is a non-existent represented id → service throws
+            // RuntimeException → transaction rolls back the override row too.
+            $this->service->checkIn(
+                $this->event, $h1, 1,
+                representedIds: [99999],
+                force: true,
+                overrideReason: 'will fail mid-transaction',
+            );
+            $this->fail('Expected RuntimeException for non-existent represented household');
+        } catch (\RuntimeException $e) {
+            // expected
+        }
+
+        $this->assertSame(
+            0,
+            CheckInOverride::count(),
+            'audit row must roll back when the surrounding visit creation fails'
+        );
+    }
+
+    /**
+     * Phase 1.3.c — service-level guard against empty reason on the override
+     * path. CheckInRequest already validates this for HTTP callers, but a
+     * direct service caller (test, console command, future internal code)
+     * could pass force=true with a null/empty reason. The DB's NOT NULL
+     * would catch this with a confusing integrity-violation stack; the
+     * service catches it first with a clear contract violation. Throwing
+     * inside the transaction also rolls the visit back, so no partial state.
+     */
+    public function test_force_with_empty_reason_throws_invalid_argument_and_rolls_back(): void
+    {
+        SettingService::set('event_queue.re_checkin_policy', 'override');
+
+        $h1 = $this->makeHousehold('Empty', 'Reason');
+        $first = $this->service->checkIn($this->event, $h1, 1);
+        $this->service->markDone($first);
+
+        try {
+            $this->service->checkIn(
+                $this->event, $h1, 1,
+                representedIds: null,
+                force: true,
+                overrideReason: '   ', // whitespace only — must be rejected
+            );
+            $this->fail('Expected InvalidArgumentException for empty override reason');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('non-empty reason', $e->getMessage());
+        }
+
+        $this->assertSame(1, Visit::count(), 'no second visit should have been created');
+        $this->assertSame(0, CheckInOverride::count(), 'no audit row should have been created');
+    }
+
+    /**
+     * Phase 1.3.c — policy='allow' must NOT write an audit row even when
+     * the caller passes force=true. The audit only captures genuine
+     * overrides (i.e., a guard that was actively bypassed). policy='allow'
+     * has no guard to bypass.
+     */
+    public function test_policy_allow_with_force_does_not_write_audit_row(): void
+    {
+        SettingService::set('event_queue.re_checkin_policy', 'allow');
+
+        $h1 = $this->makeHousehold('Sil', 'Ent');
+        $first = $this->service->checkIn($this->event, $h1, 1);
+        $this->service->markDone($first);
+
+        $this->service->checkIn(
+            $this->event, $h1, 1,
+            representedIds: null,
+            force: true,
+            overrideReason: 'force on allow policy is a no-op',
+        );
+
+        $this->assertSame(0, CheckInOverride::count());
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\HouseholdAlreadyServedException;
+use App\Models\CheckInOverride;
 use App\Models\Event;
 use App\Models\EventPreRegistration;
 use App\Models\Household;
@@ -76,12 +77,22 @@ class EventCheckInService
      * Throws HouseholdAlreadyServedException for the exited-only case when the configured
      * re-check-in policy refuses the new check-in.
      *
+     * Throws InvalidArgumentException when $force=true is passed without a non-empty
+     * $overrideReason — the audit row in checkin_overrides has reason NOT NULL and the
+     * service guards against bypass paths that skip CheckInRequest's validator (direct
+     * service callers from tests, console commands, future internal code).
+     *
      * Precedence: the active check runs FIRST. If a household has both an active visit
      * AND a prior exited visit at this event (rare, but possible if external code
      * created an extra row), the active-block fires and the exited-side never reports.
      * That ordering is intentional — the data-integrity violation is the more urgent
      * signal — but it means the controller will not see the exited collision in this
      * edge case. Do not invert.
+     *
+     * Audit: a successful supervisor override (policy='override' + $force=true) writes
+     * a row to checkin_overrides INSIDE this transaction so it commits/rolls back
+     * atomically with the visit. Phase 4 will absorb this into a broader audit_logs
+     * table; for now it's a focused per-event-class table the admin viewer can read.
      */
     public function checkIn(
         Event $event,
@@ -175,15 +186,35 @@ class EventCheckInService
                 }
 
                 if ($policy === 'override' && $force) {
-                    // Audit the override. Phase 4 will formalize this into
-                    // audit_logs; for now Log::warning is the spec-mandated path.
-                    Log::warning('checkin.override', [
-                        'user_id'           => Auth::id(),
-                        'event_id'          => $event->id,
-                        'representative_id' => $household->id,
-                        'household_ids'     => $offendingHouseholdIds,
-                        'prior_visit_ids'   => $priorExitedRows->pluck('visit_id')->unique()->values()->all(),
-                        'reason'            => $overrideReason,
+                    // Reason is required for an audit row. CheckInRequest
+                    // already enforces this for the HTTP path, but a direct
+                    // service caller (tests, console, future internal code)
+                    // could pass force=true with a null/empty reason and
+                    // hit a confusing DB integrity-violation stack trace.
+                    // Convert that into the service's own clear contract
+                    // violation; throwing here still rolls the visit back
+                    // because we're inside DB::transaction.
+                    if ($overrideReason === null || trim($overrideReason) === '') {
+                        throw new \InvalidArgumentException(
+                            'Supervisor override requires a non-empty reason.'
+                        );
+                    }
+
+                    // Phase 1.3.c: structured audit row in checkin_overrides.
+                    // Replaces the 1.3.a Log::warning('checkin.override', …)
+                    // so Phase 4's admin audit-log viewer inherits real
+                    // history. Inside the surrounding DB::transaction so the
+                    // audit row commits/rolls back atomically with the visit
+                    // — no orphan audit rows for visits that fail later in
+                    // the same checkIn (e.g. attach() throwing on a bad
+                    // represented ID).
+                    CheckInOverride::create([
+                        'user_id'                     => Auth::id(),
+                        'event_id'                    => $event->id,
+                        'representative_household_id' => $household->id,
+                        'household_ids'               => $offendingHouseholdIds,
+                        'prior_visit_ids'             => $priorExitedRows->pluck('visit_id')->unique()->values()->all(),
+                        'reason'                      => $overrideReason,
                     ]);
                 }
                 // policy === 'allow' falls through silently
