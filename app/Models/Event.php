@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class Event extends Model
 {
@@ -23,6 +25,10 @@ class Event extends Model
         'scanner_auth_code',
         'loader_auth_code',
         'exit_auth_code',
+        'intake_auth_code_hash',
+        'scanner_auth_code_hash',
+        'loader_auth_code_hash',
+        'exit_auth_code_hash',
     ];
 
     protected $casts = [
@@ -39,44 +45,68 @@ class Event extends Model
             if (! SettingService::get('public_access.auto_generate_codes', true)) {
                 return;
             }
-            $event->intake_auth_code  ??= self::generateAuthCode();
-            $event->scanner_auth_code ??= self::generateAuthCode();
-            $event->loader_auth_code  ??= self::generateAuthCode();
-            $event->exit_auth_code    ??= self::generateAuthCode();
+            foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
+                if (! $event->{"{$role}_auth_code"}) {
+                    $code = self::generateAuthCode();
+                    $event->{"{$role}_auth_code"}      = $code;
+                    $event->{"{$role}_auth_code_hash"} = Hash::make($code);
+                } elseif (! $event->{"{$role}_auth_code_hash"}) {
+                    // Code was provided explicitly but hash not set — hash it now.
+                    $event->{"{$role}_auth_code_hash"} = Hash::make($event->{"{$role}_auth_code"});
+                }
+            }
         });
     }
 
     /**
-     * Hard-coded length of every auth code, matching the schema's char(4)
-     * column width. Previously this was a configurable setting
-     * (`public_access.auth_code_length`), but the setting had no upper
-     * bound and bumping it past 4 silently broke event creation with
-     * "Data too long for column" — the schema width was not lockstep with
-     * the setting. Removing the configurability + pinning to a constant
-     * makes the bug impossible to reintroduce.
+     * Length of every auth code. Updated from 4 (numeric) to 6 (alphanumeric)
+     * in Phase 3.2 — 36⁶ ≈ 2B possibilities vs 10,000 previously, making
+     * brute-force infeasible even without rate limiting alone.
      */
-    public const AUTH_CODE_LENGTH = 4;
+    public const AUTH_CODE_LENGTH = 6;
 
+    /**
+     * Generate a random 6-character uppercase alphanumeric auth code.
+     * Returns the plaintext — callers are responsible for hashing before storage.
+     */
     public static function generateAuthCode(): string
     {
-        $max = (int) (10 ** self::AUTH_CODE_LENGTH) - 1;
-        return str_pad(
-            (string) random_int(0, $max),
-            self::AUTH_CODE_LENGTH,
-            '0',
-            STR_PAD_LEFT,
-        );
+        return Str::upper(Str::random(self::AUTH_CODE_LENGTH));
     }
 
-    /** Regenerate all four auth codes and save. */
-    public function regenerateAuthCodes(): void
+    /**
+     * Regenerate all four auth codes, store both plaintext (grace period) and
+     * hashes, and return the plaintext codes for one-time display.
+     *
+     * @return array{intake: string, scanner: string, loader: string, exit: string}
+     */
+    public function regenerateAuthCodes(): array
     {
-        $this->update([
-            'intake_auth_code'  => self::generateAuthCode(),
-            'scanner_auth_code' => self::generateAuthCode(),
-            'loader_auth_code'  => self::generateAuthCode(),
-            'exit_auth_code'    => self::generateAuthCode(),
-        ]);
+        $plaintexts = [];
+        $updates    = [];
+
+        foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
+            $code = self::generateAuthCode();
+            $plaintexts[$role]                   = $code;
+            $updates["{$role}_auth_code"]        = $code;
+            $updates["{$role}_auth_code_hash"]   = Hash::make($code);
+        }
+
+        $this->update($updates);
+
+        return $plaintexts;
+    }
+
+    /** Return the bcrypt hash for the given role's auth code (Phase 3.2). */
+    public function authCodeHashFor(string $role): ?string
+    {
+        return match ($role) {
+            'intake'  => $this->intake_auth_code_hash,
+            'scanner' => $this->scanner_auth_code_hash,
+            'loader'  => $this->loader_auth_code_hash,
+            'exit'    => $this->exit_auth_code_hash,
+            default   => null,
+        };
     }
 
     /** Check if a code is valid for a given role on this event. */

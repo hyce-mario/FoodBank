@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 
 class EventDayController extends Controller
@@ -70,7 +71,16 @@ class EventDayController extends Controller
 
         $request->validate(['code' => ['required', 'string', 'size:4']]);
 
-        if ($request->input('code') === $event->authCodeFor($role)) {
+        // Phase 3.2.c: verify against the hash column. Falls back to plaintext
+        // equality for events whose hash column was not backfilled (should not
+        // occur after the 3.2.a migration, but defensive).
+        $hash      = $event->authCodeHashFor($role);
+        $submitted = $request->input('code');
+        $valid     = $hash !== null
+            ? Hash::check($submitted, $hash)
+            : ($submitted === $event->authCodeFor($role));
+
+        if ($valid) {
             $request->session()->put($this->sessionKey($event, $role), true);
             return redirect()->route("event-day.{$role}", $event);
         }

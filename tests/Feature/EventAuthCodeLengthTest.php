@@ -10,16 +10,15 @@ use Tests\TestCase;
 
 /**
  * Pins the invariant that Event::generateAuthCode() always produces a
- * 4-character zero-padded numeric code, independent of any value present
- * in the app_settings table.
+ * 6-character uppercase alphanumeric code and that both plaintext and hash
+ * are populated on event creation.
  *
- * Background: previously the length was driven by a configurable
- * `public_access.auth_code_length` setting with no upper bound. Bumping
- * that setting past 4 silently broke event creation because the schema
- * fixes auth-code columns at char(4). The setting was removed and the
- * length pinned to Event::AUTH_CODE_LENGTH; this test guards the pin so
- * a future maintainer who tries to re-introduce configurability gets a
- * clear failure mode.
+ * Phase 3.2 update: code format changed from 4-digit numeric to 6-char
+ * uppercase alphanumeric (36⁶ ≈ 2B possibilities). The drive-by fix in
+ * Phase 1.3 removed the configurable auth_code_length setting; length is
+ * still pinned to Event::AUTH_CODE_LENGTH = 6.
+ *
+ * Refs: AUDIT_REPORT.md Part 13 §3.2.
  */
 class EventAuthCodeLengthTest extends TestCase
 {
@@ -31,21 +30,20 @@ class EventAuthCodeLengthTest extends TestCase
         SettingService::flush();
     }
 
-    public function test_generate_auth_code_returns_four_character_numeric(): void
+    public function test_generate_auth_code_returns_six_character_alphanumeric(): void
     {
         for ($i = 0; $i < 50; $i++) {
             $code = Event::generateAuthCode();
 
-            $this->assertSame(4, strlen($code), "code must be exactly 4 chars: '{$code}'");
-            $this->assertTrue(ctype_digit($code), "code must be numeric digits only: '{$code}'");
+            $this->assertSame(6, strlen($code), "code must be exactly 6 chars: '{$code}'");
+            $this->assertMatchesRegularExpression('/^[A-Z0-9]{6}$/', $code, "code must be uppercase alphanumeric: '{$code}'");
         }
     }
 
     /**
      * Even if a stale `public_access.auth_code_length` row exists in the
-     * app_settings table (e.g. surviving from an old install or a manual
-     * INSERT), the auth-code generator must ignore it. The constant on
-     * the Event model is the only source of truth.
+     * app_settings table, the auth-code generator ignores it. The constant
+     * on the Event model is the only source of truth.
      */
     public function test_generate_auth_code_ignores_stale_setting_row(): void
     {
@@ -59,10 +57,14 @@ class EventAuthCodeLengthTest extends TestCase
 
         $code = Event::generateAuthCode();
 
-        $this->assertSame(4, strlen($code));
+        $this->assertSame(6, strlen($code));
     }
 
-    public function test_event_creation_populates_4_char_codes_via_boot(): void
+    /**
+     * Event creation via boot populates both the plaintext and hash columns
+     * for all four roles. The hash must verify against the plaintext.
+     */
+    public function test_event_creation_populates_6_char_codes_and_hashes_via_boot(): void
     {
         $event = Event::create([
             'name'  => 'Auth Code Length Test',
@@ -72,9 +74,12 @@ class EventAuthCodeLengthTest extends TestCase
 
         foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
             $code = $event->{"{$role}_auth_code"};
-            $this->assertSame(4, strlen($code), "{$role}_auth_code must be 4 chars: '{$code}'");
-            $this->assertTrue(ctype_digit($code));
+            $hash = $event->{"{$role}_auth_code_hash"};
+
+            $this->assertSame(6, strlen($code), "{$role}_auth_code must be 6 chars");
+            $this->assertMatchesRegularExpression('/^[A-Z0-9]{6}$/', $code, "{$role}_auth_code must be uppercase alphanumeric");
+            $this->assertNotNull($hash, "{$role}_auth_code_hash must be populated");
+            $this->assertTrue(\Illuminate\Support\Facades\Hash::check($code, $hash), "hash must verify against plaintext for {$role}");
         }
     }
-
 }
