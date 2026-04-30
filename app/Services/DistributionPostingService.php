@@ -69,6 +69,18 @@ class DistributionPostingService
     }
 
     /**
+     * Public wrapper around resolveBagComposition for use by the reconcile
+     * command and any other callers that need the expected composition without
+     * posting movements. Returns the same array as resolveBagComposition.
+     *
+     * @return array<int, array{inventory_item_id: int, quantity: int}>
+     */
+    public function compositionForVisit(Visit $visit): array
+    {
+        return $this->resolveBagComposition($visit);
+    }
+
+    /**
      * Resolve the bag composition for this visit: which inventory items to
      * distribute and in what total quantity.
      *
