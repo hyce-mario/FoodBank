@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AllocationRulesetController;
+use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\FinanceCategoryController;
 use App\Http\Controllers\FinanceController;
@@ -170,6 +171,9 @@ Route::middleware('auth')->group(function () {
         ->name('volunteer-groups.members.edit');
     Route::post('volunteer-groups/{volunteer_group}/members', [VolunteerGroupController::class, 'updateMembers'])
         ->name('volunteer-groups.members.update');
+
+    // Audit Log (admin-only, read-only)
+    Route::get('audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
 
     // Event Reviews (admin)
     Route::get('reviews', [ReviewController::class, 'index'])->name('reviews.index');

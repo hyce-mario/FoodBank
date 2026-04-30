@@ -83,6 +83,9 @@ class VisitReorderService
                 // tripping the unique index on intermediate states when two rows
                 // swap positions inside the same lane. queue_position became
                 // nullable in Phase 1.1.c.1, so this is now safe.
+                // Bulk query-builder update — bypasses Eloquent model events
+                // (including Auditable). Intentional: Visit::$auditOnly is
+                // ['visit_status'], so lane/queue_position changes are not audited.
                 Visit::where('event_id', $event->id)
                     ->whereIn('id', $ids)
                     ->update(['queue_position' => null]);

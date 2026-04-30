@@ -2,12 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Visit extends Model
 {
+    use Auditable;
+
+    // Only audit status transitions — position/timestamp changes are operational noise.
+    protected array $auditOnly = ['visit_status'];
     protected $fillable = [
         'event_id',
         'lane',

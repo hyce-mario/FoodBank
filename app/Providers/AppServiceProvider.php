@@ -2,10 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\AuditLog;
 use App\Models\Event;
 use App\Models\EventReview;
 use App\Models\Household;
 use App\Models\Volunteer;
+use App\Policies\AuditLogPolicy;
 use App\Policies\EventPolicy;
 use App\Policies\EventReviewPolicy;
 use App\Policies\HouseholdPolicy;
@@ -34,6 +36,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Event::class,       EventPolicy::class);
         Gate::policy(Volunteer::class,   VolunteerPolicy::class);
         Gate::policy(EventReview::class, EventReviewPolicy::class);
+        Gate::policy(AuditLog::class,    AuditLogPolicy::class);
 
         // Phase 3.1: rate limiter for event-day auth-code endpoints.
         // Keyed by IP + role + event_id so a targeted brute-force attempt against
