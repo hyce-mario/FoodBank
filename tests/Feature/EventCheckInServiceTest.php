@@ -206,10 +206,12 @@ class EventCheckInServiceTest extends TestCase
     }
 
     /**
-     * If a household attach fails inside the transaction (FK violation from a
-     * non-existent represented_id), the visit creation must roll back. This
-     * proves DB::transaction() is actually wrapping the work — without it,
-     * the visit row would persist with no households attached.
+     * If a household attach fails inside the transaction, the visit creation
+     * must roll back. Pre-1.2.b this was triggered by an FK violation when
+     * a missing household_id was passed straight to attach(); 1.2.b's
+     * bulk-load + explicit-existence-check translates that into a clear
+     * RuntimeException, but the rollback contract is unchanged — the
+     * surrounding DB::transaction must reverse the visit row.
      */
     public function test_failed_attach_rolls_back_visit_creation(): void
     {
@@ -218,7 +220,7 @@ class EventCheckInServiceTest extends TestCase
         $initialVisitCount = Visit::count();
 
         try {
-            // 99999 is a non-existent household id; attach() fails on the FK.
+            // 99999 is a non-existent household id.
             $this->service->checkIn($this->event, $h1, 1, [99999]);
             $this->fail('Expected an exception from attaching a non-existent household');
         } catch (\Throwable $e) {
@@ -230,5 +232,121 @@ class EventCheckInServiceTest extends TestCase
             Visit::count(),
             'visit must be rolled back when a downstream attach fails'
         );
+    }
+
+    // ─── Phase 1.2.b — pivot snapshot tests ──────────────────────────────────
+
+    /**
+     * The headline 1.2.b regression: editing a household's demographics
+     * AFTER a check-in must NOT change the pivot snapshot for that visit.
+     * This is the entire point of snapshotting — historical reports stay
+     * stable.
+     */
+    public function test_editing_household_after_check_in_does_not_change_pivot_snapshot(): void
+    {
+        $h1 = $this->makeHousehold('Eve', 'Edit');
+        $h1->update([
+            'household_size' => 4,
+            'adults_count'   => 2,
+            'children_count' => 2,
+            'seniors_count'  => 0,
+            'vehicle_make'   => 'Toyota',
+            'vehicle_color'  => 'Blue',
+        ]);
+
+        $visit = $this->service->checkIn($this->event, $h1->fresh(), 1);
+
+        // Mutate the household after the visit is recorded.
+        $h1->update([
+            'household_size' => 99,
+            'adults_count'   => 50,
+            'children_count' => 49,
+            'seniors_count'  => 0,
+            'vehicle_make'   => 'Lamborghini',
+            'vehicle_color'  => 'Gold',
+        ]);
+
+        $pivot = $visit->fresh()->households->first()->pivot;
+
+        $this->assertSame(4, (int) $pivot->household_size, 'snapshot must reflect attach-time household_size');
+        $this->assertSame(2, (int) $pivot->adults_count);
+        $this->assertSame(2, (int) $pivot->children_count);
+        $this->assertSame(0, (int) $pivot->seniors_count);
+        $this->assertSame('Toyota', $pivot->vehicle_make);
+        $this->assertSame('Blue',   $pivot->vehicle_color);
+    }
+
+    public function test_check_in_snapshots_demographics_on_pivot(): void
+    {
+        $h1 = $this->makeHousehold('Sam', 'Snap');
+        $h1->update([
+            'household_size' => 5,
+            'adults_count'   => 2,
+            'children_count' => 2,
+            'seniors_count'  => 1,
+            'vehicle_make'   => 'Honda',
+            'vehicle_color'  => 'Silver',
+        ]);
+
+        $visit = $this->service->checkIn($this->event, $h1->fresh(), 1);
+        $pivot = $visit->fresh()->households->first()->pivot;
+
+        $this->assertSame(5, (int) $pivot->household_size);
+        $this->assertSame(2, (int) $pivot->adults_count);
+        $this->assertSame(2, (int) $pivot->children_count);
+        $this->assertSame(1, (int) $pivot->seniors_count);
+        $this->assertSame('Honda', $pivot->vehicle_make);
+        $this->assertSame('Silver', $pivot->vehicle_color);
+    }
+
+    /**
+     * Each represented household gets its OWN snapshot — the rep's
+     * demographics must NOT be smeared across the represented entries.
+     */
+    public function test_check_in_snapshots_each_represented_household_separately(): void
+    {
+        $rep   = $this->makeHousehold('Rep',  'Resentative');
+        $rep->update(['household_size' => 2, 'adults_count' => 2, 'vehicle_make' => 'Subaru']);
+        $rep1  = $this->makeHousehold('Rep1', 'Member');
+        $rep1->update(['household_size' => 4, 'adults_count' => 2, 'children_count' => 2, 'vehicle_make' => null]);
+        $rep2  = $this->makeHousehold('Rep2', 'Member');
+        $rep2->update(['household_size' => 6, 'adults_count' => 3, 'seniors_count' => 3, 'vehicle_make' => 'Ford']);
+
+        $visit = $this->service->checkIn($this->event, $rep->fresh(), 1, [$rep1->id, $rep2->id]);
+        $byId  = $visit->fresh()->households->keyBy('id');
+
+        $this->assertSame(2, (int) $byId[$rep->id]->pivot->household_size);
+        $this->assertSame('Subaru', $byId[$rep->id]->pivot->vehicle_make);
+
+        $this->assertSame(4, (int) $byId[$rep1->id]->pivot->household_size);
+        $this->assertSame(2, (int) $byId[$rep1->id]->pivot->children_count);
+        $this->assertNull($byId[$rep1->id]->pivot->vehicle_make);
+
+        $this->assertSame(6, (int) $byId[$rep2->id]->pivot->household_size);
+        $this->assertSame(3, (int) $byId[$rep2->id]->pivot->seniors_count);
+        $this->assertSame('Ford', $byId[$rep2->id]->pivot->vehicle_make);
+    }
+
+    /**
+     * Pin the contract that demographic snapshot columns are non-null after
+     * any successful check-in. With the NOT NULL DB constraint, this is
+     * effectively the constraint's own assertion — but worth pinning here
+     * so a future regression in the service (e.g. payload typo) gets a
+     * clear failure mode at the unit-test layer instead of only at insert.
+     */
+    public function test_pivot_demographic_snapshot_columns_are_non_null_after_check_in(): void
+    {
+        $h1 = $this->makeHousehold('NoNull', 'Test');
+        $visit = $this->service->checkIn($this->event, $h1, 1);
+
+        $row = \Illuminate\Support\Facades\DB::table('visit_households')
+            ->where('visit_id', $visit->id)
+            ->where('household_id', $h1->id)
+            ->first();
+
+        $this->assertNotNull($row->household_size);
+        $this->assertNotNull($row->children_count);
+        $this->assertNotNull($row->adults_count);
+        $this->assertNotNull($row->seniors_count);
     }
 }

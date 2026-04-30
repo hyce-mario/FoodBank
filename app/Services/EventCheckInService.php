@@ -8,6 +8,7 @@ use App\Models\Household;
 use App\Models\Visit;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class EventCheckInService
 {
@@ -108,14 +109,44 @@ class EventCheckInService
                 'served_bags'    => 0,
             ]);
 
-            // Attach representative first — stays as the primary/driver household
-            $visit->households()->attach($household->id);
+            // Attach representative first — stays as the primary/driver household.
+            // Phase 1.2.b: capture the household's demographics + vehicle on the
+            // pivot at attach time so reports stay temporally stable even if
+            // the household's `households.*` row is edited after the visit.
+            $visit->households()->attach($household->id, $household->toVisitPivotSnapshot());
 
             // Attach represented households — exclude the representative's own ID
             // in case it was accidentally included in the caller-supplied list
             $toAttach = $representedIdCollection->reject(fn ($id) => $id === $household->id);
             if ($toAttach->isNotEmpty()) {
-                $visit->households()->attach($toAttach->toArray());
+                // Bulk-load so we don't issue one query per represented household.
+                $represented = Household::whereIn('id', $toAttach->toArray())->get();
+
+                // Strict: every requested id must exist. Pre-1.2.b this was
+                // enforced implicitly by the FK on `visit_households.household_id`
+                // when attach() was called with a missing id. With the bulk
+                // pre-load, an unknown id would silently disappear from the
+                // payload — the visit would be created but the represented
+                // household never attached. Fail loud and let the surrounding
+                // DB::transaction roll the visit back.
+                if ($represented->count() !== $toAttach->count()) {
+                    $missing = $toAttach->diff($represented->pluck('id'));
+                    Log::warning('checkIn called with non-existent represented household IDs', [
+                        'event_id'           => $event->id,
+                        'representative_id'  => $household->id,
+                        'requested_ids'      => $toAttach->all(),
+                        'missing_ids'        => $missing->all(),
+                    ]);
+                    throw new \RuntimeException(
+                        'Represented household ID(s) do not exist: ' . $missing->implode(', ')
+                    );
+                }
+
+                $bulk = [];
+                foreach ($represented as $r) {
+                    $bulk[$r->id] = $r->toVisitPivotSnapshot();
+                }
+                $visit->households()->attach($bulk);
             }
 
             return $visit->load('households');
