@@ -15,3 +15,10 @@ Artisan::command('inspire', function () {
 Schedule::command('events:sync-statuses')
     ->dailyAt('00:01')
     ->withoutOverlapping();
+
+// Phase 2.2: nightly inventory reconciliation. Checks all current/recent past
+// events for missed event_distributed movements and emails the support address
+// if any delta is found. Runs just after midnight (after sync-statuses).
+Schedule::command('inventory:reconcile-nightly')
+    ->dailyAt('00:05')
+    ->withoutOverlapping();
