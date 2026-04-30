@@ -70,9 +70,11 @@
 (function () {
     const EVENT_ID    = {{ $event->id }};
     const CSRF        = document.querySelector('meta[name="csrf-token"]').content;
-    const DATA_URL    = '/scanner/{{ $event->id }}/data';
-    const REORDER_URL = '/ed/{{ $event->id }}/reorder';
-    const QUEUE_URL   = '/ed/{{ $event->id }}/visits';
+    // Use Blade-rendered absolute URLs so subdir deployments
+    // (e.g. http://localhost/Foodbank/public/...) resolve correctly.
+    const DATA_URL    = "{{ route('event-day.scanner.data', $event) }}";
+    const REORDER_URL = "{{ route('event-day.reorder', $event) }}";
+    const QUEUE_URL   = "{{ url('/ed/' . $event->id . '/visits') }}";
 
     let visits         = [];
     let stats          = {};
