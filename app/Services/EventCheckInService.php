@@ -2,11 +2,14 @@
 
 namespace App\Services;
 
+use App\Exceptions\HouseholdAlreadyServedException;
+use App\Models\CheckInOverride;
 use App\Models\Event;
 use App\Models\EventPreRegistration;
 use App\Models\Household;
 use App\Models\Visit;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -51,16 +54,54 @@ class EventCheckInService
     /**
      * Check in a household to an event on a given lane.
      *
-     * @param  array|null  $representedIds  When provided (non-null), attach exactly these
-     *                                      household IDs as represented members instead of
-     *                                      using the DB relationship. Allows the check-in
-     *                                      controller to pass a staff-curated list that may
-     *                                      include households created inline during check-in.
+     * @param  array|null  $representedIds   When provided (non-null), attach exactly these
+     *                                       household IDs as represented members instead of
+     *                                       using the DB relationship. Allows the check-in
+     *                                       controller to pass a staff-curated list that may
+     *                                       include households created inline during check-in.
+     * @param  bool        $force            Phase 1.3 supervisor-override flag. When true and
+     *                                       the configured re-check-in policy is 'override',
+     *                                       proceeds past the already-served guard and writes
+     *                                       a Log::warning audit record. Has no effect when
+     *                                       policy is 'deny' (deny is absolute) or 'allow'
+     *                                       (no guard to bypass).
+     * @param  string|null $overrideReason   Free-text reason captured from the supervisor;
+     *                                       only consulted when $force=true triggers the
+     *                                       audit log. Phase 4 will move this into the
+     *                                       formal audit_logs table.
      *
-     * Throws RuntimeException if already active.
+     * Throws RuntimeException for the active-duplicate case (data-integrity invariant —
+     * NOT subject to the policy setting; the same household cannot occupy two queue
+     * positions simultaneously).
+     *
+     * Throws HouseholdAlreadyServedException for the exited-only case when the configured
+     * re-check-in policy refuses the new check-in.
+     *
+     * Throws InvalidArgumentException when $force=true is passed without a non-empty
+     * $overrideReason — the audit row in checkin_overrides has reason NOT NULL and the
+     * service guards against bypass paths that skip CheckInRequest's validator (direct
+     * service callers from tests, console commands, future internal code).
+     *
+     * Precedence: the active check runs FIRST. If a household has both an active visit
+     * AND a prior exited visit at this event (rare, but possible if external code
+     * created an extra row), the active-block fires and the exited-side never reports.
+     * That ordering is intentional — the data-integrity violation is the more urgent
+     * signal — but it means the controller will not see the exited collision in this
+     * edge case. Do not invert.
+     *
+     * Audit: a successful supervisor override (policy='override' + $force=true) writes
+     * a row to checkin_overrides INSIDE this transaction so it commits/rolls back
+     * atomically with the visit. Phase 4 will absorb this into a broader audit_logs
+     * table; for now it's a focused per-event-class table the admin viewer can read.
      */
-    public function checkIn(Event $event, Household $household, int $lane, ?array $representedIds = null): Visit
-    {
+    public function checkIn(
+        Event $event,
+        Household $household,
+        int $lane,
+        ?array $representedIds = null,
+        bool $force = false,
+        ?string $overrideReason = null,
+    ): Visit {
         // Determine the set of represented IDs to attach (no DB needed yet).
         if ($representedIds !== null) {
             // Explicit list from controller (may include newly-created households)
@@ -79,7 +120,7 @@ class EventCheckInService
         // and insert duplicate positions. The unique index added in Phase 1.1.a
         // would catch the violation; this lock prevents it from ever firing
         // under normal load, avoiding spurious 500s for users.
-        return DB::transaction(function () use ($event, $household, $lane, $representedIdCollection, $allIds) {
+        return DB::transaction(function () use ($event, $household, $lane, $representedIdCollection, $allIds, $force, $overrideReason) {
             // Re-check active status inside the transaction so it's consistent
             // with the position read.
             $alreadyActive = Visit::where('event_id', $event->id)
@@ -88,9 +129,95 @@ class EventCheckInService
                 ->exists();
 
             if ($alreadyActive) {
+                // Hard block, NOT subject to the re_checkin_policy setting. A
+                // household actively in the queue cannot occupy two positions
+                // at once — that's a data-integrity invariant, not policy.
+                // $force does not bypass this either; only the configured
+                // exited-only policy is overrideable.
                 throw new \RuntimeException(
                     "{$household->full_name} already has an active check-in for this event."
                 );
+            }
+
+            // Phase 1.3: when a household has previously been served and exited
+            // at this event, apply the configured event_queue.re_checkin_policy:
+            //   'allow'    → proceed silently (pre-1.3 behavior)
+            //   'override' → throw unless $force is true; on $force=true log + proceed
+            //   'deny'     → throw regardless of $force
+            //
+            // Resolve the actual colliding subset of $allIds (not just whether
+            // any collision exists) so the exception can tell the controller
+            // exactly which households are offending — needed to render names
+            // in the override modal without a follow-up query. One DB::table
+            // query gives us both the household IDs (for the exception payload)
+            // and the visit IDs (for the override audit log).
+            $priorExitedRows = DB::table('visit_households as vh')
+                ->join('visits as v', 'v.id', '=', 'vh.visit_id')
+                ->where('v.event_id', $event->id)
+                ->whereNotNull('v.end_time')
+                ->whereIn('vh.household_id', $allIds->all())
+                ->select('v.id as visit_id', 'vh.household_id')
+                ->get();
+
+            if ($priorExitedRows->isNotEmpty()) {
+                $offendingHouseholdIds = $priorExitedRows->pluck('household_id')
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $policy = SettingService::get('event_queue.re_checkin_policy', 'override');
+
+                if ($policy === 'deny') {
+                    throw new HouseholdAlreadyServedException(
+                        eventId: $event->id,
+                        householdIds: $offendingHouseholdIds,
+                        allowOverride: false,
+                        message: 'One or more households have already been served at this event. The current policy does not permit re-check-in.',
+                    );
+                }
+
+                if ($policy === 'override' && ! $force) {
+                    throw new HouseholdAlreadyServedException(
+                        eventId: $event->id,
+                        householdIds: $offendingHouseholdIds,
+                        allowOverride: true,
+                        message: 'One or more households have already been served at this event. Supervisor override required.',
+                    );
+                }
+
+                if ($policy === 'override' && $force) {
+                    // Reason is required for an audit row. CheckInRequest
+                    // already enforces this for the HTTP path, but a direct
+                    // service caller (tests, console, future internal code)
+                    // could pass force=true with a null/empty reason and
+                    // hit a confusing DB integrity-violation stack trace.
+                    // Convert that into the service's own clear contract
+                    // violation; throwing here still rolls the visit back
+                    // because we're inside DB::transaction.
+                    if ($overrideReason === null || trim($overrideReason) === '') {
+                        throw new \InvalidArgumentException(
+                            'Supervisor override requires a non-empty reason.'
+                        );
+                    }
+
+                    // Phase 1.3.c: structured audit row in checkin_overrides.
+                    // Replaces the 1.3.a Log::warning('checkin.override', …)
+                    // so Phase 4's admin audit-log viewer inherits real
+                    // history. Inside the surrounding DB::transaction so the
+                    // audit row commits/rolls back atomically with the visit
+                    // — no orphan audit rows for visits that fail later in
+                    // the same checkIn (e.g. attach() throwing on a bad
+                    // represented ID).
+                    CheckInOverride::create([
+                        'user_id'                     => Auth::id(),
+                        'event_id'                    => $event->id,
+                        'representative_household_id' => $household->id,
+                        'household_ids'               => $offendingHouseholdIds,
+                        'prior_visit_ids'             => $priorExitedRows->pluck('visit_id')->unique()->values()->all(),
+                        'reason'                      => $overrideReason,
+                    ]);
+                }
+                // policy === 'allow' falls through silently
             }
 
             // SELECT ... FOR UPDATE serializes concurrent check-ins per (event, lane).
