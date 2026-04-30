@@ -7,8 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class Event extends Model
 {
@@ -21,10 +19,10 @@ class Event extends Model
         'ruleset_id',
         'volunteer_group_id',
         'notes',
-        'intake_auth_code_hash',
-        'scanner_auth_code_hash',
-        'loader_auth_code_hash',
-        'exit_auth_code_hash',
+        'intake_auth_code',
+        'scanner_auth_code',
+        'loader_auth_code',
+        'exit_auth_code',
     ];
 
     protected $casts = [
@@ -41,71 +39,47 @@ class Event extends Model
             if (! SettingService::get('public_access.auto_generate_codes', true)) {
                 return;
             }
-            // If the controller pre-populated the hash columns (e.g. EventController
-            // generates codes before create() so it can flash the plaintexts), the
-            // observer skips those roles. Otherwise it generates blind hashes. The
-            // blind-hash path is a fallback — the controller should always pre-generate
-            // when it needs to show the codes to the admin.
             foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
-                if (! $event->{"{$role}_auth_code_hash"}) {
-                    $event->{"{$role}_auth_code_hash"} = Hash::make(self::generateAuthCode());
+                if (! $event->{"{$role}_auth_code"}) {
+                    $event->{"{$role}_auth_code"} = self::generateAuthCode();
                 }
             }
         });
     }
 
-    /**
-     * Length of every auth code. Updated from 4 (numeric) to 6 (alphanumeric)
-     * in Phase 3.2 — 36⁶ ≈ 2B possibilities vs 10,000 previously, making
-     * brute-force infeasible even without rate limiting alone.
-     */
-    public const AUTH_CODE_LENGTH = 6;
+    public const AUTH_CODE_LENGTH = 4;
 
-    /**
-     * Generate a random 6-character uppercase alphanumeric auth code.
-     * Returns the plaintext — callers are responsible for hashing before storage.
-     */
     public static function generateAuthCode(): string
     {
-        return Str::upper(Str::random(self::AUTH_CODE_LENGTH));
+        return str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
     }
 
     /**
-     * Regenerate all four auth codes, store both plaintext (grace period) and
-     * hashes, and return the plaintext codes for one-time display.
-     *
-     * @return array{intake: string, scanner: string, loader: string, exit: string}
-     */
-    /**
-     * Regenerate all four auth codes, store the hashes, and return the plaintext
-     * codes for one-time display (callers should flash them to the session).
-     *
      * @return array{intake: string, scanner: string, loader: string, exit: string}
      */
     public function regenerateAuthCodes(): array
     {
-        $plaintexts = [];
-        $updates    = [];
+        $codes   = [];
+        $updates = [];
 
         foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
-            $code = self::generateAuthCode();
-            $plaintexts[$role]                 = $code;
-            $updates["{$role}_auth_code_hash"] = Hash::make($code);
+            $code                    = self::generateAuthCode();
+            $codes[$role]            = $code;
+            $updates["{$role}_auth_code"] = $code;
         }
 
         $this->update($updates);
 
-        return $plaintexts;
+        return $codes;
     }
 
-    /** Return the bcrypt hash for the given role's auth code (Phase 3.2). */
-    public function authCodeHashFor(string $role): ?string
+    public function authCodeFor(string $role): ?string
     {
         return match ($role) {
-            'intake'  => $this->intake_auth_code_hash,
-            'scanner' => $this->scanner_auth_code_hash,
-            'loader'  => $this->loader_auth_code_hash,
-            'exit'    => $this->exit_auth_code_hash,
+            'intake'  => $this->intake_auth_code,
+            'scanner' => $this->scanner_auth_code,
+            'loader'  => $this->loader_auth_code,
+            'exit'    => $this->exit_auth_code,
             default   => null,
         };
     }

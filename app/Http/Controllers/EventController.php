@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreEventRequest;
-use Illuminate\Support\Facades\Hash;
 use App\Http\Requests\UpdateEventRequest;
 use App\Models\AllocationRuleset;
 use App\Models\Event;
@@ -77,15 +76,12 @@ class EventController extends Controller
 
         $data['status'] = Event::deriveStatus(Carbon::parse($data['date']));
 
-        // Pre-generate auth codes before Event::create() so we have the plaintexts
-        // for a one-time session flash. The boot observer sees the hash columns
-        // already populated and skips re-generation.
         $newCodes = [];
         if (SettingService::get('public_access.auto_generate_codes', true)) {
             foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
-                $code = Event::generateAuthCode();
-                $newCodes[$role]                   = $code;
-                $data["{$role}_auth_code_hash"]    = Hash::make($code);
+                $code                      = Event::generateAuthCode();
+                $newCodes[$role]           = $code;
+                $data["{$role}_auth_code"] = $code;
             }
         }
 

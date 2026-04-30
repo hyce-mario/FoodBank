@@ -871,14 +871,11 @@
 <div x-show="activeTab === 'queue'" style="display:none">
 
     @php
-    // Phase 3.2.d: codes are no longer stored in plaintext. They are shown once
-    // via a session flash immediately after creation or regeneration.
-    $flashCodes = session('new_auth_codes', []);
     $roles = [
-        ['key' => 'intake',  'label' => 'Intake',          'color' => 'blue',   'code' => $flashCodes['intake']  ?? null],
-        ['key' => 'scanner', 'label' => 'Scanner / Queue',  'color' => 'purple', 'code' => $flashCodes['scanner'] ?? null],
-        ['key' => 'loader',  'label' => 'Loader',           'color' => 'orange', 'code' => $flashCodes['loader']  ?? null],
-        ['key' => 'exit',    'label' => 'Exit',             'color' => 'green',  'code' => $flashCodes['exit']    ?? null],
+        ['key' => 'intake',  'label' => 'Intake',          'color' => 'blue',   'code' => $event->intake_auth_code],
+        ['key' => 'scanner', 'label' => 'Scanner / Queue',  'color' => 'purple', 'code' => $event->scanner_auth_code],
+        ['key' => 'loader',  'label' => 'Loader',           'color' => 'orange', 'code' => $event->loader_auth_code],
+        ['key' => 'exit',    'label' => 'Exit',             'color' => 'green',  'code' => $event->exit_auth_code],
     ];
     $colorMap = [
         'blue'   => ['bg' => 'bg-blue-50',   'border' => 'border-blue-200',   'badge' => 'bg-blue-100 text-blue-700',   'btn' => 'bg-blue-600 hover:bg-blue-700'],
@@ -894,9 +891,6 @@
         </svg>
         <div>
             <p class="text-sm text-amber-800">These codes grant access to event-day stations. Share them only with staff. Codes are valid while the event is <strong>Today</strong>.</p>
-            @if (session('new_auth_codes'))
-            <p class="text-xs text-amber-700 font-semibold mt-1">⚠ Codes are shown only once. Copy and share them now — they cannot be retrieved again.</p>
-            @endif
         </div>
     </div>
 
@@ -909,8 +903,6 @@
                 <span class="text-xs px-2 py-0.5 rounded-full font-medium {{ $c['badge'] }}">Active</span>
             </div>
 
-            {{-- PIN display — only shown once via session flash after creation/regeneration --}}
-            @if ($r['code'])
             <div class="flex gap-2 mb-3">
                 @foreach (str_split($r['code']) as $char)
                 <div class="flex-1 h-14 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-2xl font-bold text-gray-800 shadow-sm">
@@ -918,14 +910,6 @@
                 </div>
                 @endforeach
             </div>
-            @else
-            <div class="mb-3 flex items-center gap-2 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-xl px-3 py-3">
-                <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
-                </svg>
-                Code hidden — regenerate to reveal
-            </div>
-            @endif
 
             {{-- Station URL --}}
             <div class="mb-3 bg-white/60 rounded-lg px-2.5 py-2 font-mono text-xs text-gray-500 truncate border border-white">
