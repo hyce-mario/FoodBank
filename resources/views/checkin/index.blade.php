@@ -865,8 +865,11 @@
              x-transition:leave-end="opacity-0"
              @click="!overrideModal.submitting && cancelOverride()"></div>
 
-        {{-- Panel --}}
-        <div class="relative z-10 bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl"
+        {{-- Panel. NOTE: only Tailwind classes present in the prebuilt CSS
+             (public/build/) work — Node isn't installed in this environment
+             so a tailwind rebuild can't add new classes. Width capped via
+             sm:max-w-sm (the only sm:max-w-* responsive variant compiled). --}}
+        <div class="relative z-10 bg-white w-full sm:max-w-sm rounded-t-3xl rounded-2xl shadow-2xl"
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="translate-y-full sm:translate-y-4 sm:opacity-0"
              x-transition:enter-end="translate-y-0 sm:opacity-100"
@@ -893,7 +896,7 @@
                     <template x-if="overrideModal.households.length > 1">
                         <div class="text-sm text-gray-600 mt-1">
                             <p>The following households have already been served at this event:</p>
-                            <ul class="list-disc list-inside mt-1 space-y-0.5">
+                            <ul class="list-disc list-inside mt-1 space-y-1">
                                 <template x-for="h in overrideModal.households" :key="h.id">
                                     <li>
                                         <span class="font-medium" x-text="h.full_name"></span>
@@ -920,7 +923,7 @@
                                   rows="3"
                                   maxlength="500"
                                   placeholder="e.g., Forgotten item; supervisor confirmed."
-                                  class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm
+                                  class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm
                                          focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent
                                          resize-none"></textarea>
                         <p x-show="overrideModal.reasonError" style="display:none"
@@ -930,12 +933,12 @@
                         </p>
                     </div>
 
-                    <div class="flex gap-2 pt-1 pb-safe">
+                    <div class="flex gap-2 pt-1">
                         <button @click="confirmOverride()"
                                 :disabled="overrideModal.submitting || !overrideModal.reason.trim()"
                                 type="button"
-                                class="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl
-                                       bg-amber-600 hover:bg-amber-700 text-white font-semibold text-sm
+                                class="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl
+                                       bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm
                                        transition-colors disabled:opacity-60">
                             <template x-if="overrideModal.submitting">
                                 <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -964,7 +967,7 @@
                         an administrator can change the policy in
                         <span class="font-medium">Settings → Event &amp; Queue → Re-Check-In Policy</span>.
                     </p>
-                    <div class="flex pt-1 pb-safe">
+                    <div class="flex pt-1">
                         <button @click="cancelOverride()"
                                 type="button"
                                 class="flex-1 py-3 rounded-xl bg-navy-700 hover:bg-navy-800
