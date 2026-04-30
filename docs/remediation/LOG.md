@@ -58,6 +58,17 @@
 | 1.3.c Persist overrides to `checkin_overrides` table (replaces 1.3.a `Log::warning`) | ✅ | f9cc25b | ✅ User opted in (option B) to capture override audit data in a structured DB table NOW so Phase 4's admin viewer inherits real history. New migration + `CheckInOverride` model (immutable, `UPDATED_AT = null`, matching `InventoryMovement` pattern); service writes inside the existing `DB::transaction` so the audit row commits/rolls back atomically with the visit; service-level `InvalidArgumentException` guard rejects empty reason for direct callers. 4 new tests + 1 updated; suite 64/64. |
 | 1.3.d Override modal in `checkin/index.blade.php` (renumbered from 1.3.c) | ✅ | 360e406 | ✅ Alpine.js modal in checkin/index.blade.php triggered by 422 + `error: 'household_already_served'`; renders offending household name(s) + reason textarea (auto-focused, max:500 matching CheckInRequest); confirm re-POSTs with `force=1` + reason → audit row lands in checkin_overrides. Two states (override / deny) via `<template x-if>`. Backdrop guard during submission; double-click guard on confirm; Esc-to-cancel. Coverage gap: PHPUnit doesn't assert Blade UI rendering — manual browser walkthrough required. |
 
+## Phase 3 — Public-surface hardening
+
+| Sub-task | Status | Commit | Acceptance |
+|---|---|---|---|
+| 3.1 Rate limits on public POST endpoints | ✅ | 4cd2399 | ✅ 6th attempt within 1 min returns 429 (all 4 throttled surfaces: /review, /register, /volunteer-checkin, /{role}/{event}/auth) |
+| 3.2.a Migration: hashed code columns + widen char(4)→char(6) | ✅ | fa79297 | ✅ Hash columns exist; all upcoming/current events backfilled |
+| 3.2.b Code generation → 6 alphanumeric, stored hashed | ✅ | fa79297 | ✅ Codes are 6-char uppercase alphanumeric; hash verified against plaintext |
+| 3.2.c Verification with Hash::check | ✅ | fa79297 | ✅ submitAuth() uses Hash::check(); size validator fixed to 6 chars (code-review blocker) |
+| 3.2.d Migration: drop plaintext columns + show-once UI | ✅ | d704323 | ✅ Plaintext columns gone; admin sees codes once via session flash |
+| 3.3 Mass-assignment cleanup (EventReview.is_visible) | ✅ | 1f6d0a1 | ✅ Public POST /review with is_visible=1 is ignored |
+
 ## Phase 2 — Reporting truth
 
 | Sub-task | Status | Commit | Acceptance |
