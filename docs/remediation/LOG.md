@@ -64,11 +64,11 @@
 |---|---|---|---|
 | 2.1.a `DistributionPostingService` skeleton + unit tests | ✅ | 14e1fd7 | Service class exists with passing unit tests |
 | 2.1.b Bag-composition resolver from `AllocationRuleset` | ✅ | 79531ee | Composition is data-driven, not hardcoded |
-| 2.1.c Hook into `markLoaded` happy path | ⬜ | — | Visit loaded → InventoryMovement(event_distributed) created |
-| 2.1.d Hook into supervisor override path | ⬜ | — | Override-to-loaded also posts inventory |
-| 2.1.e `InsufficientStockException` UX | ⬜ | — | Modal with skip/substitute/cancel; no 500s |
-| 2.1.f Backfill + reconciliation artisan command | ⬜ | — | `inventory:reconcile {event}` produces 0 delta on clean event |
-| 2.2 Nightly reconciliation schedule | ⬜ | — | Delta > threshold emails admins |
+| 2.1.c Hook into `markLoaded` happy path | ✅ | 5c93d45 | Visit loaded → InventoryMovement(event_distributed) created |
+| 2.1.d Hook into supervisor override path | ✅ | 71d3cac | Override-to-loaded also posts inventory |
+| 2.1.e `InsufficientStockException` UX | ✅ | b2d6506 | Modal with skip/cancel; no 500s |
+| 2.1.f Backfill + reconciliation artisan command | ✅ | 50f7b6c | `inventory:reconcile {event}` produces 0 delta on clean event |
+| 2.2 Nightly reconciliation schedule | ✅ | 7d9de17 | Delta > threshold emails admins |
 
 ## Phase 3 — Public-surface hardening
 
