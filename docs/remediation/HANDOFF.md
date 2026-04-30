@@ -4,19 +4,19 @@
 
 ---
 
-## Current state — 2026-04-30 (Session 4, **Phase 2.1.a closed**)
+## Current state — 2026-04-30 (Session 4, **Phase 2.1.a + 2.1.b closed**)
 
 ### Where we are
 
-**Phase 1 is fully complete** (tagged). **Phase 2.1.a is done** — `DistributionPostingService` skeleton + `InsufficientStockException` committed to `main` (14e1fd7). Suite is green at 77/77.
+**Phase 1 is fully complete** (tagged). **Phase 2.1.a and 2.1.b are done** — `DistributionPostingService` with a live resolver committed to `main` (79531ee). Suite is green at 83/83.
 
-The next call is **Phase 2.1.b — bag-composition resolver**. This is where the stub `resolveBagComposition()` gets replaced with real data. It requires a design decision (see open question below) that must be surfaced to the user before writing a line of code.
+The next call is **Phase 2.1.c — hook `postForVisit` into `EventDayController::markLoaded`**. This is the wiring step: when a loader marks a visit as loaded, the service posts the inventory deduction automatically. No new schema needed.
 
 ### Active branch
 
-`main` — 2.1.a just committed directly to main. No feature branch yet for 2.1.b.
+`main` — 2.1.a and 2.1.b committed directly to main. No feature branch cut yet.
 
-> **Note on branching:** HANDOFF previously said to cut `phase-2.1/distribution-posting-service` off main before starting. Since 2.1.a landed directly on main in this session, confirm with the user whether to cut a branch for 2.1.b–f or continue landing sub-tasks on main.
+> **Note on branching:** Sub-tasks 2.1.a and 2.1.b landed directly on main this session. The original HANDOFF said to cut `phase-2.1/distribution-posting-service`. Confirm with user before 2.1.c whether to cut a branch now or continue on main through 2.1.f then merge+tag.
 
 ### Tags on main (pushed to origin)
 
@@ -29,6 +29,7 @@ The next call is **Phase 2.1.b — bag-composition resolver**. This is where the
 ### What's done in Phase 2
 
 - ✅ **2.1.a** — `DistributionPostingService` skeleton + `InsufficientStockException` + 4 unit tests (14e1fd7)
+- ✅ **2.1.b** — `allocation_ruleset_components` table + `AllocationRulesetComponent` model + live `resolveBagComposition()` + 6 resolver tests (79531ee)
 
 ### What's done in Phase 1
 
@@ -48,33 +49,27 @@ The next call is **Phase 2.1.b — bag-composition resolver**. This is where the
 
 ### What's next — start here on resume
 
-**Phase 2.1.b — bag-composition resolver from `AllocationRuleset`.**
+**Phase 2.1.c — hook `postForVisit` into `EventDayController::markLoaded`.**
 
-Before writing a single line, surface the open question below to the user and get a decision. Then:
+When a loader taps "Loaded" on a visit, `EventDayController::markLoaded()` transitions the visit to `visit_status = 'loaded'` and sets `loading_completed_at`. Phase 2.1.c adds a call to `DistributionPostingService::postForVisit($visit)` immediately after the status transition, still inside the same request.
 
-1. Implement the chosen schema (migration + model, or JSON extension).
-2. Fill in `DistributionPostingService::resolveBagComposition(Visit $visit): array` to query the real composition.
-3. Add tests that use the real resolver path (not the anonymous-subclass injection trick from 2.1.a) — including the deferred M5 test: two real items where the second has insufficient stock → both movements rolled back.
+Key decisions for 2.1.c:
+1. **Where to call**: inside `EventDayController::markLoaded()` after the visit update, or inside a dedicated `EventCheckInService::markLoaded()` method that the controller calls. The "thin controller" pattern says to put it in the service, but `markLoaded` is currently controller logic.
+2. **Error handling**: if `postForVisit` throws `InsufficientStockException`, the loader sees what? The spec says 2.1.e handles the UX modal — for now, 2.1.c should return a structured 422 or a flash error (the same pattern as 1.3.b did for `HouseholdAlreadyServedException`), not a 500.
+3. **`EventDayController.php` is currently untracked** — this commit will pull it into version control for the first time (same organic pattern as prior phases).
 
-**Critical open question — must be answered before 2.1.b:**
-
-The `AllocationRuleset` model today only has `getBagsFor(int $size): int` which returns a *count of bags* for a household size. There is no schema for *what's in a bag* — which inventory items, how many of each. Two options:
-
-- **Option A: new `allocation_ruleset_components` table** — one row per item per ruleset, with `qty_per_bag` (integer). Clean relational model; easy to query; requires a migration and a new model.
-- **Option B: extend `AllocationRuleset.rules` JSON** — embed item composition inside the existing JSON alongside the min/max/bags rules, e.g. `{"min":1,"max":1,"bags":1,"components":[{"inventory_item_id":3,"qty_per_bag":2}]}`. No new table; denser; harder to query and validate.
-
-**Do not choose unilaterally. Ask the user.**
+Before starting 2.1.c, read `EventDayController::markLoaded()` to understand the current flow.
 
 ### Phase 2 sub-task status
 - ✅ **2.1.a** Service skeleton + unit tests (14e1fd7)
-- ⬜ **2.1.b** Bag-composition resolver from `AllocationRuleset` — **BLOCKED on schema decision**
+- ✅ **2.1.b** Bag-composition resolver from `AllocationRuleset` (79531ee)
 - ⬜ **2.1.c** Hook into `markLoaded` happy path
 - ⬜ **2.1.d** Hook into supervisor override path (`VisitMonitorController`)
 - ⬜ **2.1.e** `InsufficientStockException` UX (modal with skip/substitute/cancel)
 - ⬜ **2.1.f** Backfill + reconciliation artisan command (`inventory:reconcile {event}`)
 - ⬜ **2.2** Nightly reconciliation schedule
 
-### Key implementation details from 2.1.a (carry into 2.1.b–f)
+### Key implementation details from 2.1.a–b (carry into 2.1.c–f)
 
 - `postForVisit(Visit $visit): void` is the single public entry point.
 - Inside `DB::transaction`, iterates `resolveBagComposition()` result: each component is `['inventory_item_id' => int, 'quantity' => int]` where `quantity` is the **total for this visit** (not per-household — the resolver handles multiplication).
@@ -83,6 +78,8 @@ The `AllocationRuleset` model today only has `getBagsFor(int $size): int` which 
 - `EventInventoryAllocation::where(...)->increment(...)` is a delta SQL UPDATE (no row lock needed; immune to phantom reads because it is not a SELECT-then-UPDATE).
 - `inventory_movements` schema: no `visit_id` column. Movement is linked to event only.
 - `resolveBagComposition()` is `protected` — anonymous subclass injection in tests is the approved pattern for this service.
+- `allocation_ruleset_components` FK on `inventory_item_id` is `restrictOnDelete` (deleting an item raises a DB error if any component references it — reviewer-caught fix).
+- Explicit unique index name `arc_ruleset_item_unique` (auto-name exceeded MySQL 64-char identifier limit — discovered on first migration run).
 
 ### Branch / merge guidance
 
@@ -109,21 +106,21 @@ None from Phase 1. Phase 2.1.a added three new tracked files:
 
 ### Blockers
 
-- **2.1.b is blocked** on the bag-composition schema decision. Surface to user at start of next step.
-- **2.1.f backfill scope**: historical exited visits — backfill `event_distributed` movements for them, or leave history alone and only post forward? Audit says "**only if** ops confirms historical data was zeroed elsewhere." Confirm with user before 2.1.f.
+None for 2.1.c. The bag-composition schema decision is made (Option A, done).
+
+- **2.1.f backfill scope**: historical exited visits — backfill `event_distributed` movements, or leave history alone? Audit says "**only if** ops confirms historical data was zeroed elsewhere." Confirm with user before 2.1.f.
 
 ### User's pre-existing uncommitted work
 
-Many files remain modified/untracked from before Phase 0 began. Phase 2 will likely pull in for the first time:
+Many files remain modified/untracked from before Phase 0 began. 2.1.b pulled in `AllocationRuleset.php` (first time tracked). Still to pull in:
 - `app/Http/Controllers/EventDayController.php` (untracked; 2.1.c hooks `markLoaded` here)
 - `app/Http/Controllers/VisitMonitorController.php` (untracked; 2.1.d hooks the supervisor override path)
-- Possibly `app/Models/EventInventoryAllocation.php`, `app/Models/InventoryItem.php`, `app/Models/InventoryMovement.php`, `app/Models/AllocationRuleset.php`
+- Possibly `app/Models/EventInventoryAllocation.php`, `app/Models/InventoryItem.php`, `app/Models/InventoryMovement.php`
 
 **Stage explicitly via `git add <path>`** — never `git add .`.
 
 ### Open questions for the user
-- **Bag composition schema** (2.1.b prerequisite, BLOCKER): new `allocation_ruleset_components` table (Option A), or extend `AllocationRuleset.rules` JSON (Option B)? Ask before doing anything.
-- **Backfill scope** (2.1.f): historical exited visits — forward-only or include history?
+- **Backfill scope** (2.1.f prerequisite): historical exited visits — backfill `event_distributed` movements for them, or forward-only? Surface before 2.1.f.
 
 ### ADR index
 - ADR-001 — AUDIT_REPORT.md Part 13 is the spec
@@ -159,9 +156,10 @@ These are *environmental* constraints, not phase work. Future-you should be awar
 
 ### Context budget at handoff
 
-Session 4 was focused: read all docs for context, then implemented Phase 2.1.a (InsufficientStockException + DistributionPostingService skeleton + 4 tests). Code-review pass confirmed M1–M4 were non-issues; M5 deferred. Committed 14e1fd7.
+Session 4: read all docs for context, implemented Phase 2.1.a (InsufficientStockException + DistributionPostingService skeleton + 4 tests) and Phase 2.1.b (allocation_ruleset_components table + live resolver + 6 tests). Code-review on 2.1.b fixed inventory_item_id FK from cascadeOnDelete → restrictOnDelete. MySQL 64-char index-name limit discovered on first migration run (fixed with explicit name). 83/83.
 
 Recent commits on main (since Phase 1.3 merge):
+- `79531ee` — feat(inventory): Phase 2.1.b — bag-composition resolver from AllocationRuleset
 - `14e1fd7` — feat(inventory): Phase 2.1.a — DistributionPostingService skeleton + unit tests
 - `bdefe07` — feat(auth): EventDayOrAuth middleware lets public intake call /checkin/*
 - `3402051` — fix(register): treat same-day events as still-current, not past
