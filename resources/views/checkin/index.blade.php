@@ -986,7 +986,16 @@
 window.__checkInData = {
     eventId: @json($selectedEvent?->id),
     lanes: @json($lanes),
+    // Application base URL injected by Laravel's url() helper. Auto-resolves
+    // whether the app is served from the domain root (e.g. via a vhost like
+    // foodbank.test) or from a subdirectory (e.g. localhost/Foodbank/public).
+    // appUrl() below stitches paths onto this base so all fetches work
+    // regardless of the deployment URL shape.
+    appBase: @json(rtrim(url('/'), '/')),
 };
+function appUrl(path) {
+    return window.__checkInData.appBase + path;
+}
 </script>
 <script>
 function checkIn() {
@@ -1110,7 +1119,7 @@ function checkIn() {
         },
 
         onEventChange() {
-            window.location.href = '/checkin?event_id=' + (this.eventId || '');
+            window.location.href = appUrl('/checkin?event_id=' + (this.eventId || ''));
         },
 
         // ── Search ────────────────────────────────────────────────────────────
@@ -1124,8 +1133,8 @@ function checkIn() {
             this.searching = true;
             try {
                 const res  = await fetch(
-                    '/checkin/search?q=' + encodeURIComponent(this.query)
-                    + '&event_id=' + (this.eventId || ''),
+                    appUrl('/checkin/search?q=' + encodeURIComponent(this.query)
+                        + '&event_id=' + (this.eventId || '')),
                     { headers: { 'Accept': 'application/json' } }
                 );
                 const data = await res.json();
@@ -1200,7 +1209,7 @@ function checkIn() {
             this.addingNew = true;
             this.addErrors = {};
             try {
-                const res = await fetch('/checkin/quick-create', {
+                const res = await fetch(appUrl('/checkin/quick-create'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1244,10 +1253,10 @@ function checkIn() {
             }
             this.attachSearching = true;
             try {
-                const url = '/checkin/represented/search'
+                const url = appUrl('/checkin/represented/search'
                     + '?q='                 + encodeURIComponent(this.attachQuery)
                     + '&representative_id=' + this.selectedHousehold.id
-                    + '&event_id='          + (this.eventId || '');
+                    + '&event_id='          + (this.eventId || ''));
                 const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
                 const data = await res.json();
                 const linkedIds = new Set(this.linkedHouseholds.map(h => h.id));
@@ -1261,7 +1270,7 @@ function checkIn() {
         async attachExisting(h) {
             // Persist the DB link immediately — sets representative_household_id on the household
             try {
-                const res = await fetch('/checkin/represented/attach', {
+                const res = await fetch(appUrl('/checkin/represented/attach'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1295,7 +1304,7 @@ function checkIn() {
             this.createSaving = true;
             this.createErrors = {};
             try {
-                const res = await fetch('/checkin/represented/create', {
+                const res = await fetch(appUrl('/checkin/represented/create'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1436,7 +1445,7 @@ function checkIn() {
                 if (this.linkedHouseholds.length > 0) {
                     body.represented_ids = this.linkedHouseholds.map(h => h.id);
                 }
-                const res  = await fetch('/checkin', {
+                const res  = await fetch(appUrl('/checkin'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1513,7 +1522,7 @@ function checkIn() {
                     force:           1,
                     override_reason: reason,
                 };
-                const res = await fetch('/checkin', {
+                const res = await fetch(appUrl('/checkin'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1555,7 +1564,7 @@ function checkIn() {
             this.addingNew = true;
             this.addErrors = {};
             try {
-                const res  = await fetch('/checkin/quick-add', {
+                const res  = await fetch(appUrl('/checkin/quick-add'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1591,7 +1600,7 @@ function checkIn() {
         async markDone(visitId) {
             this.markingDone = visitId;
             try {
-                const res = await fetch('/checkin/' + visitId + '/done', {
+                const res = await fetch(appUrl('/checkin/' + visitId + '/done'), {
                     method: 'PATCH',
                     headers: {
                         'Accept': 'application/json',
@@ -1614,7 +1623,7 @@ function checkIn() {
         async loadLog() {
             if (!this.eventId) return;
             try {
-                const res  = await fetch('/checkin/log?event_id=' + this.eventId, {
+                const res  = await fetch(appUrl('/checkin/log?event_id=' + this.eventId), {
                     headers: { 'Accept': 'application/json' }
                 });
                 const data = await res.json();
@@ -1634,7 +1643,7 @@ function checkIn() {
             this.vehicleEditSaving = true;
             try {
                 const res = await fetch(
-                    '/checkin/households/' + this.selectedHousehold.id + '/vehicle',
+                    appUrl('/checkin/households/' + this.selectedHousehold.id + '/vehicle'),
                     {
                         method: 'PATCH',
                         headers: {
