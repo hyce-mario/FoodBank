@@ -61,10 +61,13 @@ class EventAuthCodeLengthTest extends TestCase
     }
 
     /**
-     * Event creation via boot populates both the plaintext and hash columns
-     * for all four roles. The hash must verify against the plaintext.
+     * Event creation via boot populates the hash columns for all four roles.
+     * Phase 3.2.d dropped plaintext columns — the boot observer now generates
+     * blind hashes (no plaintext stored). We verify the hash format is correct.
+     * The controller-path (EventController::store) pre-generates codes so it
+     * can flash plaintexts; that path is covered by the store() code path.
      */
-    public function test_event_creation_populates_6_char_codes_and_hashes_via_boot(): void
+    public function test_event_creation_populates_hash_columns_via_boot(): void
     {
         $event = Event::create([
             'name'  => 'Auth Code Length Test',
@@ -73,13 +76,10 @@ class EventAuthCodeLengthTest extends TestCase
         ]);
 
         foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
-            $code = $event->{"{$role}_auth_code"};
             $hash = $event->{"{$role}_auth_code_hash"};
-
-            $this->assertSame(6, strlen($code), "{$role}_auth_code must be 6 chars");
-            $this->assertMatchesRegularExpression('/^[A-Z0-9]{6}$/', $code, "{$role}_auth_code must be uppercase alphanumeric");
             $this->assertNotNull($hash, "{$role}_auth_code_hash must be populated");
-            $this->assertTrue(\Illuminate\Support\Facades\Hash::check($code, $hash), "hash must verify against plaintext for {$role}");
+            // Bcrypt hashes start with $2y$ — verify the hash looks like bcrypt.
+            $this->assertStringStartsWith('$2y$', $hash, "{$role}_auth_code_hash must be a bcrypt hash");
         }
     }
 }

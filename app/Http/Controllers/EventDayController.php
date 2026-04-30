@@ -69,16 +69,13 @@ class EventDayController extends Controller
         abort_unless(in_array($role, self::ROLES, true), 404);
         abort_unless($event->authCodesActive(), 403, 'This event is not currently active.');
 
-        $request->validate(['code' => ['required', 'string', 'size:4']]);
+        $request->validate(['code' => ['required', 'string', 'size:' . \App\Models\Event::AUTH_CODE_LENGTH]]);
 
-        // Phase 3.2.c: verify against the hash column. Falls back to plaintext
-        // equality for events whose hash column was not backfilled (should not
-        // occur after the 3.2.a migration, but defensive).
-        $hash      = $event->authCodeHashFor($role);
-        $submitted = $request->input('code');
-        $valid     = $hash !== null
-            ? Hash::check($submitted, $hash)
-            : ($submitted === $event->authCodeFor($role));
+        // Phase 3.2.c/d: verify against the hash column only (plaintext columns
+        // were dropped in 3.2.d). The backfill migration ensures all upcoming/
+        // current events have a hash, so a null hash is treated as no valid code.
+        $hash  = $event->authCodeHashFor($role);
+        $valid = $hash !== null && Hash::check($request->input('code'), $hash);
 
         if ($valid) {
             $request->session()->put($this->sessionKey($event, $role), true);

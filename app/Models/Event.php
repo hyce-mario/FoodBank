@@ -21,10 +21,6 @@ class Event extends Model
         'ruleset_id',
         'volunteer_group_id',
         'notes',
-        'intake_auth_code',
-        'scanner_auth_code',
-        'loader_auth_code',
-        'exit_auth_code',
         'intake_auth_code_hash',
         'scanner_auth_code_hash',
         'loader_auth_code_hash',
@@ -45,14 +41,14 @@ class Event extends Model
             if (! SettingService::get('public_access.auto_generate_codes', true)) {
                 return;
             }
+            // If the controller pre-populated the hash columns (e.g. EventController
+            // generates codes before create() so it can flash the plaintexts), the
+            // observer skips those roles. Otherwise it generates blind hashes. The
+            // blind-hash path is a fallback — the controller should always pre-generate
+            // when it needs to show the codes to the admin.
             foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
-                if (! $event->{"{$role}_auth_code"}) {
-                    $code = self::generateAuthCode();
-                    $event->{"{$role}_auth_code"}      = $code;
-                    $event->{"{$role}_auth_code_hash"} = Hash::make($code);
-                } elseif (! $event->{"{$role}_auth_code_hash"}) {
-                    // Code was provided explicitly but hash not set — hash it now.
-                    $event->{"{$role}_auth_code_hash"} = Hash::make($event->{"{$role}_auth_code"});
+                if (! $event->{"{$role}_auth_code_hash"}) {
+                    $event->{"{$role}_auth_code_hash"} = Hash::make(self::generateAuthCode());
                 }
             }
         });
@@ -80,6 +76,12 @@ class Event extends Model
      *
      * @return array{intake: string, scanner: string, loader: string, exit: string}
      */
+    /**
+     * Regenerate all four auth codes, store the hashes, and return the plaintext
+     * codes for one-time display (callers should flash them to the session).
+     *
+     * @return array{intake: string, scanner: string, loader: string, exit: string}
+     */
     public function regenerateAuthCodes(): array
     {
         $plaintexts = [];
@@ -87,9 +89,8 @@ class Event extends Model
 
         foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
             $code = self::generateAuthCode();
-            $plaintexts[$role]                   = $code;
-            $updates["{$role}_auth_code"]        = $code;
-            $updates["{$role}_auth_code_hash"]   = Hash::make($code);
+            $plaintexts[$role]                 = $code;
+            $updates["{$role}_auth_code_hash"] = Hash::make($code);
         }
 
         $this->update($updates);
@@ -105,18 +106,6 @@ class Event extends Model
             'scanner' => $this->scanner_auth_code_hash,
             'loader'  => $this->loader_auth_code_hash,
             'exit'    => $this->exit_auth_code_hash,
-            default   => null,
-        };
-    }
-
-    /** Check if a code is valid for a given role on this event. */
-    public function authCodeFor(string $role): ?string
-    {
-        return match ($role) {
-            'intake'  => $this->intake_auth_code,
-            'scanner' => $this->scanner_auth_code,
-            'loader'  => $this->loader_auth_code,
-            'exit'    => $this->exit_auth_code,
             default   => null,
         };
     }
