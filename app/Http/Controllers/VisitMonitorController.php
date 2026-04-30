@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\InsufficientStockException;
 use App\Models\Event;
 use App\Models\Visit;
+use App\Services\DistributionPostingService;
 use App\Services\SettingService;
 use App\Services\VisitReorderService;
 use Illuminate\Http\JsonResponse;
@@ -194,7 +196,25 @@ class VisitMonitorController extends Controller
             $update['queue_position'] = null;
         }
 
-        $visit->update($update);
+        try {
+            // Wrap status flip + distribution in one transaction so an
+            // InsufficientStockException rolls back the status change too.
+            DB::transaction(function () use ($visit, $update, $newStatus) {
+                $visit->update($update);
+                if ($newStatus === 'loaded') {
+                    app(DistributionPostingService::class)->postForVisit($visit);
+                }
+            });
+        } catch (InsufficientStockException $e) {
+            return response()->json([
+                'error'             => 'insufficient_stock',
+                'message'           => 'Not enough stock to complete this distribution.',
+                'inventory_item_id' => $e->inventoryItemId,
+                'needed'            => $e->needed,
+                'available'         => $e->available,
+                'event_id'          => $e->eventId,
+            ], 422);
+        }
 
         return response()->json(['ok' => true]);
     }
