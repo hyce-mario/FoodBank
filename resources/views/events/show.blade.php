@@ -499,24 +499,128 @@
             <p class="text-xs text-gray-400">Share the <button @click="activeTab='details'; $nextTick(() => regLinkOpen=true)" class="text-brand-600 font-semibold hover:underline">public registration link</button> to start collecting sign-ups.</p>
         </div>
     @else
+        {{-- Phase C.1 — Pre-reg stat cards. All cards share the same chrome
+             (white + gray outline + light shadow); icon badges are neutral
+             so the card row reads as one calm strip. --}}
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
+            <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z"/>
+                        </svg>
+                    </div>
+                    <div class="min-w-0">
+                        <p data-stat="total" class="text-2xl font-black text-gray-900 tabular-nums leading-none">{{ number_format($attendeeStats['total']) }}</p>
+                        <p class="text-xs text-gray-500 mt-1.5 font-medium">Total Attendees</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23-.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/>
+                        </svg>
+                    </div>
+                    <div class="min-w-0">
+                        <p data-stat="children" class="text-2xl font-black text-gray-900 tabular-nums leading-none">{{ number_format($attendeeStats['children']) }}</p>
+                        <p class="text-xs text-gray-500 mt-1.5 font-medium">Children</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
+                        </svg>
+                    </div>
+                    <div class="min-w-0">
+                        <p data-stat="adults" class="text-2xl font-black text-gray-900 tabular-nums leading-none">{{ number_format($attendeeStats['adults']) }}</p>
+                        <p class="text-xs text-gray-500 mt-1.5 font-medium">Adults</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                        </svg>
+                    </div>
+                    <div class="min-w-0">
+                        <p data-stat="seniors" class="text-2xl font-black text-gray-900 tabular-nums leading-none">{{ number_format($attendeeStats['seniors']) }}</p>
+                        <p class="text-xs text-gray-500 mt-1.5 font-medium">Seniors</p>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Phase C.2 — Forecast card. One headline number + small breakdown.
+                 Renders a "not enough history yet" placeholder when there are
+                 no past events to baseline against. --}}
+            <div data-card="forecast" class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
+                @if ($attendeeForecast['enabled'])
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941"/>
+                            </svg>
+                        </div>
+                        <div class="min-w-0">
+                            <p data-stat="forecast-total" class="text-2xl font-black text-gray-900 tabular-nums leading-none">~{{ number_format($attendeeForecast['projected_total']) }}</p>
+                            <p class="text-xs text-gray-500 mt-1.5 font-medium">Forecast</p>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-gray-400 mt-3 leading-snug">
+                        Pre-reg: <span class="font-semibold text-gray-600 tabular-nums">{{ number_format($attendeeForecast['current_pre_reg']) }}</span>
+                        · Walk-in (est): <span class="font-semibold text-gray-600 tabular-nums">{{ number_format($attendeeForecast['projected_walk_ins']) }}</span>
+                        <br>
+                        <span class="italic">Based on last {{ $attendeeForecast['past_events_used'] }} event{{ $attendeeForecast['past_events_used'] === 1 ? '' : 's' }}</span>
+                    </p>
+                @else
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"/>
+                            </svg>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-sm font-semibold text-gray-500 leading-snug">Not enough history yet</p>
+                            <p class="text-[11px] text-gray-400 mt-1 leading-snug">Hold an event to start forecasting.</p>
+                        </div>
+                    </div>
+                @endif
+            </div>
+        </div>
+
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             {{-- Table header --}}
             <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h3 class="text-sm font-bold text-gray-800">Attendees</h3>
                 <div class="flex items-center gap-2">
                     <span class="text-xs text-gray-400 mr-2">{{ $event->preRegistrations->count() }} total</span>
-                    <button type="button" title="Export PDF"
-                            class="w-8 h-8 flex items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+                    {{-- Export PDF stays inert; Excel-via-phpoffice was the
+                         deferred locked decision. --}}
+                    <button type="button" title="Export PDF (coming soon)" disabled
+                            class="w-8 h-8 flex items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 opacity-60 cursor-not-allowed">
                         <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 1.5L18.5 9H13zM8 17v-1h8v1zm0-3v-1h8v1zm0-3V10h4v1z"/></svg>
                     </button>
-                    <button type="button" title="Export Excel"
+                    {{-- The "Excel" button slot is now a real CSV export. The
+                         locked decision was CSV + Print for v1; we kept the
+                         green spreadsheet icon since it reads as "tabular
+                         export" without saying "Excel". --}}
+                    <a href="{{ route('events.attendees.csv', $event) }}" title="Export CSV"
                             class="w-8 h-8 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-600 hover:bg-green-100 transition-colors">
                         <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 1.5L18.5 9H13zm-3 8.5 2 3h-1.3l-1.2-2-1.2 2H8l2-3-2-3h1.3l1.2 2 1.2-2H13z"/></svg>
-                    </button>
-                    <button type="button" title="Print"
+                    </a>
+                    <a href="{{ route('events.attendees.print', $event) }}" target="_blank" rel="noopener" title="Print"
                             class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z"/></svg>
-                    </button>
+                    </a>
                 </div>
             </div>
 

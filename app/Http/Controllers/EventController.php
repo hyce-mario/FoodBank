@@ -12,6 +12,7 @@ use App\Models\FinanceTransaction;
 use App\Models\InventoryItem;
 use App\Models\Volunteer;
 use App\Models\VolunteerGroup;
+use App\Services\EventAnalyticsService;
 use App\Services\FinanceService;
 use App\Services\HouseholdService;
 use App\Services\SettingService;
@@ -20,7 +21,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EventController extends Controller
 {
@@ -165,6 +168,21 @@ class EventController extends Controller
             ];
         }
 
+        // Phase C.1: Attendee tab stat-card payload — totals derived from the
+        // pre_registrations table columns. Computed off the already-loaded
+        // collection so we don't issue extra queries.
+        $attendeeStats = [
+            'total'    => $event->preRegistrations->count(),
+            'children' => (int) $event->preRegistrations->sum('children_count'),
+            'adults'   => (int) $event->preRegistrations->sum('adults_count'),
+            'seniors'  => (int) $event->preRegistrations->sum('seniors_count'),
+        ];
+
+        // Phase C.2: forecast — average of last 3 past events + walk-in rate.
+        // Returns enabled=false when there is no history; the view renders a
+        // "not enough history yet" placeholder card in that case.
+        $attendeeForecast = app(EventAnalyticsService::class)->attendeeForecast($event);
+
         // Live stat-card data for the Details tab. Each metric is computed
         // straight from the source-of-truth tables — no caching / no eager
         // collection accidentally double-counting represented households.
@@ -194,8 +212,88 @@ class EventController extends Controller
             'eventFinanceKpis', 'eventTransactions', 'financeCategories',
             'showAverageRating', 'enableEventAllocations', 'enableEventFinanceMetrics',
             'eventStats', 'mediaUploadConfig',
-            'visitReport', 'detailsPerPage'
+            'visitReport', 'detailsPerPage',
+            'attendeeStats', 'attendeeForecast'
         ));
+    }
+
+    // ─── Attendee printable sheet (Phase C.3) ─────────────────────────────────
+
+    /**
+     * Branded standalone print sheet for the attendee roster. Auto-fires
+     * window.print() after a 250ms paint tick — same pattern as the
+     * purchase-order print sheet. Renders without the app layout so the
+     * sidebar / topbar do not bleed onto the printed page.
+     */
+    public function attendeesPrint(Event $event): View
+    {
+        $this->authorize('view', $event);
+        $event->load('preRegistrations.household');
+
+        $attendeeStats = [
+            'total'    => $event->preRegistrations->count(),
+            'children' => (int) $event->preRegistrations->sum('children_count'),
+            'adults'   => (int) $event->preRegistrations->sum('adults_count'),
+            'seniors'  => (int) $event->preRegistrations->sum('seniors_count'),
+        ];
+
+        return view('events.attendees.print', compact('event', 'attendeeStats'));
+    }
+
+    // ─── Attendee CSV export (Phase C.3) ──────────────────────────────────────
+
+    /**
+     * Streamed CSV download. Uses LazyCollection chunking so a 5,000-row
+     * event does not blow the request memory cap, and prepends a UTF-8 BOM
+     * so Excel opens it without smart-quote / accented-char garbling.
+     */
+    public function attendeesCsv(Event $event): StreamedResponse
+    {
+        $this->authorize('view', $event);
+
+        $filename = sprintf(
+            'attendees-%s-%s.csv',
+            Str::slug($event->name),
+            $event->date?->format('Ymd') ?? now()->format('Ymd'),
+        );
+
+        return response()->streamDownload(function () use ($event) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM — ensures Excel opens the file with proper encoding.
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, [
+                'Attendee #', 'First Name', 'Last Name', 'Email',
+                'Household Size', 'Children', 'Adults', 'Seniors',
+                'City', 'State', 'Zipcode',
+                'Match Status', 'Registered At',
+            ]);
+
+            EventPreRegistration::query()
+                ->where('event_id', $event->id)
+                ->orderBy('id')
+                ->lazy(500)
+                ->each(function (EventPreRegistration $reg) use ($out) {
+                    fputcsv($out, [
+                        $reg->attendee_number,
+                        $reg->first_name,
+                        $reg->last_name,
+                        $reg->email,
+                        $reg->household_size,
+                        $reg->children_count,
+                        $reg->adults_count,
+                        $reg->seniors_count,
+                        $reg->city,
+                        $reg->state,
+                        $reg->zipcode,
+                        $reg->match_status,
+                        $reg->created_at?->format('Y-m-d H:i'),
+                    ]);
+                });
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 
     // ─── Edit ─────────────────────────────────────────────────────────────────

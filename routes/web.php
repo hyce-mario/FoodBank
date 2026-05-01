@@ -129,6 +129,11 @@ Route::middleware('auth')->group(function () {
         ->name('events.attendees.register');
     Route::delete('events/{event}/attendees/{attendee}', [EventController::class, 'deleteAttendee'])
         ->name('events.attendees.delete');
+    // Phase C.3 — branded printable sheet + streamed CSV download
+    Route::get('events/{event}/attendees/print', [EventController::class, 'attendeesPrint'])
+        ->name('events.attendees.print');
+    Route::get('events/{event}/attendees/export.csv', [EventController::class, 'attendeesCsv'])
+        ->name('events.attendees.csv');
     Route::post('events/{event}/regenerate-codes', [EventController::class, 'regenerateCodes'])
         ->name('events.regenerate-codes');
 
