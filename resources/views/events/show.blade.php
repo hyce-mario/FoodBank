@@ -1,6 +1,20 @@
 @extends('layouts.app')
 @section('title', $event->name)
 
+@push('styles')
+<style>
+    /* Event Report status badges (Phase B). Inline custom CSS so we don't
+       depend on Tailwind colour classes that may not be in the prebuilt
+       bundle (no Node available). */
+    .er-status            { display:inline-flex; align-items:center; padding:2px 10px; border-radius:9999px; font-size:11px; font-weight:600; }
+    .er-status-checked_in { background:#EFF6FF; color:#1D4ED8; }
+    .er-status-queued     { background:#F5F3FF; color:#6D28D9; }
+    .er-status-loading    { background:#FFF7ED; color:#C2410C; }
+    .er-status-loaded     { background:#FEF3C7; color:#B45309; }
+    .er-status-exited     { background:#F0FDF4; color:#15803D; }
+</style>
+@endpush
+
 @section('content')
 
 @php
@@ -263,27 +277,23 @@
                 </div>
             </div>
 
-            {{-- Event Report --}}
+            {{-- Event Report (Phase B) --}}
             <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                 <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                     <h3 class="text-sm font-bold text-gray-800">Event Report</h3>
                     <div class="flex items-center gap-2">
-                        <select class="px-3 py-1.5 text-xs font-semibold border border-gray-300 rounded-lg bg-white text-gray-600 focus:outline-none">
-                            @for ($i = 1; $i <= $event->lanes; $i++)
-                                <option>Lane {{ $i }}</option>
-                            @endfor
-                            @if ($event->lanes > 1)<option>All Lanes</option>@endif
-                        </select>
-                        <button type="button" title="Export PDF"
-                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+                        {{-- Export PDF / Excel / Print buttons stay inert here;
+                             Phase C.3 ships a real CSV + branded print sheet. --}}
+                        <button type="button" title="Export PDF" disabled
+                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 opacity-60 cursor-not-allowed">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 1.5L18.5 9H13zM8 17v-1h8v1zm0-3v-1h8v1zm0-3V10h4v1z"/></svg>
                         </button>
-                        <button type="button" title="Export Excel"
-                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-600 hover:bg-green-100 transition-colors">
+                        <button type="button" title="Export Excel" disabled
+                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-600 opacity-60 cursor-not-allowed">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 1.5L18.5 9H13zm-3 8.5 2 3h-1.3l-1.2-2-1.2 2H8l2-3-2-3h1.3l1.2 2 1.2-2H13z"/></svg>
                         </button>
-                        <button type="button" title="Print"
-                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
+                        <button type="button" title="Print" disabled
+                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 opacity-60 cursor-not-allowed">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z"/></svg>
                         </button>
                     </div>
@@ -292,9 +302,7 @@
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="border-b border-gray-100 bg-gray-50/60">
-                                <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500">
-                                    <span class="flex items-center gap-1">ID <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 3L16.5 21m0 0L12 16.5m4.5 4.5V7.5"/></svg></span>
-                                </th>
+                                <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500">ID</th>
                                 <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500">Household</th>
                                 <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500">Household Size</th>
                                 <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500">Bags</th>
@@ -302,32 +310,83 @@
                                 <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500">Status</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <tr>
-                                <td colspan="6" class="px-5 py-14 text-center">
-                                    <svg class="w-10 h-10 text-gray-200 mx-auto mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
-                                    <p class="text-sm text-gray-400">No check-ins recorded yet.</p>
-                                </td>
-                            </tr>
+                        <tbody data-testid="event-report-body">
+                            @forelse ($visitReport as $visit)
+                                @php
+                                    $allHouseholds = $visit->households;
+                                    // The pivot ordering above (visit_households.id ASC) is
+                                    // the source of truth for "primary first, then represented".
+                                    $primary       = $allHouseholds->first();
+                                    $represented   = $allHouseholds->slice(1);
+                                    $ruleset       = $event->ruleset;
+                                    $timeFmt       = $visit->start_time
+                                        ? $visit->start_time->format('M j, g:i A')
+                                        : '—';
+                                    $statusKey     = $visit->visit_status;
+                                    $statusLabel   = $visit->statusLabel();
+                                @endphp
+                                @if ($primary)
+                                    <tr class="border-b border-gray-100" data-row="primary" data-visit-id="{{ $visit->id }}">
+                                        <td class="px-5 py-3 text-xs font-mono tabular-nums text-gray-700">#{{ $primary->household_number }}</td>
+                                        <td class="px-5 py-3 text-sm text-gray-900 font-medium">{{ $primary->full_name }}</td>
+                                        <td class="px-5 py-3 text-sm text-gray-700 tabular-nums">{{ (int) ($primary->pivot->household_size ?? $primary->household_size) }}</td>
+                                        <td class="px-5 py-3 text-sm text-gray-700 tabular-nums">
+                                            @if ($ruleset)
+                                                {{ (int) $ruleset->getBagsFor((int) ($primary->pivot->household_size ?? $primary->household_size)) }}
+                                            @else
+                                                <span class="text-gray-300">—</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-5 py-3 text-xs text-gray-600 tabular-nums">{{ $timeFmt }}</td>
+                                        <td class="px-5 py-3">
+                                            <span class="er-status er-status-{{ $statusKey }}">{{ $statusLabel }}</span>
+                                        </td>
+                                    </tr>
+                                    @foreach ($represented as $rep)
+                                        <tr class="border-b border-gray-100 bg-gray-50/30" data-row="represented" data-visit-id="{{ $visit->id }}">
+                                            <td class="px-5 py-2.5 text-xs font-mono tabular-nums text-gray-600">#{{ $rep->household_number }}</td>
+                                            <td class="px-5 py-2.5 text-sm text-gray-700">
+                                                <span class="text-gray-400 mr-1">↳</span>{{ $rep->full_name }}
+                                            </td>
+                                            <td class="px-5 py-2.5 text-sm text-gray-700 tabular-nums">{{ (int) ($rep->pivot->household_size ?? $rep->household_size) }}</td>
+                                            <td class="px-5 py-2.5 text-sm text-gray-700 tabular-nums">
+                                                @if ($ruleset)
+                                                    {{ (int) $ruleset->getBagsFor((int) ($rep->pivot->household_size ?? $rep->household_size)) }}
+                                                @else
+                                                    <span class="text-gray-300">—</span>
+                                                @endif
+                                            </td>
+                                            <td class="px-5 py-2.5 text-xs text-gray-600 tabular-nums">{{ $timeFmt }}</td>
+                                            <td class="px-5 py-2.5">
+                                                <span class="er-status er-status-{{ $statusKey }}">{{ $statusLabel }}</span>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                @endif
+                            @empty
+                                <tr>
+                                    <td colspan="6" class="px-5 py-14 text-center">
+                                        <svg class="w-10 h-10 text-gray-200 mx-auto mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+                                        <p class="text-sm text-gray-400">No check-ins recorded yet.</p>
+                                    </td>
+                                </tr>
+                            @endforelse
                         </tbody>
                     </table>
                 </div>
-                <div class="flex items-center justify-between px-5 py-3.5 border-t border-gray-100 bg-gray-50/40">
-                    <div class="flex items-center gap-2 text-sm text-gray-500">
+                <div class="flex items-center justify-between px-5 py-3.5 border-t border-gray-100 bg-gray-50/40 flex-wrap gap-3">
+                    <form method="GET" action="{{ route('events.show', $event) }}" class="flex items-center gap-2 text-sm text-gray-500">
                         <span>Row Per Page</span>
-                        <select class="px-2 py-1 text-xs border border-gray-300 rounded-lg bg-white focus:outline-none">
-                            <option>10</option><option>25</option><option>50</option>
+                        <select name="details_per" onchange="this.form.submit()"
+                                class="px-2 py-1 text-xs border border-gray-300 rounded-lg bg-white focus:outline-none">
+                            @foreach ([10, 25, 50] as $opt)
+                                <option value="{{ $opt }}" @selected((int) $detailsPerPage === $opt)>{{ $opt }}</option>
+                            @endforeach
                         </select>
                         <span>Entries</span>
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <button disabled class="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-gray-300">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
-                        </button>
-                        <span class="w-7 h-7 flex items-center justify-center rounded-lg bg-navy-700 text-white text-xs font-bold">1</span>
-                        <button disabled class="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-200 text-gray-300">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
-                        </button>
+                    </form>
+                    <div>
+                        {{ $visitReport->onEachSide(1)->links() }}
                     </div>
                 </div>
             </div>

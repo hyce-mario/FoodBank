@@ -98,10 +98,10 @@ class EventController extends Controller
 
     // ─── Show ─────────────────────────────────────────────────────────────────
 
-    public function show(Event $event): View
+    public function show(Request $request, Event $event): View
     {
         $this->authorize('view', $event);
-        $event->loadMissing('volunteerGroup', 'assignedVolunteers');
+        $event->loadMissing('volunteerGroup', 'assignedVolunteers', 'ruleset');
         $event->load([
             'preRegistrations.household',
             'preRegistrations.potentialHousehold',
@@ -110,6 +110,21 @@ class EventController extends Controller
             'inventoryAllocations' => fn($q) => $q->with('item.category')->orderBy('created_at'),
             'volunteerCheckIns'    => fn($q) => $q->with('volunteer')->orderBy('checked_in_at'),
         ]);
+
+        // Phase B: Event Report table — paginated visit log with eager-loaded
+        // households (incl. pivot snapshot demographics for accurate per-row
+        // bag math under the active ruleset). Page name namespaced to avoid
+        // colliding with future paginators on the same page.
+        $detailsPerPage = (int) $request->input('details_per', 10);
+        if (! in_array($detailsPerPage, [10, 25, 50], true)) {
+            $detailsPerPage = 10;
+        }
+        $visitReport = $event->visits()
+            ->with(['households' => fn ($q) => $q->orderBy('visit_households.id')])
+            ->orderByDesc('start_time')
+            ->orderByDesc('id')
+            ->paginate($detailsPerPage, ['*'], 'details_page')
+            ->withQueryString();
 
         $inventoryItems = InventoryItem::active()
             ->with('category')
@@ -178,7 +193,8 @@ class EventController extends Controller
             'event', 'inventoryItems',
             'eventFinanceKpis', 'eventTransactions', 'financeCategories',
             'showAverageRating', 'enableEventAllocations', 'enableEventFinanceMetrics',
-            'eventStats', 'mediaUploadConfig'
+            'eventStats', 'mediaUploadConfig',
+            'visitReport', 'detailsPerPage'
         ));
     }
 
