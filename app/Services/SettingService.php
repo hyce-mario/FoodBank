@@ -69,6 +69,18 @@ class SettingService
                 // The hidden input always sends '0'; checkbox sends '1' when checked.
                 // Check the actual value, not just key existence.
                 $value = filter_var($data[$shortKey] ?? false, FILTER_VALIDATE_BOOLEAN) ? '1' : '0';
+            } elseif ($type === 'multi_select') {
+                // Checkbox-grid input — comes in as an array. Whitelist
+                // against the definition's `options` so a tampered request
+                // can't inject arbitrary values, then JSON-encode for storage.
+                $arr  = (array) ($data[$shortKey] ?? []);
+                $opts = array_keys($def['options'] ?? []);
+                if (! empty($opts)) {
+                    $arr = array_values(array_intersect($arr, $opts));
+                } else {
+                    $arr = array_values($arr);
+                }
+                $value = json_encode($arr);
             } else {
                 $value = isset($data[$shortKey]) ? (string) $data[$shortKey] : '';
             }
@@ -239,6 +251,34 @@ class SettingService
                         'current' => 'Active/current event',
                         'recent'  => 'Most recent completed event',
                         'none'    => 'No event pre-selected',
+                    ],
+                ],
+                'max_upload_size_mb' => [
+                    'label'       => 'Max Upload Size (MB)',
+                    'type'        => 'integer',
+                    'default'     => 50,
+                    'description' => 'Cap on media upload size.',
+                    'placeholder' => '50',
+                ],
+                'allowed_upload_formats' => [
+                    'label'       => 'Allowed Upload Formats',
+                    'type'        => 'multi_select',
+                    'default'     => [
+                        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+                        'video/mp4',  'video/quicktime', 'video/x-msvideo', 'video/webm',
+                        'application/pdf',
+                    ],
+                    'description' => 'File types accepted by the uploader.',
+                    'options'     => [
+                        'image/jpeg'       => 'JPEG / JPG',
+                        'image/png'        => 'PNG',
+                        'image/gif'        => 'GIF',
+                        'image/webp'       => 'WebP',
+                        'video/mp4'        => 'MP4',
+                        'video/quicktime'  => 'QuickTime (.mov)',
+                        'video/x-msvideo'  => 'AVI',
+                        'video/webm'       => 'WebM',
+                        'application/pdf'  => 'PDF',
                     ],
                 ],
             ],
