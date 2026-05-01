@@ -9,6 +9,9 @@
     body {
         @apply antialiased;
     }
+    [x-cloak] {
+        display: none !important;
+    }
 }
 
 @layer components {

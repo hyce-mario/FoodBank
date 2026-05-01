@@ -3,6 +3,7 @@
     'value'   => '',
     'change'  => null,   // e.g. "+48%" — null hides it
     'up'      => true,   // true = green arrow up, false = red arrow down
+    'plain'   => false,  // true = show change as a plain label, no arrow
     'icon'    => 'gift', // gift | home | people | volunteer
     'variant' => 'white', // white | orange | navy | light
 ])
@@ -69,7 +70,12 @@ $iconColor = in_array($variant, ['orange','navy']) ? 'text-white' : 'text-brand-
     {{-- Change badge --}}
     @if ($change !== null)
         <div class="flex items-center gap-1.5">
-            @if ($up)
+            @if ($plain)
+                {{-- Plain label — no arrow, white on coloured cards, muted on light cards --}}
+                <span class="text-xs font-medium {{ in_array($variant, ['orange','navy']) ? 'text-white' : 'text-gray-400' }}">
+                    {{ $change }}
+                </span>
+            @elseif ($up)
                 <span class="flex items-center gap-0.5 text-xs font-semibold
                              {{ in_array($variant, ['orange','navy']) ? 'text-green-300' : 'text-green-600' }}">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
