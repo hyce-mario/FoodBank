@@ -17,6 +17,7 @@ use App\Services\HouseholdService;
 use App\Services\SettingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\View\View;
@@ -129,10 +130,55 @@ class EventController extends Controller
         $enableEventAllocations   = (bool) SettingService::get('inventory.enable_event_allocations', true);
         $enableEventFinanceMetrics= (bool) SettingService::get('finance.enable_event_metrics', true);
 
+        // Media upload config — driven by the general settings group so an
+        // admin can tune the limit and format whitelist without a deploy.
+        // The view uses the mimes list as the file picker's accept attribute
+        // and the max-mb in the JS error copy when a 413 / 422 fires.
+        $mediaUploadConfig = [
+            'max_mb' => max(1, min(500, (int) SettingService::get('general.max_upload_size_mb', 50))),
+            'mimes'  => (array) SettingService::get('general.allowed_upload_formats', [
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+                'video/mp4',  'video/quicktime', 'video/x-msvideo', 'video/webm',
+                'application/pdf',
+            ]),
+        ];
+        if (empty($mediaUploadConfig['mimes'])) {
+            $mediaUploadConfig['mimes'] = [
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+                'video/mp4',  'video/quicktime', 'video/x-msvideo', 'video/webm',
+                'application/pdf',
+            ];
+        }
+
+        // Live stat-card data for the Details tab. Each metric is computed
+        // straight from the source-of-truth tables — no caching / no eager
+        // collection accidentally double-counting represented households.
+        $eventStats = [
+            // Food Packs (renamed from "Food Bundles") — total bags handed
+            // out, summed across every exited visit at this event.
+            'packs_served'      => (int) $event->visits()
+                ->where('visit_status', 'exited')
+                ->sum('served_bags'),
+            // Distinct households served. Counts every household ATTACHED to
+            // an exited visit, including represented households (so the
+            // number reflects every family actually fed at this event).
+            'households_served' => (int) DB::table('visit_households')
+                ->join('visits', 'visit_households.visit_id', '=', 'visits.id')
+                ->where('visits.event_id', $event->id)
+                ->where('visits.visit_status', 'exited')
+                ->distinct()
+                ->count('visit_households.household_id'),
+            // Volunteers who actually showed up (not just assigned).
+            'volunteers_served' => $event->volunteerCheckIns->count(),
+            // Already-live count, surfaced through the same array for parity.
+            'attendees_pre_reg' => $event->preRegistrations->count(),
+        ];
+
         return view('events.show', compact(
             'event', 'inventoryItems',
             'eventFinanceKpis', 'eventTransactions', 'financeCategories',
-            'showAverageRating', 'enableEventAllocations', 'enableEventFinanceMetrics'
+            'showAverageRating', 'enableEventAllocations', 'enableEventFinanceMetrics',
+            'eventStats', 'mediaUploadConfig'
         ));
     }
 
