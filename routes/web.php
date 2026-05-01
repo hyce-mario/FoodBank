@@ -160,6 +160,15 @@ Route::middleware('auth')->group(function () {
     Route::post('inventory/items/{inventory_item}/movements', [InventoryMovementController::class, 'store'])
          ->name('inventory.movements.store');
 
+    // Phase 6.6 — Purchase Orders (Inventory ↔ Finance bridge)
+    Route::resource('purchase-orders', PurchaseOrderController::class)
+         ->parameters(['purchase-orders' => 'purchaseOrder'])
+         ->except(['edit', 'update', 'destroy']);
+    Route::post('purchase-orders/{purchaseOrder}/receive', [PurchaseOrderController::class, 'markReceived'])
+         ->name('purchase-orders.receive');
+    Route::post('purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])
+         ->name('purchase-orders.cancel');
+
     // Allocation Rulesets
     Route::resource('allocation-rulesets', AllocationRulesetController::class)->except(['show', 'create', 'edit']);
     Route::get('allocation-rulesets/{allocation_ruleset}/preview', [AllocationRulesetController::class, 'preview'])
