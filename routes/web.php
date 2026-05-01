@@ -14,6 +14,7 @@ use App\Http\Controllers\InventoryMovementController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\EventDayController;
+use App\Http\Controllers\EventVolunteerCheckInController;
 use App\Http\Controllers\VisitLogController;
 use App\Http\Controllers\EventMediaController;
 use App\Http\Controllers\PublicReviewController;
@@ -33,8 +34,10 @@ use App\Http\Controllers\VolunteerGroupController;
 use Illuminate\Support\Facades\Route;
 
 // ─── Event-Day Operational Pages (session auth, no admin nav) ────────────────
-// Simple typeable URLs: /intake/9, /scanner/9, /loader/9, /exit/9
+// Typeable URLs: /intake, /scanner, /loader, /exit  → picker (current events)
+// After picking: /intake/9, /scanner/9, /loader/9, /exit/9 → auth-code form → role view
 foreach (['intake', 'scanner', 'loader', 'exit'] as $_edRole) {
+    Route::get("/{$_edRole}",                [EventDayController::class, 'landing'])    ->name("event-day.{$_edRole}.landing")->defaults('role', $_edRole);
     Route::get("/{$_edRole}/{event}",        [EventDayController::class, 'page'])       ->name("event-day.{$_edRole}");
     // Phase 3.1: auth-code POST is throttled per IP + role + event to prevent brute-force.
     Route::post("/{$_edRole}/{event}/auth",  [EventDayController::class, 'submitAuth']) ->name("event-day.{$_edRole}.auth")
@@ -129,6 +132,20 @@ Route::middleware('auth')->group(function () {
     Route::post('events/{event}/regenerate-codes', [EventController::class, 'regenerateCodes'])
         ->name('events.regenerate-codes');
 
+    // Admin-side volunteer check-in / checkout for a specific event.
+    Route::post('events/{event}/volunteer-checkins',
+        [EventVolunteerCheckInController::class, 'store'])
+        ->name('events.volunteer-checkins.store');
+    Route::post('events/{event}/volunteer-checkins/bulk',
+        [EventVolunteerCheckInController::class, 'bulkStore'])
+        ->name('events.volunteer-checkins.bulk');
+    Route::post('events/{event}/volunteer-checkins/bulk-checkout',
+        [EventVolunteerCheckInController::class, 'bulkCheckout'])
+        ->name('events.volunteer-checkins.bulk-checkout');
+    Route::patch('events/{event}/volunteer-checkins/{checkIn}/checkout',
+        [EventVolunteerCheckInController::class, 'checkout'])
+        ->name('events.volunteer-checkins.checkout');
+
     // Event Inventory Allocations
     Route::post('events/{event}/inventory',                                      [EventInventoryAllocationController::class, 'store'])              ->name('events.inventory.store');
     Route::patch('events/{event}/inventory/{allocation}/distributed',            [EventInventoryAllocationController::class, 'updateDistributed'])   ->name('events.inventory.distributed');
@@ -156,6 +173,11 @@ Route::middleware('auth')->group(function () {
     Route::resource('inventory/items', InventoryItemController::class)
          ->names('inventory.items')
          ->parameters(['items' => 'inventory_item']);
+
+    // Inventory — Quick-create JSON endpoint (used by Purchase Order line-item
+    // picker to create + select an item without leaving the form).
+    Route::post('inventory/items/quick-create', [InventoryItemController::class, 'quickStore'])
+         ->name('inventory.items.quick-create');
 
     // Inventory — Movements (manual stock operations from item show page)
     Route::post('inventory/items/{inventory_item}/movements', [InventoryMovementController::class, 'store'])
