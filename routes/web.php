@@ -76,9 +76,11 @@ Route::prefix('volunteer-checkin')->name('volunteer-checkin.')->group(function (
     Route::get('/',         [PublicVolunteerCheckInController::class, 'index'])   ->name('index');
     Route::get('/search',   [PublicVolunteerCheckInController::class, 'search'])  ->name('search');
     // Phase 3.1: throttle write endpoints to prevent check-in spam.
-    Route::post('/checkin', [PublicVolunteerCheckInController::class, 'checkIn']) ->name('checkin')
+    Route::post('/checkin',  [PublicVolunteerCheckInController::class, 'checkIn'])  ->name('checkin')
          ->middleware('throttle:5,1');
-    Route::post('/signup',  [PublicVolunteerCheckInController::class, 'signUp'])  ->name('signup')
+    Route::post('/checkout', [PublicVolunteerCheckInController::class, 'checkOut']) ->name('checkout')
+         ->middleware('throttle:10,1');
+    Route::post('/signup',   [PublicVolunteerCheckInController::class, 'signUp'])   ->name('signup')
          ->middleware('throttle:5,1');
 });
 

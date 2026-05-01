@@ -22,3 +22,9 @@ Schedule::command('events:sync-statuses')
 Schedule::command('inventory:reconcile-nightly')
     ->dailyAt('00:05')
     ->withoutOverlapping();
+
+// Phase 5.3.a: auto-checkout open volunteer check-ins for past events.
+// Runs hourly at :10 past — safely after sync-statuses has marked events past.
+Schedule::command('volunteers:auto-checkout')
+    ->hourlyAt(10)
+    ->withoutOverlapping();
