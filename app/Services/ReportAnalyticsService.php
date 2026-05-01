@@ -501,38 +501,48 @@ class ReportAnalyticsService
             ->join('events as e', 'e.id', '=', 'vci.event_id')
             ->selectRaw('
                 vci.volunteer_id,
-                COUNT(vci.id)          AS total_events,
-                MIN(e.date)            AS first_service,
-                MAX(e.date)            AS last_service
+                COUNT(vci.id)                       AS total_events,
+                MIN(e.date)                         AS first_service,
+                MAX(e.date)                         AS last_service,
+                COALESCE(SUM(vci.hours_served), 0)  AS total_hours
             ')
             ->groupBy('vci.volunteer_id')
             ->get()
             ->keyBy('volunteer_id');
 
-        // In-period check-in count per volunteer
-        $periodCounts = DB::table('volunteer_check_ins as vci')
+        // In-period check-in count + hours per volunteer
+        $periodStats = DB::table('volunteer_check_ins as vci')
             ->join('events as e', 'e.id', '=', 'vci.event_id')
             ->whereDate('e.date', '>=', $fromStr)
             ->whereDate('e.date', '<=', $toStr)
-            ->selectRaw('vci.volunteer_id, COUNT(vci.id) AS event_count')
+            ->selectRaw('vci.volunteer_id, COUNT(vci.id) AS event_count, COALESCE(SUM(vci.hours_served), 0) AS hours')
             ->groupBy('vci.volunteer_id')
-            ->pluck('event_count', 'volunteer_id');
+            ->get()
+            ->keyBy('volunteer_id');
+
+        $periodCounts = $periodStats->pluck('event_count', 'volunteer_id');
+
+        // Total hours served across all volunteers in the period
+        $totalHoursInPeriod = round((float) $periodStats->sum('hours'), 1);
 
         $allVolunteers = Volunteer::with('groups')
             ->orderBy('last_name')
             ->get()
-            ->map(function ($vol) use ($allTimeStats, $periodCounts) {
+            ->map(function ($vol) use ($allTimeStats, $periodCounts, $periodStats) {
                 $s = $allTimeStats->get($vol->id);
+                $p = $periodStats->get($vol->id);
                 return [
-                    'id'             => $vol->id,
-                    'name'           => $vol->full_name,
-                    'role'           => $vol->role ?? '—',
-                    'groups'         => $vol->groups->pluck('name')->implode(', ') ?: '—',
+                    'id'               => $vol->id,
+                    'name'             => $vol->full_name,
+                    'role'             => $vol->role ?? '—',
+                    'groups'           => $vol->groups->pluck('name')->implode(', ') ?: '—',
                     'events_in_period' => (int) ($periodCounts->get($vol->id, 0)),
-                    'total_events'   => $s ? (int) $s->total_events : 0,
-                    'first_service'  => $s?->first_service,
-                    'last_service'   => $s?->last_service,
-                    'is_first_timer' => $s ? ((int) $s->total_events <= 1) : true,
+                    'hours_in_period'  => $p ? round((float) $p->hours, 1) : 0,
+                    'total_events'     => $s ? (int) $s->total_events : 0,
+                    'total_hours'      => $s ? round((float) $s->total_hours, 1) : 0,
+                    'first_service'    => $s?->first_service,
+                    'last_service'     => $s?->last_service,
+                    'is_first_timer'   => $s ? ((int) $s->total_events <= 1) : true,
                 ];
             })
             ->sortByDesc('total_events')
@@ -546,6 +556,7 @@ class ReportAnalyticsService
             'checkedInPeriod',
             'firstTimersInPeriod',
             'assignedInPeriod',
+            'totalHoursInPeriod',
             'eventParticipation',
             'groups',
             'groupParticipation',
@@ -880,13 +891,15 @@ class ReportAnalyticsService
         $data = $this->volunteers($from, $to);
 
         return [
-            'headers' => ['Name', 'Role', 'Groups', 'Events in Period', 'Total Events', 'First Service', 'Last Service', 'Status'],
+            'headers' => ['Name', 'Role', 'Groups', 'Events in Period', 'Hours in Period', 'Total Events', 'Total Hours', 'First Service', 'Last Service', 'Status'],
             'rows' => $data['allVolunteers']->map(fn ($v) => [
                 $v['name'],
                 $v['role'],
                 $v['groups'],
                 $v['events_in_period'],
+                $v['hours_in_period'],
                 $v['total_events'],
+                $v['total_hours'],
                 $v['first_service'] ?? '',
                 $v['last_service']  ?? '',
                 $v['is_first_timer'] ? 'First Timer' : 'Returning',
