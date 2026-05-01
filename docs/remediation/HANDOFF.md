@@ -4,7 +4,7 @@
 
 ---
 
-## Current state — 2026-04-30 (Session 5 — **Phases 1–6 fully closed**)
+## Current state — 2026-04-30 (Session 5 — **Phases 1–6 fully closed; PO polish in flight**)
 
 ### Where we are
 
@@ -33,8 +33,26 @@ This session audited the previous agent's work, reverted one sub-task the user r
 
 > Note: `phase-3-complete` and `phase-4-complete` tags point to the original commits. The 3.2 revert and nav-link additions are new commits on top of those tags. The tags are not wrong — they mark where those phases were first closed. The new commits are corrections, not re-openings.
 
-### Recent commits (this session)
+### Recent commits (this session, newest first)
 
+Post-Phase-6 polish on Purchase Orders:
+- `d9d0c5a` — feat(po): printable purchase-order sheet (standalone, auto-prints)
+- `038ed4f` — revert(po): drop server-side typeahead, keep client-side filter
+- `6e85c79` — feat(po): server-side typeahead (REVERTED in `038ed4f`)
+- `d40e6db` — feat(po): searchable item combobox on create form
+- `09cbcf3` — fix(routes): missing PurchaseOrderController import (404 on /purchase-orders)
+
+Phase 6 (backlog items):
+- `2664f5d` — feat(inventory): Phase 6.6 — purchase orders bridge inventory + finance
+- `3697ffe` — feat(api): Phase 6.8 — VisitResource for event-day data
+- `c15bfd8` — feat(audit): Phase 6.10 — granular role-permission audit + diff view
+- `584bc2e` — feat(households): Phase 6.7 — cache events_attended_count column
+- `d33dbb8` — feat(households): Phase 6.3 — cycle prevention on representative chains
+- `7508f29` — feat(households): Phase 6.5.c — fuzzy duplicate detection on create
+- `bef618e` — fix(reg): Phase 6.5.a/b — block duplicate pre-regs and households
+
+Phase 5 + earlier:
+- `d10b0d1` — feat(volunteers): surface hours_served in volunteer detail + reports
 - `39035c8` — feat(volunteers): Phase 5.3 — auto-checkout, self-checkout, hours_served
 - `0a45a52` — feat(events): Phase 5.2 — pre-registration reconciliation actions
 - `36fe926` — feat(event-day): Phase 5.1 + 5.5 — bag composition + modal a11y
@@ -45,30 +63,21 @@ This session audited the previous agent's work, reverted one sub-task the user r
 
 ### In-flight / uncommitted work
 
-The previous agent left **significant uncommitted changes** to tracked files. They have NOT been committed and have NOT been reviewed with the user. Do not commit them blindly. Before the next session touches these files, discuss with the user:
-
-| File | Rough change size | Likely purpose |
-|---|---|---|
-| `app/Http/Controllers/DashboardController.php` | +171 lines | Phase 5 dashboard UX rework |
-| `app/Services/HouseholdService.php` | +170 lines | Phase 5 household service additions |
-| `resources/views/dashboard/index.blade.php` | +319 lines | Phase 5 dashboard view |
-| `resources/views/households/_form.blade.php` | +539 lines | Phase 5 household form UX |
-| `resources/views/households/index.blade.php` | +53 lines | Phase 5 household list |
-| `resources/views/households/show.blade.php` | +174 lines | Phase 5 household detail |
-| `resources/css/app.css` | +3 lines | Minor CSS additions |
-| `tailwind.config.js` | +26 lines | Tailwind config extension |
-| `composer.json` | +3 lines | Unknown package addition |
-| `database/seeders/DatabaseSeeder.php` | +7 lines | Additional seeder calls |
-| `resources/views/components/stat-card.blade.php` | +8 lines | Stat card component tweak |
-
-**Rule:** Ask the user whether to keep, discard, or review each group before proceeding.
+**None.** All previously-uncommitted work from the prior agent (dashboard, households, _form, etc.) was reviewed file-by-file with the user and committed across `b6022ca`, `451118f`, `730ef85`. Working tree is clean modulo the pre-existing untracked files (original project files that have always lived outside git — see `git status`; leave alone unless touching them in the course of work, in which case follow the same organic-pull-in pattern used in earlier phases).
 
 ### What's next — start here on resume
 
-**Phase 5 is fully closed.** The next call is **Phase 6 — Backlog** (see AUDIT_REPORT.md Part 13 §6) or any new requirements from the user. Key open items from prior sessions:
+**Phases 0–6 are all complete.** The remediation per `AUDIT_REPORT.md` Part 13 is done end-to-end. Tests at **148/148** passing.
 
-- **hours_served in reports** — `hours_served` is now stored per check-in but not yet surfaced on the volunteer detail page or in reports exports. A quick follow-up to show it in the volunteers list/show view and the reports section.
-- **Coverage gaps** listed below — HTTP tests for event-day routes, MySQL-only SQL portability, Dusk tests for modals.
+Next-session candidates, in rough priority order:
+
+1. **Live smoke-test follow-ups.** The user is testing in-browser. Recent fixes to verify:
+   - "Linda showing twice" — Phase 6.5.a/b should prevent further duplicates. Existing duplicate Linda records in the DB are NOT auto-merged; if the user wants those cleaned up it's a careful one-off data fix, not an automated migration.
+   - Purchase Orders flow end-to-end (create → mark received → confirm InventoryMovement(stock_in) + FinanceTransaction(expense) appear).
+   - Audit Log's new `permissions_changed` diff view (edit any role's permissions and check the entry).
+2. **Other JSON endpoints to API Resources** (continuation of 6.8). The pattern is established (see `VisitResource`). Endpoints that would benefit most: `PublicVolunteerCheckInController::search`, `VisitMonitorController` reorder responses, `CheckInController` search/store. Quality work, no user-visible change.
+3. **Lanes table** (deferred 6.2). If the foodbank starts running multi-station events with per-lane open/close, capacity, or staff assignment this becomes worth doing.
+4. **Coverage gap closure** — HTTP tests for `markExited` and `VisitMonitorController::transition`, MySQL-only SQL portability in `ReportAnalyticsService`, Dusk tests for the override + insufficient-stock modals.
 
 ### Phase 5 sub-task status
 
@@ -108,17 +117,24 @@ The previous agent left **significant uncommitted changes** to tracked files. Th
 ### Environment state
 
 - PHP 8.2.12 via XAMPP, `c:\xampp\htdocs\Foodbank`.
-- MySQL dev DB. **All Phase 1–4 migrations applied** (audit_logs re-applied this session). Phase 5 may need migrations for 5.3.c (hours_served) — take mysqldump backup first.
-- Tests use sqlite `:memory:`. **123 tests passing** on main.
-- Node/npm not installed — prebuilt CSS constraint applies.
+- MySQL dev DB. **All Phase 1–6 migrations applied.** mysqldump backups for each schema-changing phase live in `backups/` (gitignored).
+- Tests use sqlite `:memory:`. **148 tests passing** on main.
+- Node/npm not installed — prebuilt CSS constraint applies; safelisted dynamic colour classes live in `tailwind.config.js`.
 - Windows scheduled task runs `php artisan schedule:run` every minute.
-- Git identity: `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"`.
+- Git identity: `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"` (the global git config has no user; pass `-c` on every commit).
+- mysqldump path on this host: `c:/xampp/mysql/bin/mysqldump.exe`.
 
 ### Open questions for the user
 
-- **Pending uncommitted changes**: keep, discard, or review file-by-file? (see table above)
-- **Phase 5.4**: Is the insufficient-stock modal from Phase 2.1.e sufficient, or does the spec mean something different by "Zero-stock UX modal"?
+- **Existing duplicate household records** (the "Linda showing twice" data) — Phase 6.5 prevents new duplicates, but doesn't merge existing ones. Confirm before any cleanup script touches data.
 - **Backfill scope** (Phase 2.1.f): historical exited visits — forward-only or backfill?
+
+### Purchase Orders — live state notes (post-6.6 polish)
+
+- **Item picker is client-side filter** (commit `038ed4f`). All active items embedded in the page once and filtered in-browser. Server-side typeahead was attempted in `6e85c79` and reverted — for catalogs under ~500 items the client-side approach is faster (no network round-trip per keystroke).
+- **Print sheet** at `/purchase-orders/{po}/print` is a **standalone HTML doc** (no app layout), auto-fires `window.print()` 250ms after load. Uses org branding settings (logo, name, contact).
+- **Receive workflow is atomic.** Inside one DB transaction: N×`InventoryMovement(stock_in)` + 1×`FinanceTransaction(expense)`, with FK back-links on both sides. If anything throws, both sides roll back and the PO stays in `draft`. Pinned by `test_failed_receive_rolls_back_atomically` using a deliberate FK violation.
+- **Non-inventory finance transactions** (staff payments, rent) still use `FinanceTransaction` directly — POs are an additive opt-in path, not a replacement.
 
 ### ADR index
 
