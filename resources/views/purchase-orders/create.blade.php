@@ -54,36 +54,60 @@
             <p class="text-sm text-gray-400 text-center py-6">No items yet. Click "Add Row" to begin.</p>
         </template>
 
-        <div class="space-y-3">
+        {{-- Column headers (hidden on mobile, visible on sm+ for clarity) --}}
+        <div class="hidden sm:flex items-center gap-2 px-1 mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            <div class="flex-1">Item</div>
+            <div class="w-20 text-right">Qty</div>
+            <div class="w-24 text-right">Unit Cost</div>
+            <div class="w-24 text-right">Line Total</div>
+            <div class="w-9"></div>
+        </div>
+
+        <div class="space-y-2">
             <template x-for="(row, idx) in rows" :key="idx">
-                <div class="grid grid-cols-12 gap-2 items-start">
-                    <div class="col-span-12 sm:col-span-6">
-                        <select :name="`items[${idx}][inventory_item_id]`" x-model.number="row.inventory_item_id" required
-                                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg">
-                            <option value="">Select item…</option>
-                            <template x-for="item in items" :key="item.id">
-                                <option :value="item.id" x-text="item.name"></option>
+                <div class="flex items-center gap-2">
+                    {{-- Searchable item combobox --}}
+                    <div class="flex-1 min-w-0 relative" @click.away="row.dropdownOpen = false">
+                        <input type="text" x-model="row.searchTerm"
+                               @focus="row.dropdownOpen = true"
+                               @keydown.escape="row.dropdownOpen = false"
+                               placeholder="Search item by name…"
+                               autocomplete="off"
+                               class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white">
+                        <input type="hidden" :name="`items[${idx}][inventory_item_id]`" :value="row.inventory_item_id">
+
+                        {{-- Dropdown panel --}}
+                        <div x-show="row.dropdownOpen" style="display:none"
+                             class="absolute z-20 mt-1 left-0 right-0 max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+                            <template x-for="item in filteredItems(row.searchTerm)" :key="item.id">
+                                <button type="button" @click="selectItem(idx, item)"
+                                        class="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 hover:text-brand-700 border-b border-gray-50 last:border-b-0">
+                                    <span class="font-medium" x-text="item.name"></span>
+                                    <span class="text-xs text-gray-400 ml-2"
+                                          x-text="item.category ? '· ' + item.category.name : ''"></span>
+                                </button>
                             </template>
-                        </select>
+                            <template x-if="filteredItems(row.searchTerm).length === 0">
+                                <div class="px-3 py-3 text-sm text-gray-400 italic">No matching items</div>
+                            </template>
+                        </div>
                     </div>
-                    <div class="col-span-5 sm:col-span-2">
-                        <input type="number" min="1" step="1" :name="`items[${idx}][quantity]`" x-model.number="row.quantity" required
-                               placeholder="Qty"
-                               class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg tabular-nums">
-                    </div>
-                    <div class="col-span-5 sm:col-span-2">
-                        <input type="number" min="0" step="0.01" :name="`items[${idx}][unit_cost]`" x-model.number="row.unit_cost" required
-                               placeholder="Unit $"
-                               class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg tabular-nums">
-                    </div>
-                    <div class="col-span-1 sm:col-span-1 text-right text-sm font-semibold tabular-nums pt-2"
+                    {{-- Qty --}}
+                    <input type="number" min="1" step="1" :name="`items[${idx}][quantity]`" x-model.number="row.quantity" required
+                           placeholder="Qty"
+                           class="w-20 px-2 py-2 text-sm text-right border border-gray-300 rounded-lg tabular-nums">
+                    {{-- Unit cost --}}
+                    <input type="number" min="0" step="0.01" :name="`items[${idx}][unit_cost]`" x-model.number="row.unit_cost" required
+                           placeholder="0.00"
+                           class="w-24 px-2 py-2 text-sm text-right border border-gray-300 rounded-lg tabular-nums">
+                    {{-- Line total (read-only, computed) --}}
+                    <div class="w-24 text-right text-sm font-semibold tabular-nums text-gray-700"
                          x-text="formatMoney((row.quantity || 0) * (row.unit_cost || 0))"></div>
-                    <div class="col-span-1 sm:col-span-1 text-right pt-1">
-                        <button type="button" @click="removeRow(idx)"
-                                class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
-                        </button>
-                    </div>
+                    {{-- Remove --}}
+                    <button type="button" @click="removeRow(idx)"
+                            class="w-9 h-9 flex-shrink-0 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                    </button>
                 </div>
             </template>
         </div>
@@ -109,13 +133,33 @@
 @push('scripts')
 <script>
 function poForm(items) {
+    const blankRow = () => ({
+        inventory_item_id: '',
+        searchTerm:        '',
+        dropdownOpen:      false,
+        quantity:          1,
+        unit_cost:         0,
+    });
     return {
         items,
-        rows: [{ inventory_item_id: '', quantity: 1, unit_cost: 0 }],
-        addRow() { this.rows.push({ inventory_item_id: '', quantity: 1, unit_cost: 0 }); },
+        rows: [blankRow()],
+        addRow() { this.rows.push(blankRow()); },
         removeRow(idx) { this.rows.splice(idx, 1); },
         total() { return this.rows.reduce((s, r) => s + ((r.quantity || 0) * (r.unit_cost || 0)), 0); },
         formatMoney(v) { return '{{ $financeSettings['currency_symbol'] ?? '$' }}' + (Number(v) || 0).toFixed(2); },
+        selectItem(idx, item) {
+            this.rows[idx].inventory_item_id = item.id;
+            this.rows[idx].searchTerm        = item.name;
+            this.rows[idx].dropdownOpen      = false;
+        },
+        filteredItems(term) {
+            const q = (term || '').trim().toLowerCase();
+            if (!q) return this.items;
+            return this.items.filter(i => {
+                const haystack = (i.name + ' ' + (i.category?.name || '')).toLowerCase();
+                return haystack.includes(q);
+            });
+        },
     };
 }
 </script>
