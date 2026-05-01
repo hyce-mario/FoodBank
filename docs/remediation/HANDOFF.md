@@ -4,7 +4,7 @@
 
 ---
 
-## Current state — 2026-04-30 (Session 5 — **Phases 1–5 fully closed**)
+## Current state — 2026-04-30 (Session 5 — **Phases 1–6 fully closed**)
 
 ### Where we are
 
@@ -87,9 +87,9 @@ The previous agent left **significant uncommitted changes** to tracked files. Th
 - ✅ **6.5.b** Never create duplicate households via registerAttendee (`bef618e`)
 - ✅ **6.5.c** Fuzzy duplicate detection on household create (`7508f29`)
 - ✅ **6.7** Cached events_attended_count column (`584bc2e`)
-- ⬜ **6.8** API Resource classes (refactor — invisible to users)
-- ⬜ **6.10** Granular role-permission UI + audit
-- ⬜ **6.6** Finance ↔ Inventory link, PO/COGS (largest)
+- ✅ **6.10** Granular role-permission audit + diff view (`c15bfd8`)
+- ✅ **6.8** VisitResource — API Resource pattern (`3697ffe`)
+- ✅ **6.6** Finance ↔ Inventory link via purchase orders (`2664f5d`)
 - ⚪ **6.1** WebSockets — declined (no Node, polling fine for v1)
 - ⚪ **6.2** First-class lanes table — declined (deferred)
 - ⚪ **6.4** CAPTCHA on auth-code form — declined (no abuse problem)
