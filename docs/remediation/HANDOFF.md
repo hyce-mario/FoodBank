@@ -80,6 +80,21 @@ The previous agent left **significant uncommitted changes** to tracked files. Th
 - ⚪ **5.4** Zero-stock UX modal — already closed by Phase 2.1.e
 - ✅ **5.5** A11y pass on Alpine modals (`36fe926`)
 
+### Phase 6 sub-task status
+
+- ✅ **6.3** Cycle prevention on representative chains (`d33dbb8`)
+- ✅ **6.5.a** Block same-event duplicate pre-registrations (`bef618e`)
+- ✅ **6.5.b** Never create duplicate households via registerAttendee (`bef618e`)
+- ✅ **6.5.c** Fuzzy duplicate detection on household create (`7508f29`)
+- ✅ **6.7** Cached events_attended_count column (`584bc2e`)
+- ⬜ **6.8** API Resource classes (refactor — invisible to users)
+- ⬜ **6.10** Granular role-permission UI + audit
+- ⬜ **6.6** Finance ↔ Inventory link, PO/COGS (largest)
+- ⚪ **6.1** WebSockets — declined (no Node, polling fine for v1)
+- ⚪ **6.2** First-class lanes table — declined (deferred)
+- ⚪ **6.4** CAPTCHA on auth-code form — declined (no abuse problem)
+- ⚪ **6.9** Volunteer signup verification — declined
+
 ### Key learnings (carry forward)
 
 - **3.2 reverted by user decision** — 4-digit numeric plaintext codes are the accepted design. Do not re-introduce hashing or alphanumeric codes without explicit user approval.
