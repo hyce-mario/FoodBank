@@ -130,56 +130,22 @@ class EventDayController extends Controller
             $lanesData[$i] = [];
         }
 
+        // Phase 6.8: per-visit row payload + per-role field stripping is now
+        // declarative in VisitResource. Loader/exit role fields hidden there.
         foreach ($visits as $visit) {
-            $households  = $visit->households;
-            $primary     = $households->firstWhere('representative_household_id', null) ?? $households->first();
-            $represented = $households->filter(fn ($h) => $h->id !== $primary?->id)->values();
-
-            if (! $primary) continue;
-
-            // Sum bags and people across ALL households in this visit
-            $totalBags   = $ruleset
-                ? $households->sum(fn ($h) => $ruleset->getBagsFor($h->household_size))
-                : 0;
-            $totalPeople = $households->sum('household_size');
-
-            $laneNum = max(1, min($visit->lane, $event->lanes));
-
-            $row = [
-                'id'                       => $visit->id,
-                'lane'                     => $visit->lane,
-                'queue_position'           => $visit->queue_position,
-                'visit_status'             => $visit->visit_status,
-                // Phase 1.1.c.2: optimistic-lock token consumed by reorder.
-                'updated_at'               => $visit->updated_at?->toIso8601String(),
-                'start_time'               => $visit->start_time->format('g:i A'),
-                'waited_min'               => (int) now()->diffInMinutes($visit->start_time),
-                'bags_needed'              => $totalBags,
-                'bag_composition'          => $bagComposition,
-                'total_people'             => $totalPeople,
-                'is_representative_pickup' => $represented->isNotEmpty(),
-                'household'                => [
-                    'household_number' => $primary->household_number,
-                    'full_name'        => $primary->full_name,
-                    'vehicle_label'    => $primary->vehicle_label,
-                    'household_size'   => $primary->household_size,
-                ],
-                'represented_households'   => $represented->map(fn ($r) => [
-                    'full_name'      => $r->full_name,
-                    'household_size' => $r->household_size,
-                    'bags_needed'    => $ruleset ? $ruleset->getBagsFor($r->household_size) : null,
-                ])->all(),
-            ];
-
-            // Loader and Exit pages hide household names (privacy)
-            if (in_array($role, ['loader', 'exit'], true)) {
-                unset($row['household']['full_name']);
-                $row['represented_households'] = array_map(
-                    fn ($rh) => array_diff_key($rh, ['full_name' => '']),
-                    $row['represented_households']
-                );
+            $primary = $visit->households
+                ->firstWhere('representative_household_id', null) ?? $visit->households->first();
+            if (! $primary) {
+                continue;
             }
 
+            $row = (new \App\Http\Resources\VisitResource($visit))
+                ->forRole($role)
+                ->withRuleset($ruleset)
+                ->withBagComposition($bagComposition)
+                ->toArray($request);
+
+            $laneNum = max(1, min($visit->lane, $event->lanes));
             $lanesData[$laneNum][] = $row;
         }
 
