@@ -28,9 +28,10 @@
             <label class="form-label">Action</label>
             <select name="action" class="form-input">
                 <option value="">All actions</option>
-                <option value="created"  {{ request('action') === 'created'  ? 'selected' : '' }}>Created</option>
-                <option value="updated"  {{ request('action') === 'updated'  ? 'selected' : '' }}>Updated</option>
-                <option value="deleted"  {{ request('action') === 'deleted'  ? 'selected' : '' }}>Deleted</option>
+                <option value="created"              {{ request('action') === 'created'              ? 'selected' : '' }}>Created</option>
+                <option value="updated"              {{ request('action') === 'updated'              ? 'selected' : '' }}>Updated</option>
+                <option value="deleted"              {{ request('action') === 'deleted'              ? 'selected' : '' }}>Deleted</option>
+                <option value="permissions_changed" {{ request('action') === 'permissions_changed' ? 'selected' : '' }}>Permissions Changed</option>
             </select>
         </div>
         <div>
@@ -84,8 +85,10 @@
                     'created' => 'bg-green-100 text-green-700',
                     'updated' => 'bg-blue-100 text-blue-700',
                     'deleted' => 'bg-red-100 text-red-700',
+                    'permissions_changed' => 'bg-purple-100 text-purple-700',
                     default   => 'bg-gray-100 text-gray-600',
                 };
+                $actionLabel = $log->action === 'permissions_changed' ? 'Permissions' : ucfirst($log->action);
                 @endphp
                 <tr class="hover:bg-gray-50 transition-colors">
                     <td class="px-4 py-3 text-gray-500 whitespace-nowrap">
@@ -95,13 +98,33 @@
                         {{ $log->user?->name ?? '—' }}
                     </td>
                     <td class="px-4 py-3">
-                        <span class="badge {{ $actionColor }}">{{ ucfirst($log->action) }}</span>
+                        <span class="badge {{ $actionColor }}">{{ $actionLabel }}</span>
                     </td>
                     <td class="px-4 py-3 text-gray-700">
                         {{ $log->targetLabel() }} #{{ $log->target_id }}
                     </td>
                     <td class="px-4 py-3 max-w-xs">
-                        @if ($log->action === 'updated' && $log->before_json)
+                        @if ($log->action === 'permissions_changed')
+                            @php
+                                $before  = collect($log->before_json['permissions'] ?? []);
+                                $after   = collect($log->after_json['permissions']  ?? []);
+                                $granted = $after->diff($before)->values();
+                                $revoked = $before->diff($after)->values();
+                            @endphp
+                            @if ($granted->isNotEmpty())
+                            <div class="text-xs text-green-600 truncate">
+                                <span class="font-medium">+ Granted:</span> {{ $granted->implode(', ') }}
+                            </div>
+                            @endif
+                            @if ($revoked->isNotEmpty())
+                            <div class="text-xs text-red-500 truncate">
+                                <span class="font-medium">− Revoked:</span> {{ $revoked->implode(', ') }}
+                            </div>
+                            @endif
+                            @if ($granted->isEmpty() && $revoked->isEmpty())
+                            <span class="text-xs text-gray-400">No change</span>
+                            @endif
+                        @elseif ($log->action === 'updated' && $log->before_json)
                             @foreach ($log->after_json ?? [] as $field => $newVal)
                             <div class="text-xs text-gray-500 truncate">
                                 <span class="font-medium text-gray-700">{{ $field }}:</span>
