@@ -96,7 +96,21 @@ class HouseholdController extends Controller
     public function store(StoreHouseholdRequest $request): RedirectResponse
     {
         $this->authorize('create', Household::class);
-        $household = $this->householdService->create($request->validated());
+        $data = $request->validated();
+
+        // Phase 6.5.c: duplicate check unless staff has explicitly confirmed.
+        // force_create=1 is set by the "Create anyway" button on the warning panel.
+        if (! $request->boolean('force_create')) {
+            $duplicates = $this->householdService->findPotentialDuplicates($data);
+            if ($duplicates->isNotEmpty()) {
+                return redirect()
+                    ->route('households.create')
+                    ->withInput()
+                    ->with('potential_duplicates', $duplicates);
+            }
+        }
+
+        $household = $this->householdService->create($data);
 
         return redirect()
             ->route('households.show', $household)

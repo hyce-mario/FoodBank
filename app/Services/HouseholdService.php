@@ -3,10 +3,80 @@
 namespace App\Services;
 
 use App\Models\Household;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Str;
 
 class HouseholdService
 {
+    /**
+     * Phase 6.5.c: find potential duplicate households for the given input
+     * data. Combines four strategies:
+     *
+     *  1. Exact case-insensitive first+last name match
+     *  2. Email match (case-insensitive)
+     *  3. Phone match (exact)
+     *  4. Fuzzy name match via PHP soundex() — narrowed to households whose
+     *     last name starts with the same letter (DB-side prefix filter) so
+     *     we don't load the entire households table for every check
+     *
+     * Pass $excludeId to skip a specific household (used during update so a
+     * household isn't flagged as a duplicate of itself).
+     */
+    public function findPotentialDuplicates(array $data, ?int $excludeId = null): Collection
+    {
+        $firstName = trim($data['first_name'] ?? '');
+        $lastName  = trim($data['last_name']  ?? '');
+        $email     = trim($data['email']      ?? '');
+        $phone     = trim($data['phone']      ?? '');
+
+        if ($firstName === '' && $lastName === '' && $email === '' && $phone === '') {
+            return new Collection();
+        }
+
+        // Strategy 1-3: any-of-name+email+phone exact match
+        $exact = Household::query()
+            ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
+            ->where(function ($q) use ($firstName, $lastName, $email, $phone) {
+                if ($firstName !== '' && $lastName !== '') {
+                    $q->orWhere(function ($qq) use ($firstName, $lastName) {
+                        $qq->whereRaw('LOWER(first_name) = ?', [strtolower($firstName)])
+                           ->whereRaw('LOWER(last_name) = ?',  [strtolower($lastName)]);
+                    });
+                }
+                if ($email !== '') {
+                    $q->orWhereRaw('LOWER(email) = ?', [strtolower($email)]);
+                }
+                if ($phone !== '') {
+                    $q->orWhere('phone', $phone);
+                }
+            })
+            ->limit(20)
+            ->get();
+
+        // Strategy 4: fuzzy name match via Soundex
+        $fuzzy = new Collection();
+        if ($firstName !== '' && $lastName !== '') {
+            $firstSoundex = soundex($firstName);
+            $lastSoundex  = soundex($lastName);
+            $lastPrefix   = strtolower(substr($lastName, 0, 1));
+
+            $fuzzy = Household::query()
+                ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
+                ->whereNotIn('id', $exact->pluck('id'))
+                ->whereRaw('LOWER(SUBSTR(last_name, 1, 1)) = ?', [$lastPrefix])
+                ->limit(200)
+                ->get()
+                ->filter(fn ($h) =>
+                    soundex((string) $h->first_name) === $firstSoundex
+                    && soundex((string) $h->last_name) === $lastSoundex
+                )
+                ->take(20)
+                ->values();
+        }
+
+        return $exact->concat($fuzzy)->unique('id')->values();
+    }
+
     /**
      * Generate a unique household number whose length is driven by the
      * 'households.household_number_length' setting (default 6).
