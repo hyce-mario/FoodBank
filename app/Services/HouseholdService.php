@@ -262,7 +262,8 @@ class HouseholdService
 
     /**
      * Attach an existing household to a representative household.
-     * A household cannot be its own representative or already have one.
+     * A household cannot be its own representative, already have one,
+     * or create a cycle in the representative chain (Phase 6.3).
      */
     public function attach(Household $representative, Household $represented): void
     {
@@ -274,6 +275,28 @@ class HouseholdService
             throw new \RuntimeException(
                 "\"{$represented->full_name}\" is already linked to a representative household."
             );
+        }
+
+        // Phase 6.3: cycle prevention. Walk up $representative's chain — if it
+        // ever reaches $represented, this attach would close a loop.
+        // The $visited guard also protects against pre-existing cycles in the
+        // data so the loop can't run forever.
+        $current = $representative;
+        $visited = [];
+        while ($current && $current->representative_household_id) {
+            if (in_array($current->id, $visited, true)) {
+                throw new \RuntimeException(
+                    'Cannot attach: pre-existing cycle detected in representative chain.'
+                );
+            }
+            $visited[] = $current->id;
+
+            if ((int) $current->representative_household_id === (int) $represented->id) {
+                throw new \RuntimeException(
+                    "Cannot attach: \"{$represented->full_name}\" already appears further up \"{$representative->full_name}\"'s representative chain. This would create a circular link."
+                );
+            }
+            $current = Household::find($current->representative_household_id);
         }
 
         $represented->update(['representative_household_id' => $representative->id]);
