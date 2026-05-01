@@ -261,6 +261,24 @@ class EventController extends Controller
     {
         $this->authorize('update', $event);
 
+        // Phase 6.5.b: never create a duplicate household. Prefer existing links.
+
+        // 1. Already linked to an existing household? Just mark matched.
+        if ($attendee->household_id && \App\Models\Household::whereKey($attendee->household_id)->exists()) {
+            $attendee->update(['match_status' => 'matched']);
+            return back()->with('success', 'Linked to existing household.');
+        }
+
+        // 2. A potential match was detected? Use it instead of creating new.
+        if ($attendee->potential_household_id && \App\Models\Household::whereKey($attendee->potential_household_id)->exists()) {
+            $attendee->update([
+                'household_id' => $attendee->potential_household_id,
+                'match_status' => 'matched',
+            ]);
+            return back()->with('success', 'Linked to existing household via potential match.');
+        }
+
+        // 3. Truly new — create the household.
         $household = app(HouseholdService::class)->create([
             'first_name'     => $attendee->first_name,
             'last_name'      => $attendee->last_name,

@@ -77,12 +77,41 @@ class PublicEventController extends Controller
         $seniors   = (int) $data['seniors_count'];
         $totalSize = max(1, $children + $adults + $seniors);
 
+        $emailLower     = strtolower($data['email']);
+        $firstNameLower = strtolower($data['first_name']);
+        $lastNameLower  = strtolower($data['last_name']);
+
+        // Phase 6.5.a: prevent same-event duplicate pre-registration.
+        // Match by full name OR email — either signal indicates the same person
+        // submitted the form twice for this event.
+        $existingPreReg = EventPreRegistration::where('event_id', $event->id)
+            ->where(function ($q) use ($firstNameLower, $lastNameLower, $emailLower) {
+                $q->where(function ($qq) use ($firstNameLower, $lastNameLower) {
+                    $qq->whereRaw('LOWER(first_name) = ?', [$firstNameLower])
+                       ->whereRaw('LOWER(last_name) = ?',  [$lastNameLower]);
+                })->orWhereRaw('LOWER(email) = ?', [$emailLower]);
+            })
+            ->first();
+
+        if ($existingPreReg) {
+            return redirect()
+                ->route('public.success', $event)
+                ->with('already_registered', true)
+                ->with('attendee_number', $existingPreReg->attendee_number);
+        }
+
         // Auto-generate display ID
         $attendeeNumber = EventPreRegistration::generateAttendeeNumber();
 
-        // Look for an existing household with the same name (case-insensitive)
-        $existingHousehold = Household::whereRaw('LOWER(first_name) = ?', [strtolower($data['first_name'])])
-            ->whereRaw('LOWER(last_name) = ?', [strtolower($data['last_name'])])
+        // Phase 6.5.a: look for an existing household by full name OR email.
+        // The email check catches name typos / married-name changes that the
+        // case-insensitive name match alone would miss.
+        $existingHousehold = Household::where(function ($q) use ($firstNameLower, $lastNameLower, $emailLower) {
+                $q->where(function ($qq) use ($firstNameLower, $lastNameLower) {
+                    $qq->whereRaw('LOWER(first_name) = ?', [$firstNameLower])
+                       ->whereRaw('LOWER(last_name) = ?',  [$lastNameLower]);
+                })->orWhereRaw('LOWER(email) = ?', [$emailLower]);
+            })
             ->first();
 
         if ($existingHousehold) {
@@ -134,7 +163,10 @@ class PublicEventController extends Controller
                 'seniors_count'  => $seniors,
                 'household_size' => $totalSize,
                 'household_id'   => $household->id,
-                'match_status'   => 'new',
+                // Phase 6.5.a: auto-created household IS linked from the start —
+                // mark as matched so the admin UI doesn't surface a redundant
+                // "Register as Household" action that would otherwise confuse staff.
+                'match_status'   => 'matched',
             ]);
         }
 
