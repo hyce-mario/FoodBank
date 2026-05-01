@@ -34,6 +34,34 @@ class EventDayController extends Controller
         return route("event-day.{$role}.logout", $event);
     }
 
+    // ─── Landing / picker ─────────────────────────────────────────────────────
+    // Route: GET /{role}  (no event in URL)
+    //
+    // Tablet bookmark / saved-to-homescreen entry point. Staff tap the
+    // bookmark, pick an event, enter the auth code, and on logout return
+    // here. Picker ALWAYS renders — never auto-skips when only one event
+    // is current — so the bookmark behaves the same every event day,
+    // every time.
+    //
+    // Only `status='current'` events are pickable because authCodesActive()
+    // gates the role page on that same condition. Showing upcoming events
+    // would route them into a 403, which is worse than a clean empty state.
+
+    public function landing(Request $request, string $role): View
+    {
+        abort_unless(in_array($role, self::ROLES, true), 404);
+
+        $events = Event::current()
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+
+        return view('event-day.picker', [
+            'role'   => $role,
+            'events' => $events,
+        ]);
+    }
+
     // ─── Unified page handler ─────────────────────────────────────────────────
     // Route: GET /{role}/{event}
 
@@ -89,7 +117,10 @@ class EventDayController extends Controller
         $role = $this->detectRole($request);
         abort_unless(in_array($role, self::ROLES, true), 404);
         $request->session()->forget($this->sessionKey($event, $role));
-        return redirect()->route("event-day.{$role}", $event);
+        // Return to the bookmarked landing page, NOT back to the same event's
+        // auth wall — the tablet bookmark is /{role}, and logout must land
+        // there so the next session can pick a different event.
+        return redirect()->route("event-day.{$role}.landing");
     }
 
     // ─── Live data ────────────────────────────────────────────────────────────
