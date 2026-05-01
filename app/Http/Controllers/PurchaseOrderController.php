@@ -95,6 +95,17 @@ class PurchaseOrderController extends Controller
             ->with('success', "Received {$purchaseOrder->po_number}: stock posted and expense recorded.");
     }
 
+    /**
+     * Printer-friendly PO sheet. Standalone HTML (no app chrome) that
+     * auto-fires window.print() on load.
+     */
+    public function print(PurchaseOrder $purchaseOrder): View
+    {
+        $purchaseOrder->load(['items.item.category', 'creator', 'financeTransaction']);
+
+        return view('purchase-orders.print', ['po' => $purchaseOrder]);
+    }
+
     public function cancel(PurchaseOrder $purchaseOrder): RedirectResponse
     {
         try {

@@ -169,6 +169,8 @@ Route::middleware('auth')->group(function () {
          ->name('purchase-orders.receive');
     Route::post('purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])
          ->name('purchase-orders.cancel');
+    Route::get('purchase-orders/{purchaseOrder}/print', [PurchaseOrderController::class, 'print'])
+         ->name('purchase-orders.print');
 
     // Allocation Rulesets
     Route::resource('allocation-rulesets', AllocationRulesetController::class)->except(['show', 'create', 'edit']);
