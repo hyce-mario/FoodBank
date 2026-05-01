@@ -1,6 +1,19 @@
 @extends('layouts.app')
 @section('title', 'Dashboard')
 
+@push('styles')
+<style>
+    /* Live ring expansion for the "Event in Progress" indicator. Tailwind's
+       animate-ping class isn't in the prebuilt CSS, so we declare our own. */
+    @keyframes live-ring {
+        0%   { transform: scale(1);   opacity: 0.75; }
+        75%  { transform: scale(2);   opacity: 0;    }
+        100% { transform: scale(2);   opacity: 0;    }
+    }
+    .live-ring { animation: live-ring 1.6s cubic-bezier(0, 0, 0.2, 1) infinite; }
+</style>
+@endpush
+
 @section('content')
 
 {{-- ═══════════════════════════════════════════════════════
@@ -70,32 +83,44 @@
      TODAY'S EVENT / UPCOMING EVENT BANNER
 ═══════════════════════════════════════════════════════ --}}
 @if($currentEvent)
-<div class="bg-green-600 rounded-2xl px-5 py-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+{{-- Today's event — same card structure as Next Upcoming below, just with
+     a brand-orange accent + a live-ring on the icon to signal "happening now".
+     Keeps the dashboard's calm orange/navy palette intact. --}}
+<div class="bg-white rounded-2xl px-5 py-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm border border-gray-100">
     <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+        <div class="relative w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
+            <svg class="w-5 h-5 text-brand-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/>
             </svg>
+            {{-- Live ring + solid dot. The expanding ring uses a custom keyframe
+                 (animate-ping isn't in the prebuilt Tailwind CSS). --}}
+            <span class="absolute -top-1 -right-1 flex h-3 w-3">
+                <span class="live-ring absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+                <span class="relative inline-flex h-3 w-3 rounded-full bg-brand-500 ring-2 ring-white"></span>
+            </span>
         </div>
         <div>
-            <p class="text-xs font-semibold text-green-100 uppercase tracking-wide">Event in Progress Today</p>
-            <p class="text-base font-bold text-white">{{ $currentEvent->name }}</p>
-            <p class="text-xs text-green-100 mt-0.5">
+            <p class="text-xs font-semibold text-brand-600 uppercase tracking-wide flex items-center gap-1.5">
+                <span>Event in Progress Today</span>
+                <span class="text-[10px] font-bold text-white bg-brand-500 rounded px-1.5 py-0.5 tracking-normal">LIVE</span>
+            </p>
+            <p class="text-base font-bold text-gray-900">{{ $currentEvent->name }}</p>
+            <p class="text-xs text-gray-400 mt-0.5">
                 {{ $currentEvent->active_count }} active &middot; {{ $currentEvent->exited_count }} served &middot; {{ $currentEvent->total_visits }} total check-ins
             </p>
         </div>
     </div>
     <div class="flex items-center gap-2 flex-shrink-0">
         <a href="{{ route('checkin.index') }}"
-           class="inline-flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-2 rounded-lg transition">
+           class="inline-flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-semibold px-3 py-2 rounded-lg border border-gray-200 transition">
             Check-in
         </a>
         <a href="{{ route('monitor.index') }}"
-           class="inline-flex items-center gap-1.5 bg-white text-green-700 hover:bg-green-50 text-xs font-semibold px-3 py-2 rounded-lg transition">
+           class="inline-flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition">
             Live Monitor
         </a>
         <a href="{{ route('events.show', $currentEvent) }}"
-           class="inline-flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-2 rounded-lg transition">
+           class="inline-flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-semibold px-3 py-2 rounded-lg border border-gray-200 transition">
             View Event
         </a>
     </div>
@@ -148,12 +173,12 @@
         </div>
     </div>
 
-    {{-- Household size distribution (donut chart) --}}
+    {{-- Family composition (donut chart) --}}
     <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
         <div class="flex items-center justify-between mb-4">
             <div>
-                <h2 class="text-base font-semibold text-gray-900">Household Sizes</h2>
-                <p class="text-xs text-gray-400 mt-0.5">All registered households</p>
+                <h2 class="text-base font-semibold text-gray-900">Family Composition</h2>
+                <p class="text-xs text-gray-400 mt-0.5">Across {{ number_format($compositionData['households']) }} registered {{ Str::plural('household', $compositionData['households']) }}</p>
             </div>
         </div>
 
@@ -161,8 +186,8 @@
             <div class="relative h-44 w-44">
                 <canvas id="householdChart"></canvas>
                 <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span class="text-2xl font-bold text-gray-900">{{ number_format($sizeData['total']) }}</span>
-                    <span class="text-xs text-gray-400">Total</span>
+                    <span class="text-2xl font-bold text-gray-900">{{ number_format($compositionData['total']) }}</span>
+                    <span class="text-xs text-gray-400">People</span>
                 </div>
             </div>
         </div>
@@ -170,32 +195,32 @@
         <div class="space-y-2">
             <div class="flex items-center justify-between text-sm">
                 <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded-full bg-gray-300"></div>
-                    <span class="text-gray-600 text-xs">1-2 People</span>
+                    <div class="w-3 h-3 rounded-sm {{ $compositionData['class']['children'] }}"></div>
+                    <span class="text-gray-600 text-xs">Children</span>
                 </div>
                 <span class="font-semibold text-gray-900 text-xs">
-                    {{ $sizeData['pct']['small'] }}%
-                    <span class="text-gray-400 font-normal">({{ $sizeData['small'] }})</span>
+                    {{ $compositionData['pct']['children'] }}%
+                    <span class="text-gray-400 font-normal">({{ number_format($compositionData['children']) }})</span>
                 </span>
             </div>
             <div class="flex items-center justify-between text-sm">
                 <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded-full bg-navy-700"></div>
-                    <span class="text-gray-600 text-xs">3-4 People</span>
+                    <div class="w-3 h-3 rounded-sm {{ $compositionData['class']['adults'] }}"></div>
+                    <span class="text-gray-600 text-xs">Adults</span>
                 </div>
                 <span class="font-semibold text-gray-900 text-xs">
-                    {{ $sizeData['pct']['medium'] }}%
-                    <span class="text-gray-400 font-normal">({{ $sizeData['medium'] }})</span>
+                    {{ $compositionData['pct']['adults'] }}%
+                    <span class="text-gray-400 font-normal">({{ number_format($compositionData['adults']) }})</span>
                 </span>
             </div>
             <div class="flex items-center justify-between text-sm">
                 <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded-full bg-brand-500"></div>
-                    <span class="text-gray-600 text-xs">5+ People</span>
+                    <div class="w-3 h-3 rounded-sm {{ $compositionData['class']['seniors'] }}"></div>
+                    <span class="text-gray-600 text-xs">Seniors</span>
                 </div>
                 <span class="font-semibold text-gray-900 text-xs">
-                    {{ $sizeData['pct']['large'] }}%
-                    <span class="text-gray-400 font-normal">({{ $sizeData['large'] }})</span>
+                    {{ $compositionData['pct']['seniors'] }}%
+                    <span class="text-gray-400 font-normal">({{ number_format($compositionData['seniors']) }})</span>
                 </span>
             </div>
         </div>
@@ -205,7 +230,7 @@
 {{-- ═══════════════════════════════════════════════════════
      RECENT EVENTS
 ═══════════════════════════════════════════════════════ --}}
-@if($recentEvents->isNotEmpty())
+@if($recentEvents->total() > 0)
 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-5 overflow-hidden">
     <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <h2 class="text-sm font-bold text-gray-900">Recent Events</h2>
@@ -239,13 +264,18 @@
         </div>
         @endforeach
     </div>
+    @if($recentEvents->hasPages())
+    <div class="px-5 py-3 border-t border-gray-100">
+        {{ $recentEvents->links() }}
+    </div>
+    @endif
 </div>
 @endif
 
 {{-- ═══════════════════════════════════════════════════════
      INVENTORY STOCK ALERTS
 ═══════════════════════════════════════════════════════ --}}
-@if($outOfStockItems->isNotEmpty() || $lowStockItems->isNotEmpty())
+@if($stockAlerts->total() > 0)
 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-5 overflow-hidden">
 
     <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -258,7 +288,7 @@
             <div>
                 <h2 class="text-sm font-bold text-gray-900">Inventory Alerts</h2>
                 <p class="text-xs text-gray-400">
-                    {{ $outOfStockItems->count() }} out of stock &middot; {{ $lowStockItems->count() }} low stock
+                    {{ $outOfStockCount }} out of stock &middot; {{ $lowStockCount }} low stock
                 </p>
             </div>
         </div>
@@ -268,60 +298,51 @@
         </a>
     </div>
 
+    {{-- Out-of-stock items render first (red), low-stock follow (amber).
+         Severity ordering is enforced server-side in DashboardController. --}}
     <div class="divide-y divide-gray-100">
-        @foreach($outOfStockItems as $item)
-        <div class="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors group">
-            <div class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></div>
-            <div class="flex-1 min-w-0">
-                <a href="{{ route('inventory.items.show', $item) }}"
-                   class="text-sm font-semibold text-gray-800 group-hover:text-brand-600 transition-colors truncate block">
-                    {{ $item->name }}
-                </a>
-                <p class="text-xs text-gray-400 truncate">{{ $item->category?->name ?? 'Uncategorized' }}</p>
+        @foreach($stockAlerts as $item)
+            @php $isOut = (int) $item->quantity_on_hand === 0; @endphp
+            <div class="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors group">
+                <div class="w-2 h-2 rounded-full {{ $isOut ? 'bg-red-500' : 'bg-amber-400' }} flex-shrink-0"></div>
+                <div class="flex-1 min-w-0">
+                    <a href="{{ route('inventory.items.show', $item) }}"
+                       class="text-sm font-semibold text-gray-800 group-hover:text-brand-600 transition-colors truncate block">
+                        {{ $item->name }}
+                    </a>
+                    <p class="text-xs text-gray-400 truncate">{{ $item->category?->name ?? 'Uncategorized' }}</p>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <span class="text-sm font-bold {{ $isOut ? 'text-red-600' : 'text-amber-600' }} tabular-nums">{{ number_format($item->quantity_on_hand) }}</span>
+                    <span class="text-xs text-gray-400 ml-0.5">{{ $item->unit_type }}</span>
+                    @if(! $isOut)
+                        <p class="text-xs text-gray-400">reorder at {{ $item->reorder_level }}</p>
+                    @endif
+                </div>
+                <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full {{ $isOut ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700' }} flex-shrink-0">
+                    {{ $isOut ? 'Out of Stock' : 'Low Stock' }}
+                </span>
             </div>
-            <div class="text-right flex-shrink-0">
-                <span class="text-sm font-bold text-red-600 tabular-nums">0</span>
-                <span class="text-xs text-gray-400 ml-0.5">{{ $item->unit_type }}</span>
-            </div>
-            <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 flex-shrink-0">
-                Out of Stock
-            </span>
-        </div>
-        @endforeach
-
-        @foreach($lowStockItems as $item)
-        <div class="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors group">
-            <div class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></div>
-            <div class="flex-1 min-w-0">
-                <a href="{{ route('inventory.items.show', $item) }}"
-                   class="text-sm font-semibold text-gray-800 group-hover:text-brand-600 transition-colors truncate block">
-                    {{ $item->name }}
-                </a>
-                <p class="text-xs text-gray-400 truncate">{{ $item->category?->name ?? 'Uncategorized' }}</p>
-            </div>
-            <div class="text-right flex-shrink-0">
-                <span class="text-sm font-bold text-amber-600 tabular-nums">{{ number_format($item->quantity_on_hand) }}</span>
-                <span class="text-xs text-gray-400 ml-0.5">{{ $item->unit_type }}</span>
-                <p class="text-xs text-gray-400">reorder at {{ $item->reorder_level }}</p>
-            </div>
-            <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">
-                Low Stock
-            </span>
-        </div>
         @endforeach
     </div>
 
+    @if($stockAlerts->hasPages())
+    <div class="px-5 py-3 border-t border-gray-100">
+        {{ $stockAlerts->links() }}
+    </div>
+    @endif
+
     <div class="flex items-center gap-4 px-5 py-3 border-t border-gray-100 bg-gray-50/60">
-        @if($outOfStockItems->isNotEmpty())
+        @if($outOfStockCount > 0)
         <a href="{{ route('inventory.items.index', ['status' => 'out']) }}"
            class="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors">
-            View {{ $outOfStockItems->count() }} out of stock →
+            View {{ $outOfStockCount }} out of stock →
         </a>
         @endif
-        @if($lowStockItems->isNotEmpty())
+        @if($lowStockCount > 0)
         <a href="{{ route('inventory.items.index', ['status' => 'low']) }}"
            class="text-xs font-semibold text-amber-600 hover:text-amber-700 transition-colors">
-            View {{ $lowStockItems->count() }} low stock →
+            View {{ $lowStockCount }} low stock →
         </a>
         @endif
     </div>
@@ -438,20 +459,28 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // ── Household Size Distribution (Donut Chart) ───────────────────────────
+    // ── Family Composition (Donut Chart) ────────────────────────────────────
+    // Rank-based palette: navy for the largest demographic, amber for the
+    // middle, gray for the smallest. Stays in the brand palette regardless
+    // of which group dominates. The PHP-side controller resolves the rank
+    // and emits per-key hex codes so the chart and the legend stay in sync.
     const householdCtx = document.getElementById('householdChart');
     if (householdCtx) {
         new Chart(householdCtx, {
             type: 'doughnut',
             data: {
-                labels: ['1-2 People', '3-4 People', '5+ People'],
+                labels: ['Children', 'Adults', 'Seniors'],
                 datasets: [{
                     data: [
-                        {{ $sizeData['small'] }},
-                        {{ $sizeData['medium'] }},
-                        {{ $sizeData['large'] }}
+                        {{ $compositionData['children'] }},
+                        {{ $compositionData['adults'] }},
+                        {{ $compositionData['seniors'] }}
                     ],
-                    backgroundColor: ['#e5e7eb', '#1b2b4b', '#f97316'],
+                    backgroundColor: [
+                        '{{ $compositionData['hex']['children'] }}',
+                        '{{ $compositionData['hex']['adults'] }}',
+                        '{{ $compositionData['hex']['seniors'] }}'
+                    ],
                     borderWidth: 0,
                     hoverBorderWidth: 3,
                     hoverBorderColor: '#ffffff',
@@ -469,7 +498,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         bodyColor: '#d1d5db',
                         padding: 10,
                         callbacks: {
-                            label: ctx => ` ${ctx.label}: ${ctx.parsed} households`
+                            label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()} people`
                         }
                     }
                 }

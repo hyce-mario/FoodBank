@@ -76,11 +76,14 @@ class DashboardController extends Controller
         // For 'last_year', shift back one year; otherwise use current year
         $chartYear  = $chartDefaultPeriod === 'last_year' ? $year - 1 : $year;
 
+        // Group in PHP rather than SQL so the query is portable across MySQL
+        // and SQLite (the test runner uses sqlite, which has no MONTH() fn).
+        // Volume is bounded by a year of completed visits — trivial in memory.
         $monthlyRaw = Visit::where('visit_status', 'exited')
             ->whereYear('created_at', $chartYear)
-            ->selectRaw('MONTH(created_at) as month, SUM(served_bags) as bundles, COUNT(*) as visits')
-            ->groupBy('month')
-            ->pluck('bundles', 'month')
+            ->get(['created_at', 'served_bags'])
+            ->groupBy(fn ($v) => $v->created_at->month)
+            ->map(fn ($group) => (int) $group->sum('served_bags'))
             ->toArray();
 
         $monthLabels  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -89,27 +92,54 @@ class DashboardController extends Controller
             $monthlyData[] = (int) ($monthlyRaw[$m] ?? 0);
         }
 
-        // ── Household Size Distribution (donut chart) ─────────────────────────
+        // ── Family Composition (donut chart) ─────────────────────────────────
+        //
+        // Aggregate of children/adults/seniors across all registered households —
+        // the actionable lens for grant reporting and ration planning. COALESCE
+        // hardens against legacy rows where counts might be null even though
+        // current schema defaults them to 0.
 
-        $sizeDist = Household::selectRaw("
-            SUM(CASE WHEN household_size <= 2 THEN 1 ELSE 0 END)             AS small,
-            SUM(CASE WHEN household_size >= 3 AND household_size <= 4 THEN 1 ELSE 0 END) AS medium,
-            SUM(CASE WHEN household_size >= 5 THEN 1 ELSE 0 END)              AS large,
-            COUNT(*) AS total
+        $composition = Household::selectRaw("
+            SUM(COALESCE(children_count, 0)) AS children,
+            SUM(COALESCE(adults_count,   0)) AS adults,
+            SUM(COALESCE(seniors_count,  0)) AS seniors,
+            SUM(COALESCE(household_size, 0)) AS people,
+            COUNT(*) AS households
         ")->first();
 
-        $sizeTotal  = max(1, (int) $sizeDist->total);
-        $sizeData   = [
-            'small'  => (int) $sizeDist->small,
-            'medium' => (int) $sizeDist->medium,
-            'large'  => (int) $sizeDist->large,
-            'total'  => $sizeTotal,
-            'pct'    => [
-                'small'  => round($sizeDist->small  / $sizeTotal * 100),
-                'medium' => round($sizeDist->medium / $sizeTotal * 100),
-                'large'  => round($sizeDist->large  / $sizeTotal * 100),
+        $peopleTotal     = max(1, (int) $composition->people);
+        $compositionData = [
+            'children'   => (int) $composition->children,
+            'adults'     => (int) $composition->adults,
+            'seniors'    => (int) $composition->seniors,
+            'total'      => (int) $composition->people,
+            'households' => (int) $composition->households,
+            'pct'        => [
+                'children' => round($composition->children / $peopleTotal * 100),
+                'adults'   => round($composition->adults   / $peopleTotal * 100),
+                'seniors'  => round($composition->seniors  / $peopleTotal * 100),
             ],
         ];
+
+        // Rank-based palette so the largest demographic is always navy, the
+        // middle one amber, and the smallest gray — visually stable colour
+        // weights regardless of which category currently dominates the data.
+        $buckets = [
+            'children' => $compositionData['children'],
+            'adults'   => $compositionData['adults'],
+            'seniors'  => $compositionData['seniors'],
+        ];
+        arsort($buckets); // largest → smallest, keys preserved
+        $rankPalette = ['#1b2b4b', '#f59e0b', '#d1d5db']; // navy-700, amber-500, gray-300
+        $rankClasses = ['bg-navy-700', 'bg-amber-500', 'bg-gray-300'];
+        $compositionData['hex']   = ['children' => '', 'adults' => '', 'seniors' => ''];
+        $compositionData['class'] = ['children' => '', 'adults' => '', 'seniors' => ''];
+        $rank = 0;
+        foreach (array_keys($buckets) as $key) {
+            $compositionData['hex'][$key]   = $rankPalette[$rank];
+            $compositionData['class'][$key] = $rankClasses[$rank];
+            $rank++;
+        }
 
         // ── Events ────────────────────────────────────────────────────────────
 
@@ -134,43 +164,64 @@ class DashboardController extends Controller
             ->withCount('assignedVolunteers')
             ->first();
 
+        // Dashboard tables are capped at 7 per page so the dashboard never
+        // becomes a long scroll. Each table uses its own page query string
+        // (events_page, stock_page) so the two paginate independently.
         $recentEvents = Event::past()
             ->orderByDesc('date')
-            ->limit(5)
             ->withCount([
                 'visits as exited_count' => fn ($q) => $q->where('visit_status', 'exited'),
             ])
-            ->get(['id', 'name', 'date', 'location', 'status']);
+            ->paginate(7, ['id', 'name', 'date', 'location', 'status'], 'events_page')
+            ->withQueryString();
 
         // ── Inventory Alerts ──────────────────────────────────────────────────
+        // Combine out-of-stock + low-stock into a single paginated list, sorted
+        // by severity (out-of-stock first), then alphabetically. Header summary
+        // counts are computed separately so they reflect the totals across all
+        // pages, not just the current one.
 
-        $outOfStockItems = collect();
-        $lowStockItems   = collect();
+        $stockAlerts     = new \Illuminate\Pagination\LengthAwarePaginator([], 0, 7, 1, ['pageName' => 'stock_page']);
+        $outOfStockCount = 0;
+        $lowStockCount   = 0;
 
         if ($showLowStockAlert) {
-            $outOfStockItems = InventoryItem::active()
-                ->outOfStock()
-                ->with('category')
-                ->orderBy('name')
-                ->get();
+            $outOfStockCount = InventoryItem::active()->where('quantity_on_hand', 0)->count();
+            // Exclude the truly-out items from the low-stock count so the two
+            // numbers never double-count the same item.
+            $lowStockCount = InventoryItem::active()
+                ->where('reorder_level', '>', 0)
+                ->where('quantity_on_hand', '>', 0)
+                ->whereColumn('quantity_on_hand', '<=', 'reorder_level')
+                ->count();
 
-            $lowStockItems = InventoryItem::active()
-                ->lowStock()
+            $stockAlerts = InventoryItem::active()
+                ->where(function ($q) {
+                    $q->where('quantity_on_hand', 0)
+                      ->orWhere(function ($q2) {
+                          $q2->where('reorder_level', '>', 0)
+                             ->whereColumn('quantity_on_hand', '<=', 'reorder_level');
+                      });
+                })
                 ->with('category')
+                // Out-of-stock first (CASE evaluates to 0); rest by name.
+                ->orderByRaw('CASE WHEN quantity_on_hand = 0 THEN 0 ELSE 1 END')
                 ->orderBy('name')
-                ->get();
+                ->paginate(7, ['*'], 'stock_page')
+                ->withQueryString();
         }
 
         return view('dashboard.index', compact(
             'stats',
             'monthLabels',
             'monthlyData',
-            'sizeData',
+            'compositionData',
             'currentEvent',
             'nextEvent',
             'recentEvents',
-            'outOfStockItems',
-            'lowStockItems',
+            'stockAlerts',
+            'outOfStockCount',
+            'lowStockCount',
             'showLowStockAlert',
             'chartDefaultPeriod',
             'chartYear',
