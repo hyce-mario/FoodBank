@@ -276,6 +276,13 @@ class EventCheckInService
                 $visit->households()->attach($bulk);
             }
 
+            // Phase 6.7: bump the cached events_attended_count for every
+            // household just attached. Inside the surrounding transaction so
+            // the increment rolls back atomically with the visit on failure.
+            $attachedIds = array_merge([$household->id], $toAttach->all());
+            \App\Models\Household::whereIn('id', $attachedIds)
+                ->increment('events_attended_count');
+
             return $visit->load('households');
         });
     }

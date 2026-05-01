@@ -37,6 +37,7 @@ class Household extends Model
         'children_count'              => 'integer',
         'adults_count'                => 'integer',
         'seniors_count'               => 'integer',
+        'events_attended_count'       => 'integer',
         'representative_household_id' => 'integer',
     ];
 

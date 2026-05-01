@@ -26,12 +26,10 @@ class HouseholdController extends Controller
             ? (int) $request->get('per_page', $defaultPerPage)
             : $defaultPerPage;
 
-        // Correlated subqueries for per-household attendance stats
-        $eventsCountSub = DB::table('visit_households as vh')
-            ->join('visits as v', 'vh.visit_id', '=', 'v.id')
-            ->whereColumn('vh.household_id', 'households.id')
-            ->selectRaw('COUNT(DISTINCT v.event_id)');
-
+        // Phase 6.7: events_attended_count is now a cached column on
+        // households (maintained by EventCheckInService + Visit observer).
+        // Only first_event_date still needs a correlated subquery — caching
+        // it would require recomputation every time a Visit is deleted.
         $firstEventDateSub = DB::table('visit_households as vh2')
             ->join('visits as v2', 'vh2.visit_id', '=', 'v2.id')
             ->join('events as e2', 'v2.event_id', '=', 'e2.id')
@@ -40,7 +38,6 @@ class HouseholdController extends Controller
 
         $query = Household::query()
             ->select('households.*')
-            ->selectSub($eventsCountSub, 'events_attended_count')
             ->selectSub($firstEventDateSub, 'first_event_date');
 
         if ($search = $request->get('search')) {
@@ -55,16 +52,12 @@ class HouseholdController extends Controller
             $query->where('household_size', $size);
         }
 
-        // First-timer / returning filter
+        // Phase 6.7: filter on the cached column (no subquery)
         $attendance = $request->get('attendance');
         if ($attendance === 'first_timer') {
-            $query->whereRaw(
-                '(SELECT COUNT(DISTINCT v.event_id) FROM visit_households vh JOIN visits v ON vh.visit_id = v.id WHERE vh.household_id = households.id) = 1'
-            );
+            $query->where('events_attended_count', 1);
         } elseif ($attendance === 'returning') {
-            $query->whereRaw(
-                '(SELECT COUNT(DISTINCT v.event_id) FROM visit_households vh JOIN visits v ON vh.visit_id = v.id WHERE vh.household_id = households.id) > 1'
-            );
+            $query->where('events_attended_count', '>', 1);
         }
 
         $sort      = in_array($request->get('sort'), ['household_number', 'first_name', 'household_size', 'created_at'])
