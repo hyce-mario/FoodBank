@@ -72,6 +72,17 @@
     <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
         <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Household Size</p>
         <p class="text-3xl font-bold text-gray-900">{{ $household->household_size }}</p>
+        <div class="flex items-center gap-2 mt-1">
+            @if ($household->children_count > 0)
+                <span class="text-xs text-blue-600 font-medium">{{ $household->children_count }}C</span>
+            @endif
+            @if ($household->adults_count > 0)
+                <span class="text-xs text-green-600 font-medium">{{ $household->adults_count }}A</span>
+            @endif
+            @if ($household->seniors_count > 0)
+                <span class="text-xs text-purple-600 font-medium">{{ $household->seniors_count }}S</span>
+            @endif
+        </div>
     </div>
 
     <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
@@ -132,14 +143,16 @@
         <div class="px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
             <h2 class="text-sm font-semibold text-gray-800">Household Details</h2>
         </div>
-        <div class="p-5">
+        <div class="p-5 space-y-5">
+
+            {{-- Top grid --}}
             <div class="grid grid-cols-2 gap-y-5 gap-x-6">
                 <div>
                     <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Household ID</p>
                     <p class="text-sm font-bold text-gray-900">#{{ $household->household_number }}</p>
                 </div>
                 <div>
-                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Household Size</p>
+                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total Size</p>
                     <p class="text-sm font-bold text-gray-900">
                         {{ $household->household_size }} {{ $household->household_size == 1 ? 'member' : 'members' }}
                     </p>
@@ -149,24 +162,162 @@
                     <p class="text-sm font-semibold text-gray-900">{{ $household->created_at->format('M d, Y') }}</p>
                 </div>
                 <div>
-                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Last Updated</p>
-                    <p class="text-sm font-semibold text-gray-900">{{ $household->updated_at->format('M d, Y') }}</p>
-                </div>
-                <div>
                     <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Location</p>
                     <p class="text-sm font-semibold text-gray-900">
                         {{ $household->city ? $household->city.($household->state ? ', '.$household->state : '') : '—' }}
+                        {{ $household->zip ? ' ' . $household->zip : '' }}
                     </p>
                 </div>
                 <div>
-                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Zipcode</p>
-                    <p class="text-sm font-semibold text-gray-900">{{ $household->zip ?: '—' }}</p>
+                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Vehicle</p>
+                    @if ($household->vehicle_label)
+                        <p class="text-sm font-semibold text-gray-900">{{ $household->vehicle_label }}</p>
+                    @else
+                        <p class="text-sm text-gray-400">Not provided</p>
+                    @endif
                 </div>
             </div>
+
+            {{-- Demographic breakdown --}}
+            <div class="pt-4 border-t border-gray-100">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Household Composition</p>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-center">
+                        <p class="text-2xl font-bold text-blue-700">{{ $household->children_count }}</p>
+                        <p class="text-xs font-semibold text-blue-500 mt-0.5">Children</p>
+                        <p class="text-xs text-blue-400">Under 18</p>
+                    </div>
+                    <div class="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-center">
+                        <p class="text-2xl font-bold text-green-700">{{ $household->adults_count }}</p>
+                        <p class="text-xs font-semibold text-green-600 mt-0.5">Adults</p>
+                        <p class="text-xs text-green-400">18 – 64</p>
+                    </div>
+                    <div class="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-center">
+                        <p class="text-2xl font-bold text-purple-700">{{ $household->seniors_count }}</p>
+                        <p class="text-xs font-semibold text-purple-600 mt-0.5">Seniors</p>
+                        <p class="text-xs text-purple-400">65+</p>
+                    </div>
+                </div>
+                <div class="mt-2 flex items-center justify-between bg-navy-700 text-white rounded-xl px-4 py-2.5">
+                    <span class="text-sm font-semibold">Total Household Size</span>
+                    <span class="text-sm font-bold">{{ $household->household_size }} {{ $household->household_size == 1 ? 'person' : 'people' }}</span>
+                </div>
+            </div>
+
         </div>
     </div>
 
 </div>
+
+{{-- ── Representative Relationship ───────────────────────────────────── --}}
+@if ($household->representative || $household->representedHouseholds->isNotEmpty())
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+    {{-- This household IS represented by another --}}
+    @if ($household->representative)
+    <div class="bg-amber-50 border border-amber-200 rounded-2xl overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-amber-200 bg-amber-100/50">
+            <h2 class="text-sm font-semibold text-amber-800">Represented By</h2>
+        </div>
+        <div class="p-5">
+            <p class="text-xs text-amber-600 mb-3">This household's food is being picked up by:</p>
+            <div class="flex items-center justify-between bg-white border border-amber-200 rounded-xl px-4 py-3">
+                <div>
+                    <p class="text-sm font-bold text-gray-900">{{ $household->representative->full_name }}</p>
+                    <p class="text-xs text-gray-500">#{{ $household->representative->household_number }}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="{{ route('households.show', $household->representative) }}"
+                       class="text-xs font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2">
+                        View
+                    </a>
+                    <form action="{{ route('households.detach', [$household->representative, $household]) }}" method="POST">
+                        @csrf @method('DELETE')
+                        <button type="submit"
+                                class="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors px-2 py-1 rounded-lg hover:bg-red-50"
+                                onclick="return confirm('Unlink this household from its representative?')">
+                            Unlink
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- This household IS the representative for others --}}
+    @if ($household->representedHouseholds->isNotEmpty())
+    <div class="bg-indigo-50 border border-indigo-200 rounded-2xl overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-indigo-200 bg-indigo-100/50">
+            <h2 class="text-sm font-semibold text-indigo-800">
+                Representing {{ $household->representedHouseholds->count() }}
+                {{ $household->representedHouseholds->count() == 1 ? 'Household' : 'Households' }}
+            </h2>
+        </div>
+        <div class="p-5 space-y-2">
+            @foreach ($household->representedHouseholds as $rep)
+            <div class="flex items-center justify-between bg-white border border-indigo-200 rounded-xl px-4 py-2.5">
+                <div>
+                    <p class="text-sm font-semibold text-gray-900">{{ $rep->full_name }}</p>
+                    <p class="text-xs text-gray-400">
+                        #{{ $rep->household_number }}
+                        &middot; {{ $rep->household_size }} {{ $rep->household_size == 1 ? 'person' : 'people' }}
+                        @if ($rep->children_count || $rep->seniors_count)
+                            ({{ $rep->children_count }}C {{ $rep->adults_count }}A {{ $rep->seniors_count }}S)
+                        @endif
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a href="{{ route('households.show', $rep) }}"
+                       class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline underline-offset-2">
+                        View
+                    </a>
+                    <form action="{{ route('households.detach', [$household, $rep]) }}" method="POST">
+                        @csrf @method('DELETE')
+                        <button type="submit"
+                                class="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors px-2 py-1 rounded-lg hover:bg-red-50"
+                                onclick="return confirm('Unlink {{ addslashes($rep->full_name) }} from this household?')">
+                            Unlink
+                        </button>
+                    </form>
+                </div>
+            </div>
+            @endforeach
+        </div>
+    </div>
+    @endif
+
+</div>
+@endif
+
+{{-- ── Attach Existing Household ──────────────────────────────────────── --}}
+@if (! $household->is_represented && $attachCandidates->isNotEmpty())
+<div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden mb-4">
+    <div class="px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
+        <h2 class="text-sm font-semibold text-gray-800">Link an Existing Household</h2>
+        <p class="text-xs text-gray-400 mt-0.5">Attach another household that this person will pick up food for.</p>
+    </div>
+    <div class="p-5">
+        <form action="{{ route('households.attach', $household) }}" method="POST" class="flex items-center gap-3">
+            @csrf
+            <select name="represented_id"
+                    class="flex-1 px-4 py-2.5 text-sm border border-gray-300 rounded-xl bg-white
+                           focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400">
+                <option value="">— Select a household to link —</option>
+                @foreach ($attachCandidates as $candidate)
+                    <option value="{{ $candidate->id }}">
+                        {{ $candidate->full_name }} (#{{ $candidate->household_number }})
+                    </option>
+                @endforeach
+            </select>
+            <button type="submit"
+                    class="flex-shrink-0 px-4 py-2.5 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors">
+                Link
+            </button>
+        </form>
+    </div>
+</div>
+@endif
 
 {{-- ── Event Report ──────────────────────────────────────────────────── --}}
 <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -266,7 +417,10 @@
         </div>
         <p class="font-semibold text-gray-900 text-sm">{{ $household->full_name }}</p>
         <p class="text-xs text-gray-400 mt-0.5 mb-5">
-            Household Size: {{ $household->household_size }} {{ $household->household_size == 1 ? 'person' : 'people' }}
+            {{ $household->household_size }} {{ $household->household_size == 1 ? 'person' : 'people' }}
+            @if ($household->children_count || $household->seniors_count)
+                &middot; {{ $household->children_count }}C {{ $household->adults_count }}A {{ $household->seniors_count }}S
+            @endif
         </p>
         <div class="flex items-center gap-2">
             <button @click="qrOpen = false"
@@ -377,7 +531,7 @@ function printQr() {
             <h2>#{{ $household->household_number }}</h2>
             <img src="${dataUrl}" />
             <h3>{{ $household->full_name }}</h3>
-            <p>Household Size: {{ $household->household_size }} {{ $household->household_size == 1 ? 'person' : 'people' }}</p>
+            <p>{{ $household->household_size }} {{ $household->household_size == 1 ? 'person' : 'people' }}</p>
             <script>window.onload = () => { window.print(); window.close(); }<\/script>
         </body></html>`);
     win.document.close();

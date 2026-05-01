@@ -73,7 +73,17 @@
             @endforeach
         </select>
 
-        @if (request()->hasAny(['search','zip','size']))
+        {{-- Filter Attendance --}}
+        <select name="attendance"
+                class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50
+                       focus:outline-none focus:ring-2 focus:ring-brand-500/20
+                       text-gray-600 cursor-pointer min-w-[150px]">
+            <option value="">All Households</option>
+            <option value="first_timer"  @selected(request('attendance') === 'first_timer')>First-Timers Only</option>
+            <option value="returning"    @selected(request('attendance') === 'returning')>Returning Only</option>
+        </select>
+
+        @if (request()->hasAny(['search','zip','size','attendance','sort']))
             <a href="{{ route('households.index') }}"
                class="text-xs text-gray-500 hover:text-gray-700 px-2 py-2 hover:bg-gray-100 rounded-lg transition-colors">
                 Clear
@@ -126,6 +136,8 @@
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Location</th>
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Zipcode</th>
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Size</th>
+                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">First Attended</th>
+                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Events</th>
                     <th class="px-5 py-3 w-36"></th>
                 </tr>
             </thead>
@@ -133,7 +145,16 @@
                 @forelse ($households as $h)
                     <tr class="hover:bg-gray-50/70 transition-colors group">
                         <td class="px-5 py-3.5 text-sm text-gray-500">{{ $h->household_number }}</td>
-                        <td class="px-5 py-3.5 font-semibold text-gray-900">{{ $h->full_name }}</td>
+                        <td class="px-5 py-3.5">
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold text-gray-900">{{ $h->full_name }}</span>
+                                @if ((int) $h->events_attended_count === 1)
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 ring-1 ring-green-200">
+                                        First-Timer
+                                    </span>
+                                @endif
+                            </div>
+                        </td>
                         <td class="px-5 py-3.5 text-sm text-gray-500">{{ $h->email ?? '—' }}</td>
                         <td class="px-5 py-3.5 text-sm text-gray-500">{{ $h->location ?: '—' }}</td>
                         <td class="px-5 py-3.5 text-sm text-gray-500">{{ $h->zip ?? '—' }}</td>
@@ -144,6 +165,19 @@
                                 </svg>
                                 {{ $h->household_size }}
                             </div>
+                        </td>
+                        <td class="px-5 py-3.5 text-sm text-gray-500">
+                            {{ $h->first_event_date ? \Carbon\Carbon::parse($h->first_event_date)->format('M j, Y') : '—' }}
+                        </td>
+                        <td class="px-5 py-3.5">
+                            @if ((int) $h->events_attended_count > 0)
+                                <span class="inline-flex items-center gap-1 text-sm text-gray-700">
+                                    {{ $h->events_attended_count }}
+                                    <span class="text-gray-400 text-xs">event{{ $h->events_attended_count == 1 ? '' : 's' }}</span>
+                                </span>
+                            @else
+                                <span class="text-sm text-gray-400">—</span>
+                            @endif
                         </td>
                         <td class="px-5 py-3.5">
                             <div class="flex items-center justify-end gap-1.5">
@@ -187,7 +221,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="px-5 py-14 text-center">
+                        <td colspan="8" class="px-5 py-14 text-center">
                             <svg class="w-10 h-10 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/>
                             </svg>
@@ -214,10 +248,23 @@
                                 </svg>
                                 {{ $h->household_size }}
                             </span>
+                            @if ((int) $h->events_attended_count === 1)
+                                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700">
+                                    First-Timer
+                                </span>
+                            @endif
                         </div>
                         <p class="font-semibold text-gray-900">{{ $h->full_name }}</p>
                         @if ($h->email)<p class="text-sm text-gray-500 truncate">{{ $h->email }}</p>@endif
                         @if ($h->location)<p class="text-xs text-gray-400 mt-0.5">{{ $h->location }}{{ $h->zip ? ', '.$h->zip : '' }}</p>@endif
+                        @if ($h->first_event_date)
+                            <p class="text-xs text-gray-400 mt-0.5">
+                                First attended: {{ \Carbon\Carbon::parse($h->first_event_date)->format('M j, Y') }}
+                                @if ((int) $h->events_attended_count > 1)
+                                    &middot; {{ $h->events_attended_count }} events
+                                @endif
+                            </p>
+                        @endif
                     </div>
                     <a href="{{ route('households.show', $h) }}"
                        class="flex-shrink-0 p-2 border border-gray-200 rounded-lg text-gray-500 hover:bg-navy-700 hover:text-white hover:border-navy-700 transition-colors">
