@@ -117,6 +117,10 @@ Route::middleware('auth')->group(function () {
         ->name('events.volunteers.detach');
     Route::post('events/{event}/attendees/{attendee}/match', [EventController::class, 'matchAttendee'])
         ->name('events.attendees.match');
+    Route::post('events/{event}/attendees/{attendee}/dismiss', [EventController::class, 'dismissAttendee'])
+        ->name('events.attendees.dismiss');
+    Route::post('events/{event}/attendees/{attendee}/register', [EventController::class, 'registerAttendee'])
+        ->name('events.attendees.register');
     Route::delete('events/{event}/attendees/{attendee}', [EventController::class, 'deleteAttendee'])
         ->name('events.attendees.delete');
     Route::post('events/{event}/regenerate-codes', [EventController::class, 'regenerateCodes'])

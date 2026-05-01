@@ -13,6 +13,7 @@ use App\Models\InventoryItem;
 use App\Models\Volunteer;
 use App\Models\VolunteerGroup;
 use App\Services\FinanceService;
+use App\Services\HouseholdService;
 use App\Services\SettingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -239,6 +240,45 @@ class EventController extends Controller
         ]);
 
         return back()->with('success', 'Attendee matched to existing household.');
+    }
+
+    // ─── Attendee: dismiss potential match ────────────────────────────────────
+
+    public function dismissAttendee(Event $event, EventPreRegistration $attendee): RedirectResponse
+    {
+        $this->authorize('update', $event);
+        $attendee->update([
+            'potential_household_id' => null,
+            'match_status'           => null,
+        ]);
+
+        return back()->with('success', 'Potential match dismissed — attendee marked as new.');
+    }
+
+    // ─── Attendee: register as new household ─────────────────────────────────
+
+    public function registerAttendee(Event $event, EventPreRegistration $attendee): RedirectResponse
+    {
+        $this->authorize('update', $event);
+
+        $household = app(HouseholdService::class)->create([
+            'first_name'     => $attendee->first_name,
+            'last_name'      => $attendee->last_name,
+            'email'          => $attendee->email,
+            'city'           => $attendee->city,
+            'state'          => $attendee->state,
+            'zip'            => $attendee->zipcode,
+            'children_count' => $attendee->children_count ?? 0,
+            'adults_count'   => $attendee->adults_count   ?? 0,
+            'seniors_count'  => $attendee->seniors_count  ?? 0,
+        ]);
+
+        $attendee->update([
+            'household_id' => $household->id,
+            'match_status' => 'matched',
+        ]);
+
+        return back()->with('success', "New household #{$household->household_number} created and linked.");
     }
 
     // ─── Attendee: delete ─────────────────────────────────────────────────────

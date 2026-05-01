@@ -483,22 +483,41 @@
                                                 {{ $reg->potentialHousehold->full_name }}
                                                 (#{{ $reg->potentialHousehold->household_number }})
                                             </p>
-                                            <form method="POST"
-                                                  action="{{ route('events.attendees.match', [$event, $reg]) }}"
-                                                  class="mt-1.5">
-                                                @csrf
-                                                <button type="submit"
-                                                        class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-navy-700 hover:bg-navy-800 text-white transition-colors">
-                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"/></svg>
-                                                    Match
-                                                </button>
-                                            </form>
+                                            <div class="flex items-center gap-2 mt-1.5">
+                                                <form method="POST"
+                                                      action="{{ route('events.attendees.match', [$event, $reg]) }}">
+                                                    @csrf
+                                                    <button type="submit"
+                                                            class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-navy-700 hover:bg-navy-800 text-white transition-colors">
+                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"/></svg>
+                                                        Confirm Match
+                                                    </button>
+                                                </form>
+                                                <form method="POST"
+                                                      action="{{ route('events.attendees.dismiss', [$event, $reg]) }}">
+                                                    @csrf
+                                                    <button type="submit"
+                                                            class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border border-gray-300 text-gray-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-colors">
+                                                        Not them
+                                                    </button>
+                                                </form>
+                                            </div>
                                         @endif
 
                                     @else
                                         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
                                             New
                                         </span>
+                                        <form method="POST"
+                                              action="{{ route('events.attendees.register', [$event, $reg]) }}"
+                                              class="mt-1.5">
+                                            @csrf
+                                            <button type="submit"
+                                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white transition-colors">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                                                Register as Household
+                                            </button>
+                                        </form>
                                     @endif
                                 </td>
 
