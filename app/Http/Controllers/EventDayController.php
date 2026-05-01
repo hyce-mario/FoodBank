@@ -106,6 +106,17 @@ class EventDayController extends Controller
 
         $ruleset = $event->ruleset;
 
+        // Pre-build bag composition list once for all cards (5.1)
+        $bagComposition = [];
+        if ($ruleset) {
+            $ruleset->loadMissing('components.item');
+            $bagComposition = $ruleset->components
+                ->filter(fn ($c) => $c->item)
+                ->map(fn ($c) => ['name' => $c->item->name, 'qty' => $c->qty_per_bag])
+                ->values()
+                ->all();
+        }
+
         $visits = Visit::where('event_id', $event->id)
             ->where(fn ($q) => $q->whereNull('visit_status')->orWhere('visit_status', '!=', 'exited'))
             ->with('households')
@@ -144,6 +155,7 @@ class EventDayController extends Controller
                 'start_time'               => $visit->start_time->format('g:i A'),
                 'waited_min'               => (int) now()->diffInMinutes($visit->start_time),
                 'bags_needed'              => $totalBags,
+                'bag_composition'          => $bagComposition,
                 'total_people'             => $totalPeople,
                 'is_representative_pickup' => $represented->isNotEmpty(),
                 'household'                => [

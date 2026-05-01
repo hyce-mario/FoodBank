@@ -64,9 +64,10 @@
 </div>
 
 {{-- Phase 2.1.e: insufficient-stock modal --}}
-<div id="stock-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5)">
+<div id="stock-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5)"
+     role="dialog" aria-modal="true" aria-labelledby="stock-modal-title">
     <div class="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
-        <h2 class="text-lg font-black text-gray-900 mb-1">Not Enough Stock</h2>
+        <h2 id="stock-modal-title" class="text-lg font-black text-gray-900 mb-1">Not Enough Stock</h2>
         <p id="stock-modal-msg" class="text-sm text-gray-600 mb-5"></p>
         <div class="flex gap-3">
             <button id="stock-modal-skip"
@@ -139,6 +140,16 @@
         const repBagsSum   = reps.reduce((s, r) => s + (r.bags_needed || 0), 0);
         const primaryBags  = v.bags_needed - repBagsSum;
         const familyCount  = isRep ? reps.length + 1 : 1;
+        const composition  = v.bag_composition || [];
+        const compHtml     = composition.length
+            ? `<div class="mt-2 flex flex-wrap gap-1.5">
+                   ${composition.map(c =>
+                       `<span class="inline-flex items-center gap-1 text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">
+                           <span class="font-black">${c.qty}×</span>${esc(c.name)}
+                        </span>`
+                   ).join('')}
+               </div>`
+            : '';
 
         // Rep pickup breakdown: primary row (★) + each represented row (↳)
         const repRows = isRep && reps.length > 0
@@ -185,6 +196,7 @@
                   <p class="text-xs text-orange-600 font-semibold">Total Bags</p>
                 </div>
               </div>
+              ${compHtml}
               ${repRows}
             </div>
           </div>
@@ -232,14 +244,20 @@
                 if (data.error === 'insufficient_stock') {
                     document.getElementById('stock-modal-msg').textContent =
                         `Needed ${data.needed}, available ${data.available}. Skip the inventory deduction and mark as loaded anyway?`;
-                    const modal = document.getElementById('stock-modal');
+                    const modal   = document.getElementById('stock-modal');
+                    const skipBtn = document.getElementById('stock-modal-skip');
+                    const cancelBtn = document.getElementById('stock-modal-cancel');
                     modal.classList.remove('hidden');
-                    document.getElementById('stock-modal-skip').onclick = () => {
-                        modal.classList.add('hidden');
+                    skipBtn.focus();
+                    const closeModal = () => { modal.classList.add('hidden'); btn.focus(); };
+                    const onKey = e => { if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', onKey); } };
+                    document.addEventListener('keydown', onKey);
+                    skipBtn.onclick = () => {
+                        closeModal(); document.removeEventListener('keydown', onKey);
                         window._markLoaded(id, btn, true);
                     };
-                    document.getElementById('stock-modal-cancel').onclick = () => {
-                        modal.classList.add('hidden');
+                    cancelBtn.onclick = () => {
+                        closeModal(); document.removeEventListener('keydown', onKey);
                         btn.disabled = false; btn.textContent = 'Loading Complete';
                     };
                 } else {

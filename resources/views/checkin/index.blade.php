@@ -1020,7 +1020,9 @@
     ═══════════════════════════════════════════════════════════ --}}
     <div x-show="overrideModal.show" style="display:none"
          class="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-         @keydown.escape.window="overrideModal.show && cancelOverride()">
+         role="dialog" aria-modal="true" aria-labelledby="override-modal-title"
+         @keydown.escape.window="overrideModal.show && cancelOverride()"
+         x-effect="overrideModal.show && $nextTick(() => $refs.overridePanel?.focus())">
 
         {{-- Backdrop. Click-outside cancels, but NOT while a confirm
              request is in flight — the request continues regardless of
@@ -1040,7 +1042,7 @@
              so a tailwind rebuild can't add new classes. Width is capped via
              the base `max-w-md` (~448px) since the responsive `sm:max-w-md`
              variant isn't compiled; on mobile, w-full takes precedence. --}}
-        <div class="relative z-10 bg-white w-full max-w-md rounded-t-3xl rounded-2xl shadow-2xl"
+        <div class="relative z-10 bg-white w-full max-w-md rounded-t-3xl rounded-2xl shadow-2xl" tabindex="-1" x-ref="overridePanel"
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="translate-y-full sm:translate-y-4 sm:opacity-0"
              x-transition:enter-end="translate-y-0 sm:opacity-100"
@@ -1056,7 +1058,7 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
                         </svg>
                     </div>
-                    <h3 class="text-base font-semibold text-gray-900">Already served at this event</h3>
+                    <h3 id="override-modal-title" class="text-base font-semibold text-gray-900">Already served at this event</h3>
                 </div>
 
                 <template x-if="overrideModal.households.length === 1">

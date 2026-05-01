@@ -247,9 +247,10 @@
 </div>
 
 {{-- Phase 2.1.e: insufficient-stock modal (supervisor path) --}}
-<div id="mon-stock-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5)">
+<div id="mon-stock-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.5)"
+     role="dialog" aria-modal="true" aria-labelledby="mon-stock-modal-title">
     <div class="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
-        <h2 class="text-lg font-black text-gray-900 mb-1">Not Enough Stock</h2>
+        <h2 id="mon-stock-modal-title" class="text-lg font-black text-gray-900 mb-1">Not Enough Stock</h2>
         <p id="mon-stock-modal-msg" class="text-sm text-gray-600 mb-5"></p>
         <div class="flex gap-3">
             <button id="mon-stock-modal-skip"
@@ -696,14 +697,20 @@ const Monitor = (function () {
                 if (data.error === 'insufficient_stock') {
                     el('mon-stock-modal-msg').textContent =
                         `Needed ${data.needed}, available ${data.available}. Skip the inventory deduction and mark as loaded anyway?`;
-                    const modal = el('mon-stock-modal');
+                    const modal     = el('mon-stock-modal');
+                    const skipBtn   = el('mon-stock-modal-skip');
+                    const cancelBtn = el('mon-stock-modal-cancel');
                     modal.classList.remove('hidden');
-                    el('mon-stock-modal-skip').onclick = () => {
-                        modal.classList.add('hidden');
+                    skipBtn.focus();
+                    const closeModal = () => { modal.classList.add('hidden'); btn.focus(); };
+                    const onKey = e => { if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', onKey); } };
+                    document.addEventListener('keydown', onKey);
+                    skipBtn.onclick = () => {
+                        closeModal(); document.removeEventListener('keydown', onKey);
                         transition(visitId, 'loaded', btn, originalLabel, true);
                     };
-                    el('mon-stock-modal-cancel').onclick = () => {
-                        modal.classList.add('hidden');
+                    cancelBtn.onclick = () => {
+                        closeModal(); document.removeEventListener('keydown', onKey);
                         btn.disabled = false; btn.textContent = originalLabel;
                     };
                 } else {
