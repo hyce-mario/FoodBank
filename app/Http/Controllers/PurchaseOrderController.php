@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StorePurchaseOrderRequest;
 use App\Models\FinanceCategory;
+use App\Models\InventoryItem;
 use App\Models\PurchaseOrder;
 use App\Services\PurchaseOrderService;
 use Illuminate\Http\RedirectResponse;
@@ -39,9 +40,8 @@ class PurchaseOrderController extends Controller
 
     public function create(): View
     {
-        // Phase 6.6: items are fetched on-demand from inventory.items.search
-        // via the combobox — no upfront catalog payload regardless of size.
-        return view('purchase-orders.create');
+        $items = InventoryItem::active()->with('category')->orderBy('name')->get();
+        return view('purchase-orders.create', compact('items'));
     }
 
     public function store(StorePurchaseOrderRequest $request): RedirectResponse

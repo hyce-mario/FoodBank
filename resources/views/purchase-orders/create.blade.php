@@ -15,7 +15,7 @@
 </div>
 
 <form method="POST" action="{{ route('purchase-orders.store') }}"
-      x-data="poForm('{{ route('inventory.items.search') }}')">
+      x-data="poForm({{ $items->toJson() }})">
     @csrf
 
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5 space-y-5">
@@ -66,30 +66,20 @@
         <div class="space-y-2">
             <template x-for="(row, idx) in rows" :key="idx">
                 <div class="flex items-center gap-2">
-                    {{-- Searchable item combobox (server-side typeahead) --}}
+                    {{-- Searchable item combobox --}}
                     <div class="flex-1 min-w-0 relative" @click.away="row.dropdownOpen = false">
                         <input type="text" x-model="row.searchTerm"
-                               @input.debounce.250ms="fetchItems(idx)"
-                               @focus="openDropdown(idx)"
+                               @focus="row.dropdownOpen = true"
                                @keydown.escape="row.dropdownOpen = false"
                                placeholder="Search item by name…"
                                autocomplete="off"
                                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white">
                         <input type="hidden" :name="`items[${idx}][inventory_item_id]`" :value="row.inventory_item_id">
 
-                        {{-- Loading spinner inside the input on the right --}}
-                        <div class="absolute inset-y-0 right-2 flex items-center pointer-events-none"
-                             x-show="row.loading" style="display:none">
-                            <svg class="w-4 h-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                            </svg>
-                        </div>
-
                         {{-- Dropdown panel --}}
                         <div x-show="row.dropdownOpen" style="display:none"
                              class="absolute z-20 mt-1 left-0 right-0 max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
-                            <template x-for="item in row.results" :key="item.id">
+                            <template x-for="item in filteredItems(row.searchTerm)" :key="item.id">
                                 <button type="button" @click="selectItem(idx, item)"
                                         class="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 hover:text-brand-700 border-b border-gray-50 last:border-b-0">
                                     <span class="font-medium" x-text="item.name"></span>
@@ -97,14 +87,9 @@
                                           x-text="item.category ? '· ' + item.category.name : ''"></span>
                                 </button>
                             </template>
-                            <div x-show="!row.loading && row.results.length === 0"
-                                 class="px-3 py-3 text-sm text-gray-400 italic" style="display:none">
-                                No matching items
-                            </div>
-                            <div x-show="row.loading && row.results.length === 0"
-                                 class="px-3 py-3 text-sm text-gray-400 italic" style="display:none">
-                                Searching…
-                            </div>
+                            <template x-if="filteredItems(row.searchTerm).length === 0">
+                                <div class="px-3 py-3 text-sm text-gray-400 italic">No matching items</div>
+                            </template>
                         </div>
                     </div>
                     {{-- Qty --}}
@@ -147,27 +132,19 @@
 
 @push('scripts')
 <script>
-function poForm(searchUrl) {
+function poForm(items) {
     const blankRow = () => ({
         inventory_item_id: '',
         searchTerm:        '',
         dropdownOpen:      false,
-        results:           [],   // most recent server response for this row
-        loading:           false,
-        _abort:            null, // AbortController for in-flight request
         quantity:          1,
         unit_cost:         0,
     });
     return {
-        searchUrl,
+        items,
         rows: [blankRow()],
         addRow() { this.rows.push(blankRow()); },
-        removeRow(idx) {
-            // Cancel any in-flight request before disposing the row
-            const r = this.rows[idx];
-            if (r?._abort) r._abort.abort();
-            this.rows.splice(idx, 1);
-        },
+        removeRow(idx) { this.rows.splice(idx, 1); },
         total() { return this.rows.reduce((s, r) => s + ((r.quantity || 0) * (r.unit_cost || 0)), 0); },
         formatMoney(v) { return '{{ $financeSettings['currency_symbol'] ?? '$' }}' + (Number(v) || 0).toFixed(2); },
         selectItem(idx, item) {
@@ -175,42 +152,13 @@ function poForm(searchUrl) {
             this.rows[idx].searchTerm        = item.name;
             this.rows[idx].dropdownOpen      = false;
         },
-        // Open dropdown — if the row hasn't loaded results yet, fetch the
-        // first page so the user sees options immediately on focus.
-        openDropdown(idx) {
-            this.rows[idx].dropdownOpen = true;
-            if (this.rows[idx].results.length === 0 && !this.rows[idx].loading) {
-                this.fetchItems(idx);
-            }
-        },
-        // Debounced server fetch. Aborts any prior in-flight request for this
-        // row so the freshest response always wins (no race on fast typing).
-        async fetchItems(idx) {
-            const row = this.rows[idx];
-            if (!row) return;
-
-            if (row._abort) row._abort.abort();
-            row._abort  = new AbortController();
-            row.loading = true;
-            row.dropdownOpen = true;
-
-            try {
-                const url = this.searchUrl + '?q=' + encodeURIComponent(row.searchTerm || '');
-                const res = await fetch(url, {
-                    signal:  row._abort.signal,
-                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-                });
-                if (!res.ok) throw new Error('search failed');
-                const data = await res.json();
-                row.results = data.results || [];
-            } catch (e) {
-                if (e.name !== 'AbortError') {
-                    row.results = [];
-                }
-            } finally {
-                row.loading = false;
-                row._abort  = null;
-            }
+        filteredItems(term) {
+            const q = (term || '').trim().toLowerCase();
+            if (!q) return this.items;
+            return this.items.filter(i => {
+                const haystack = (i.name + ' ' + (i.category?.name || '')).toLowerCase();
+                return haystack.includes(q);
+            });
         },
     };
 }

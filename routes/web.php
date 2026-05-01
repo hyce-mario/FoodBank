@@ -157,12 +157,6 @@ Route::middleware('auth')->group(function () {
          ->names('inventory.items')
          ->parameters(['items' => 'inventory_item']);
 
-    // JSON typeahead for the PO create form combobox (and any future picker).
-    // Throttled to 60/min per session — comfortably above any human typing rate.
-    Route::get('inventory/items-search', [InventoryItemController::class, 'search'])
-         ->middleware('throttle:60,1')
-         ->name('inventory.items.search');
-
     // Inventory — Movements (manual stock operations from item show page)
     Route::post('inventory/items/{inventory_item}/movements', [InventoryMovementController::class, 'store'])
          ->name('inventory.movements.store');

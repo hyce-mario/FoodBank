@@ -8,40 +8,12 @@ use App\Models\InventoryCategory;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Services\SettingService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class InventoryItemController extends Controller
 {
-    /**
-     * Phase 6.6 (server-side combobox): JSON endpoint for typeahead search.
-     * Returns up to 50 active items matching the query string. Used by the
-     * Purchase Order create form's line-item picker so we don't ship the
-     * entire item catalog into every page render.
-     */
-    public function search(Request $request): JsonResponse
-    {
-        $request->validate(['q' => ['nullable', 'string', 'max:100']]);
-
-        $query = InventoryItem::active()->with('category');
-
-        if ($term = trim((string) $request->get('q', ''))) {
-            $query->search($term);
-        }
-
-        $items = $query->orderBy('name')->limit(50)->get();
-
-        return response()->json([
-            'results' => $items->map(fn ($i) => [
-                'id'       => $i->id,
-                'name'     => $i->name,
-                'category' => $i->category ? ['name' => $i->category->name] : null,
-            ])->all(),
-        ]);
-    }
-
     // ─── Index ────────────────────────────────────────────────────────────────
 
     public function index(Request $request): View
