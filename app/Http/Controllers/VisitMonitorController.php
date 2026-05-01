@@ -77,6 +77,11 @@ class VisitMonitorController extends Controller
                     'full_name'        => $primary->full_name,
                     'vehicle_label'    => $primary->vehicle_label,
                     'household_size'   => $primary->household_size,
+                    // Demographic breakdown for the family-tag tooltip on
+                    // intake/scanner monitor cards. Aggregate counts only.
+                    'children_count'   => $primary->children_count,
+                    'adults_count'     => $primary->adults_count,
+                    'seniors_count'    => $primary->seniors_count,
                 ],
                 'represented_households'   => $represented->map(fn ($r) => [
                     'full_name'      => $r->full_name,

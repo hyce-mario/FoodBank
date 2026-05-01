@@ -119,4 +119,20 @@ class VisitResourceTest extends TestCase
             $this->assertSame(3, $row['household']['household_size'], "Role {$role} must see household_size");
         }
     }
+
+    public function test_demographic_counts_visible_to_all_roles(): void
+    {
+        // The family-tag tooltip on intake and scanner cards needs the
+        // children/adults/seniors breakdown. These are aggregate counts,
+        // not PII, so they ship to every role — including loader/exit
+        // even though those views don't currently render them.
+        $visit = $this->setupVisit();
+
+        foreach (['intake', 'scanner', 'loader', 'exit'] as $role) {
+            $row = (new VisitResource($visit))->forRole($role)->toArray(new Request());
+            $this->assertSame(1, $row['household']['children_count'], "Role {$role} must see children_count");
+            $this->assertSame(2, $row['household']['adults_count'],   "Role {$role} must see adults_count");
+            $this->assertSame(0, $row['household']['seniors_count'],  "Role {$role} must see seniors_count");
+        }
+    }
 }

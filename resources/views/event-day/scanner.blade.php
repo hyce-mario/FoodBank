@@ -141,6 +141,38 @@
                </div>`
             : '';
 
+        // Family tag — same hover/tap-revealed demographic chip used on intake.
+        // Alpine 3 picks up the x-data on innerHTML insertion via MutationObserver,
+        // so the tag works even though scanner-list is rebuilt on every poll.
+        const size      = hh.household_size ?? 0;
+        const kids      = hh.children_count ?? 0;
+        const adults    = hh.adults_count   ?? 0;
+        const seniors   = hh.seniors_count  ?? 0;
+        const memberLbl = size === 1   ? 'Member'  : 'Members';
+        const kidsLbl   = kids === 1   ? 'Child'   : 'Children';
+        const adultsLbl = adults === 1 ? 'Adult'   : 'Adults';
+        const senLbl    = seniors === 1? 'Senior'  : 'Seniors';
+
+        const familyTag = `<span x-data="{ showDemo: false }"
+              @mouseenter="showDemo = true"
+              @mouseleave="showDemo = false"
+              @click.stop="showDemo = !showDemo"
+              class="relative inline-block cursor-help align-middle">
+            <span class="font-semibold text-gray-700">1 Family</span>
+            <span x-show="showDemo" style="display:none"
+                  x-transition:enter="transition ease-out duration-150"
+                  x-transition:enter-start="opacity-0 translate-y-1"
+                  x-transition:enter-end="opacity-100 translate-y-0"
+                  class="absolute left-0 top-full mt-1 z-30 min-w-32 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                <span class="block text-sm font-semibold text-gray-900 mb-2">${size} ${memberLbl}</span>
+                <span class="block text-xs text-gray-600">
+                    <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span><span class="font-semibold text-gray-800">${kids}</span><span>${kidsLbl}</span></span>
+                    <span class="flex items-center gap-2 mt-1"><span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span><span class="font-semibold text-gray-800">${adults}</span><span>${adultsLbl}</span></span>
+                    <span class="flex items-center gap-2 mt-1"><span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span><span class="font-semibold text-gray-800">${seniors}</span><span>${senLbl}</span></span>
+                </span>
+            </span>
+        </span>`;
+
         return `
         <div class="visit-card rounded-2xl border-2 ${border} p-4 select-none"
              data-id="${v.id}" data-lane="${v.lane}" data-updated-at="${esc(v.updated_at || '')}">
@@ -159,11 +191,11 @@
                 &nbsp;·&nbsp;<span class="font-semibold">Ln ${v.lane}</span>
                 ${repBadge}
               </p>
-              <p class="text-xs text-gray-500 mt-1">
-                <strong>${v.total_people}</strong> people &nbsp;·&nbsp;
+              <div class="text-xs text-gray-500 mt-1">
+                ${familyTag} &nbsp;·&nbsp;
                 <strong>${v.bags_needed}</strong> bags &nbsp;·&nbsp;
                 ${v.waited_min} min
-              </p>
+              </div>
               ${repList}
             </div>
             <div class="shrink-0">${action}</div>

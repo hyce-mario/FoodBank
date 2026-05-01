@@ -304,6 +304,40 @@ const Monitor = (function () {
     function el(id) { return document.getElementById(id); }
     function set(id, v) { const e = el(id); if (e) e.textContent = v ?? '—'; }
 
+    // ── Family tag (shared by intake + scanner cards) ───────────────────────
+    // Same hover/tap-revealed demographic chip used on intake and event-day
+    // scanner. Alpine 3 picks up x-data on innerHTML insertion via Mutation-
+    // Observer so the tag works even though card HTML is rebuilt on each poll.
+    function familyTagHtml(hh) {
+        const size      = hh.household_size  ?? 0;
+        const kids      = hh.children_count  ?? 0;
+        const adults    = hh.adults_count    ?? 0;
+        const seniors   = hh.seniors_count   ?? 0;
+        const memberLbl = size === 1    ? 'Member'  : 'Members';
+        const kidsLbl   = kids === 1    ? 'Child'   : 'Children';
+        const adultsLbl = adults === 1  ? 'Adult'   : 'Adults';
+        const senLbl    = seniors === 1 ? 'Senior'  : 'Seniors';
+        return `<span x-data="{ showDemo: false }"
+              @mouseenter="showDemo = true"
+              @mouseleave="showDemo = false"
+              @click.stop="showDemo = !showDemo"
+              class="relative inline-block cursor-help align-middle">
+            <span class="font-semibold text-gray-700">1 Family</span>
+            <span x-show="showDemo" style="display:none"
+                  x-transition:enter="transition ease-out duration-150"
+                  x-transition:enter-start="opacity-0 translate-y-1"
+                  x-transition:enter-end="opacity-100 translate-y-0"
+                  class="absolute left-0 top-full mt-1 z-30 min-w-32 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                <span class="block text-sm font-semibold text-gray-900 mb-2">${size} ${memberLbl}</span>
+                <span class="block text-xs text-gray-600">
+                    <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span><span class="font-semibold text-gray-800">${kids}</span><span>${kidsLbl}</span></span>
+                    <span class="flex items-center gap-2 mt-1"><span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span><span class="font-semibold text-gray-800">${adults}</span><span>${adultsLbl}</span></span>
+                    <span class="flex items-center gap-2 mt-1"><span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span><span class="font-semibold text-gray-800">${seniors}</span><span>${senLbl}</span></span>
+                </span>
+            </span>
+        </span>`;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // ── Card HTML: Intake ────────────────────────────────────────────────────
     // ─────────────────────────────────────────────────────────────────────────
@@ -319,7 +353,7 @@ const Monitor = (function () {
             <p class="text-xs font-mono text-gray-400 mt-0.5">#${esc(hh.household_number)} · Ln ${v.lane}</p>
             ${repBadge ? `<div class="mt-1.5">${repBadge}</div>` : ''}
             <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
-                <span>${v.total_people} ppl · ${v.bags_needed} bags</span>
+                <span>${familyTagHtml(hh)} · ${v.bags_needed} bags</span>
                 <span class="text-gray-400">${waited}</span>
             </div>
         </div>`;
@@ -370,11 +404,11 @@ const Monitor = (function () {
                         &nbsp;·&nbsp;${esc(hh.full_name)}
                         ${repBadge}
                     </p>
-                    <p class="text-xs text-gray-500 mt-1">
-                        <strong>${v.total_people}</strong> ppl &nbsp;·&nbsp;
+                    <div class="text-xs text-gray-500 mt-1">
+                        ${familyTagHtml(hh)} &nbsp;·&nbsp;
                         <strong>${v.bags_needed}</strong> bags &nbsp;·&nbsp;
                         ${v.waited_min} min
-                    </p>
+                    </div>
                     ${repList}
                 </div>
                 <div class="shrink-0">${action}</div>
