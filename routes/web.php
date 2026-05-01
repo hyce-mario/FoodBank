@@ -11,6 +11,7 @@ use App\Http\Controllers\InventoryCategoryController;
 use App\Http\Controllers\InventoryItemController;
 use App\Http\Controllers\EventInventoryAllocationController;
 use App\Http\Controllers\InventoryMovementController;
+use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\EventDayController;
 use App\Http\Controllers\VisitLogController;
