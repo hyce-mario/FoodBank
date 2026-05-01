@@ -4,13 +4,15 @@
 
 ---
 
-## Current state — 2026-04-30 (Session 5)
+## Current state — 2026-04-30 (Session 5 — **Phases 1–5 fully closed**)
 
 ### Where we are
 
 **Phases 1, 2, 3, and 4 are complete.** Suite is green at 123/123.
 
 This session audited the previous agent's work, reverted one sub-task the user rejected, and fully wired Phase 4's audit log into the admin UI.
+
+**Phase 5 — Workflow & UX quality — fully closed this session.**
 
 **What changed this session:**
 
@@ -33,6 +35,11 @@ This session audited the previous agent's work, reverted one sub-task the user r
 
 ### Recent commits (this session)
 
+- `39035c8` — feat(volunteers): Phase 5.3 — auto-checkout, self-checkout, hours_served
+- `0a45a52` — feat(events): Phase 5.2 — pre-registration reconciliation actions
+- `36fe926` — feat(event-day): Phase 5.1 + 5.5 — bag composition + modal a11y
+- `730ef85` — feat(households): demographics, sub-families, attendance columns
+- `451118f` — feat(dashboard): replace placeholder stats with live queries
 - `474cf94` — revert(auth): Phase 3.2 — restore 4-digit plaintext event auth codes
 - `958c440` — feat(audit): Phase 4 — wire Audit Log into admin sidebar nav
 
@@ -58,22 +65,20 @@ The previous agent left **significant uncommitted changes** to tracked files. Th
 
 ### What's next — start here on resume
 
-The user wants to discuss what to do next. Options in scope:
+**Phase 5 is fully closed.** The next call is **Phase 6 — Backlog** (see AUDIT_REPORT.md Part 13 §6) or any new requirements from the user. Key open items from prior sessions:
 
-1. **Review / commit or discard the pending uncommitted changes** listed above — clarify with user before touching them.
-2. **Phase 5 — Workflow & UX quality** (see sub-task list below).
-3. **Phase 5.4 clarification** — The insufficient-stock modal (Phase 2.1.e) already exists. Confirm with user whether 5.4 is already covered or means something different.
+- **hours_served in reports** — `hours_served` is now stored per check-in but not yet surfaced on the volunteer detail page or in reports exports. A quick follow-up to show it in the volunteers list/show view and the reports section.
+- **Coverage gaps** listed below — HTTP tests for event-day routes, MySQL-only SQL portability, Dusk tests for modals.
 
 ### Phase 5 sub-task status
 
-- ⬜ **5.1** Bag composition on loader card
-- ⬜ **5.2.a** Pre-reg reconciliation controller method
-- ⬜ **5.2.b** Reconciliation UI + confirm/reject actions
-- ⬜ **5.3.a** Volunteer auto-checkout artisan command
-- ⬜ **5.3.b** Public "Check Out" button
-- ⬜ **5.3.c** `hours_served` accessor + report
-- ⬜ **5.4** Zero-stock UX modal (confirm if 2.1.e already covers this)
-- ⬜ **5.5** A11y pass on Alpine modals
+- ✅ **5.1** Bag composition on loader card (`36fe926`)
+- ✅ **5.2** Pre-reg reconciliation — dismiss + register-as-household (`0a45a52`)
+- ✅ **5.3.a** Volunteer auto-checkout artisan command (`39035c8`)
+- ✅ **5.3.b** Public "Check Out" button (`39035c8`)
+- ✅ **5.3.c** `hours_served` column + service + search results (`39035c8`)
+- ⚪ **5.4** Zero-stock UX modal — already closed by Phase 2.1.e
+- ✅ **5.5** A11y pass on Alpine modals (`36fe926`)
 
 ### Key learnings (carry forward)
 
