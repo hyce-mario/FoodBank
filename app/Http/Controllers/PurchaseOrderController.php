@@ -41,7 +41,9 @@ class PurchaseOrderController extends Controller
     public function create(): View
     {
         $items = InventoryItem::active()->with('category')->orderBy('name')->get();
-        return view('purchase-orders.create', compact('items'));
+        // Categories for the inline quick-create modal on the line-item picker.
+        $categories = \App\Models\InventoryCategory::orderBy('name')->get(['id', 'name']);
+        return view('purchase-orders.create', compact('items', 'categories'));
     }
 
     public function store(StorePurchaseOrderRequest $request): RedirectResponse

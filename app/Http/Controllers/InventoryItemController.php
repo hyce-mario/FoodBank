@@ -8,6 +8,7 @@ use App\Models\InventoryCategory;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Services\SettingService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -80,6 +81,49 @@ class InventoryItemController extends Controller
         return redirect()
             ->route('inventory.items.show', $item)
             ->with('success', "\"{$item->name}\" has been added to inventory.");
+    }
+
+    // ─── Quick-store (JSON, used by PO line-item picker) ─────────────────────
+    //
+    // Lets users add a new inventory item from inside the Purchase Order
+    // create form without leaving the page. Validates a slim subset of fields
+    // (the PO will set on-hand quantity at receipt time, so we default qty=0
+    // and reorder_level from the inventory.low_stock_threshold setting).
+    // Returns the newly-created item with its category eager-loaded so the
+    // PO Alpine form can push it into the local items list and select it.
+
+    public function quickStore(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name'        => ['required', 'string', 'max:150'],
+            'unit_type'   => ['required', 'string', 'max:50'],
+            'category_id' => ['nullable', 'integer', 'exists:inventory_categories,id'],
+            'description' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $item = InventoryItem::create([
+            'name'             => $validated['name'],
+            'unit_type'        => $validated['unit_type'],
+            'category_id'      => $validated['category_id'] ?? null,
+            'description'      => $validated['description'] ?? null,
+            'quantity_on_hand' => 0,
+            'reorder_level'    => (int) SettingService::get('inventory.low_stock_threshold', 10),
+            'is_active'        => true,
+        ]);
+
+        $item->load('category');
+
+        return response()->json([
+            'item' => [
+                'id'        => $item->id,
+                'name'      => $item->name,
+                'unit_type' => $item->unit_type,
+                'category'  => $item->category ? [
+                    'id'   => $item->category->id,
+                    'name' => $item->category->name,
+                ] : null,
+            ],
+        ], 201);
     }
 
     // ─── Show ─────────────────────────────────────────────────────────────────
