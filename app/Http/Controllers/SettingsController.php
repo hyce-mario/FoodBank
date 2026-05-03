@@ -117,29 +117,90 @@ class SettingsController extends Controller
 
     // ─── Upload branding asset (logo or favicon) ──────────────────────────────
 
+    /**
+     * Production-ready branding upload.
+     *
+     * Hardening over the MVP version:
+     *   - SVG dropped from logo allow-list (SVGs can carry <script>; XSS).
+     *     PNG / JPG / WebP cover every real logo use case.
+     *   - Image dimensions capped via Laravel's `dimensions:` rule so an
+     *     attacker can't exhaust storage with a 10000x10000 png that
+     *     still fits under the byte limit. ICO bypasses dimensions because
+     *     getimagesize() doesn't read it reliably; the byte cap is enough.
+     *   - Stored filenames are content-hashed (`branding/logo-{hash}.{ext}`)
+     *     so replacing a logo automatically cache-busts every browser
+     *     viewing the app — no `?v=` query params, no proxy gotchas.
+     *     Same file uploaded twice settles to the same name (idempotent).
+     *   - Atomic ordering: setting writes BEFORE the old file is deleted,
+     *     and any throw mid-flight cleans up the just-written file so we
+     *     don't leak orphans into storage.
+     */
     public function uploadBrandingAsset(Request $request, string $asset): RedirectResponse
     {
         abort_if(! in_array($asset, ['logo', 'favicon']), 404);
 
         $rules = match ($asset) {
-            'logo'    => ['required', 'file', 'mimes:png,jpg,jpeg,svg,webp', 'max:2048'],
-            'favicon' => ['required', 'file', 'mimes:ico,png', 'max:512'],
+            'logo' => [
+                'required',
+                'file',
+                'mimes:png,jpg,jpeg,webp',
+                'max:2048',
+                'dimensions:max_width=1500,max_height=1500',
+            ],
+            'favicon' => [
+                'required',
+                'file',
+                'mimes:ico,png',
+                'max:512',
+                // ICO doesn't reliably pass through getimagesize(); only
+                // dimension-check the PNG path so we don't false-reject.
+                function ($attribute, $value, $fail) {
+                    $ext = strtolower($value->getClientOriginalExtension());
+                    if ($ext === 'png') {
+                        $size = @getimagesize($value->getRealPath());
+                        if ($size === false) {
+                            $fail('The file is not a valid PNG image.');
+                            return;
+                        }
+                        if ($size[0] > 256 || $size[1] > 256) {
+                            $fail('Favicon must be 256x256 pixels or smaller.');
+                        }
+                    }
+                },
+            ],
         };
 
         $request->validate(['file' => $rules]);
 
         $settingKey = "branding.{$asset}_path";
+        $oldPath    = SettingService::get($settingKey, '');
 
-        // Delete the previously stored file if one exists
-        $oldPath = SettingService::get($settingKey, '');
-        if ($oldPath && Storage::disk('public')->exists($oldPath)) {
-            Storage::disk('public')->delete($oldPath);
+        $file = $request->file('file');
+        $ext  = strtolower($file->getClientOriginalExtension());
+        // First 12 chars of the file's content hash. Same content → same
+        // filename, so re-uploading an identical image is a no-op for the
+        // browser cache. Different content → different URL → cache busts.
+        $hash = substr(md5_file($file->getRealPath()), 0, 12);
+        $newPath = "branding/{$asset}-{$hash}.{$ext}";
+
+        try {
+            $file->storeAs('branding', "{$asset}-{$hash}.{$ext}", 'public');
+            SettingService::set($settingKey, $newPath);
+        } catch (\Throwable $e) {
+            // Roll back the file we just wrote so a setting-save failure
+            // doesn't leak orphans into storage.
+            if (Storage::disk('public')->exists($newPath)) {
+                Storage::disk('public')->delete($newPath);
+            }
+            throw $e;
         }
 
-        $ext  = $request->file('file')->getClientOriginalExtension();
-        $path = $request->file('file')->storeAs('branding', "{$asset}.{$ext}", 'public');
-
-        SettingService::set($settingKey, $path);
+        // Old file deleted AFTER the setting commit succeeds. Skip the
+        // delete when the new path matches the old (idempotent re-upload
+        // of the same image content).
+        if ($oldPath && $oldPath !== $newPath && Storage::disk('public')->exists($oldPath)) {
+            Storage::disk('public')->delete($oldPath);
+        }
 
         return redirect()
             ->route('settings.show', 'branding')
@@ -155,11 +216,13 @@ class SettingsController extends Controller
         $settingKey = "branding.{$asset}_path";
         $path       = SettingService::get($settingKey, '');
 
+        // Clear the setting first so the layout stops referencing the file
+        // even if the storage delete fails mid-way (rare on local disk).
+        SettingService::set($settingKey, '');
+
         if ($path && Storage::disk('public')->exists($path)) {
             Storage::disk('public')->delete($path);
         }
-
-        SettingService::set($settingKey, '');
 
         return redirect()
             ->route('settings.show', 'branding')
