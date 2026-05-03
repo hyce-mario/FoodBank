@@ -501,8 +501,8 @@
     @else
         {{-- Phase C.1 — Pre-reg stat cards. All cards share the same chrome
              (white + gray outline + light shadow); icon badges are neutral
-             so the card row reads as one calm strip. --}}
-        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
+             so the card row reads as one calm strip. Always one row. --}}
+        <div class="grid grid-cols-5 gap-4 mb-5">
             <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
@@ -579,7 +579,7 @@
                         Pre-reg: <span class="font-semibold text-gray-600 tabular-nums">{{ number_format($attendeeForecast['current_pre_reg']) }}</span>
                         · Walk-in (est): <span class="font-semibold text-gray-600 tabular-nums">{{ number_format($attendeeForecast['projected_walk_ins']) }}</span>
                         <br>
-                        <span class="italic">Based on last {{ $attendeeForecast['past_events_used'] }} event{{ $attendeeForecast['past_events_used'] === 1 ? '' : 's' }}</span>
+                        <span class="italic">Based on last event ({{ number_format($attendeeForecast['last_event_visits']) }} visits)</span>
                     </p>
                 @else
                     <div class="flex items-center gap-3">

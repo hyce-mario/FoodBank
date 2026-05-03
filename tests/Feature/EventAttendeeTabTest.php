@@ -150,37 +150,42 @@ class EventAttendeeTabTest extends TestCase
         $forecast = app(EventAnalyticsService::class)->attendeeForecast($event);
 
         $this->assertFalse($forecast['enabled']);
-        $this->assertSame(0, $forecast['past_events_used']);
+        $this->assertSame(0, $forecast['last_event_visits']);
     }
 
-    public function test_forecast_uses_only_three_most_recent_past_events(): void
+    public function test_forecast_uses_only_the_most_recent_past_event(): void
     {
         $current = $this->makeEvent(date: now()->toDateString(), status: 'current');
 
-        // 5 past events, oldest to newest. Each has 10 attended households
-        // and 10 pre-regs (so walk-in rate is 0% — clean baseline).
-        for ($i = 5; $i >= 1; $i--) {
-            $past = $this->makeEvent(date: now()->subDays($i)->toDateString(), status: 'past');
-            for ($j = 0; $j < 10; $j++) {
-                $hh = $this->makeHousehold();
-                $this->addExitedVisit($past, $hh);
-                $this->addPreReg($past);
-            }
+        // Older past event with very different numbers — must NOT influence
+        // the forecast.
+        $older = $this->makeEvent(date: now()->subDays(10)->toDateString(), status: 'past');
+        for ($j = 0; $j < 100; $j++) {
+            $hh = $this->makeHousehold();
+            $this->addExitedVisit($older, $hh);
+            $this->addPreReg($older);
+        }
+
+        // Most recent past event has exactly 20 visits and 20 pre-regs.
+        $last = $this->makeEvent(date: now()->subDay()->toDateString(), status: 'past');
+        for ($j = 0; $j < 20; $j++) {
+            $hh = $this->makeHousehold();
+            $this->addExitedVisit($last, $hh);
+            $this->addPreReg($last);
         }
 
         $forecast = app(EventAnalyticsService::class)->attendeeForecast($current);
 
         $this->assertTrue($forecast['enabled']);
-        $this->assertSame(3, $forecast['past_events_used']);
-        $this->assertSame(10, $forecast['avg_attended']);
+        // Sourced from the LAST past event only.
+        $this->assertSame(20, $forecast['last_event_visits']);
     }
 
     public function test_forecast_walk_in_rate_drives_projection_above_pre_reg(): void
     {
         $current = $this->makeEvent(date: now()->toDateString(), status: 'current');
 
-        // A single past event with 50 attended and only 25 pre-regs → 50%
-        // walk-in rate.
+        // Last past event: 50 visits, 25 pre-regs → 50% walk-in rate.
         $past = $this->makeEvent(date: now()->subDay()->toDateString(), status: 'past');
         for ($j = 0; $j < 50; $j++) {
             $hh = $this->makeHousehold();
@@ -190,9 +195,10 @@ class EventAttendeeTabTest extends TestCase
             $this->addPreReg($past);
         }
 
-        // Current event has 30 pre-regs. Walk-in rate is 0.5, so projected
-        // total = 30 / (1 - 0.5) = 60. avg_attended is 50, so floor is 50.
-        // forecast = max(60, 50) = 60. projected_walk_ins = 60 - 30 = 30.
+        // Current event has 30 pre-regs. With walk-in rate 0.5:
+        //   projected = 30 / (1 - 0.5) = 60
+        //   forecast  = max(60, 50)   = 60
+        //   walk_ins  = 60 - 30        = 30
         for ($j = 0; $j < 30; $j++) {
             $this->addPreReg($current);
         }
@@ -200,18 +206,18 @@ class EventAttendeeTabTest extends TestCase
         $forecast = app(EventAnalyticsService::class)->attendeeForecast($current);
 
         $this->assertTrue($forecast['enabled']);
-        $this->assertSame(50, $forecast['avg_attended']);
+        $this->assertSame(50, $forecast['last_event_visits']);
         $this->assertEqualsWithDelta(0.5, $forecast['walk_in_rate'], 0.01);
         $this->assertSame(60, $forecast['projected_total']);
         $this->assertSame(30, $forecast['projected_walk_ins']);
     }
 
-    public function test_forecast_floors_at_avg_attended_when_pre_reg_is_low(): void
+    public function test_forecast_floors_at_last_event_when_pre_reg_is_low(): void
     {
         $current = $this->makeEvent(date: now()->toDateString(), status: 'current');
 
-        // Past event historically pulls 100 households; current has 5 pre-regs.
-        // Even with 0% walk-in rate, the forecast floors at 100.
+        // Last event pulled 100 visits; current has 5 pre-regs. Even with
+        // 0% walk-in rate the forecast floors at last event's count.
         $past = $this->makeEvent(date: now()->subDay()->toDateString(), status: 'past');
         for ($j = 0; $j < 100; $j++) {
             $hh = $this->makeHousehold();
@@ -224,7 +230,7 @@ class EventAttendeeTabTest extends TestCase
 
         $forecast = app(EventAnalyticsService::class)->attendeeForecast($current);
 
-        $this->assertSame(100, $forecast['avg_attended']);
+        $this->assertSame(100, $forecast['last_event_visits']);
         $this->assertSame(100, $forecast['projected_total']);
         // walk_ins = 100 (forecast) - 5 (current pre-reg)
         $this->assertSame(95, $forecast['projected_walk_ins']);
@@ -274,10 +280,10 @@ class EventAttendeeTabTest extends TestCase
                      ->assertOk()
                      ->getContent();
 
-        // The forecast number is the floor: avg_attended = 20.
+        // The forecast number is the floor: last_event_visits = 20.
         $this->assertStringContainsString('data-stat="forecast-total"', $html);
         $this->assertStringContainsString('~20', $html);
-        // The "Based on last N event(s)" subtitle reflects the count.
-        $this->assertStringContainsString('Based on last 1 event', $html);
+        // The subtitle reflects last event's visit count.
+        $this->assertStringContainsString('Based on last event (20 visits)', $html);
     }
 }

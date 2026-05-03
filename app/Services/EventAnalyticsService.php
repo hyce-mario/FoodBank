@@ -187,91 +187,73 @@ class EventAnalyticsService
 
     // ─── Attendee forecast (Phase C.2) ────────────────────────────────────────
     //
-    // Projects how many households will actually walk through the door for
-    // an event by combining its current pre-registration count with the
-    // historical walk-in rate from the last three past events.
+    // Projects how many people will actually walk through the door for an
+    // event by combining its current pre-registration count with the
+    // walk-in rate from the most recent past event.
     //
     // Math:
-    //   N            = up to 3 past events (date < $event->date), most recent
-    //   attended_n   = distinct households at exited visits for past event n
-    //   pre_reg_n    = pre-registration count for past event n
-    //   walk_in_n    = max(0, attended_n - pre_reg_n)
-    //
-    //   walk_in_rate = sum(walk_in_n) / sum(attended_n)            (0 if no att.)
-    //   avg_attended = sum(attended_n) / N
+    //   last_visits  = total visits at the most recent past event
+    //   last_prereg  = pre-registration count for that event
+    //   walk_in_rate = max(0, last_visits - last_prereg) / last_visits
+    //                  (0.0 when last_visits == 0 — pathological)
     //
     //   if walk_in_rate < 1:
     //       projected_total = current_pre_reg / (1 - walk_in_rate)
     //   else:
-    //       projected_total = avg_attended      // pathological 100%-walk-in
+    //       projected_total = last_visits      // 100% walk-in: historical
     //
-    //   forecast            = max(projected_total, avg_attended)
+    //   forecast            = max(projected_total, last_visits)
     //   projected_walk_ins  = max(0, forecast - current_pre_reg)
     //
-    // When N === 0, returns enabled=false; the view shows a "not enough
-    // history yet" placeholder card instead of a fake forecast.
+    // The forecast floors at last_visits so a quiet pre-reg week does not
+    // under-staff a venue that always pulls a comparable crowd. When no
+    // past event exists, returns enabled=false and the view shows a "not
+    // enough history yet" placeholder.
     public function attendeeForecast(Event $event): array
     {
-        $pastEvents = Event::query()
+        $lastEvent = Event::query()
             ->where('id', '!=', $event->id)
             ->where('date', '<', $event->date)
             ->orderByDesc('date')
-            ->limit(3)
-            ->get();
+            ->first();
 
-        $pastEventCount = $pastEvents->count();
-        $currentPreReg  = $event->preRegistrations()->count();
+        $currentPreReg = $event->preRegistrations()->count();
 
-        if ($pastEventCount === 0) {
+        if (! $lastEvent) {
             return [
                 'enabled'            => false,
-                'past_events_used'   => 0,
+                'last_event_visits'  => 0,
                 'projected_total'    => 0,
                 'projected_walk_ins' => 0,
-                'avg_attended'       => 0,
                 'walk_in_rate'       => 0.0,
                 'current_pre_reg'    => $currentPreReg,
             ];
         }
 
-        $totalAttended = 0;
-        $totalWalkIns  = 0;
+        $lastVisits = (int) DB::table('visits')
+            ->where('event_id', $lastEvent->id)
+            ->count();
 
-        foreach ($pastEvents as $past) {
-            $attended = (int) DB::table('visit_households')
-                ->join('visits', 'visit_households.visit_id', '=', 'visits.id')
-                ->where('visits.event_id', $past->id)
-                ->where('visits.visit_status', 'exited')
-                ->distinct()
-                ->count('visit_households.household_id');
-
-            $preReg  = $past->preRegistrations()->count();
-            $walkIns = max(0, $attended - $preReg);
-
-            $totalAttended += $attended;
-            $totalWalkIns  += $walkIns;
-        }
-
-        $avgAttended = (int) round($totalAttended / $pastEventCount);
-        $walkInRate  = $totalAttended > 0 ? $totalWalkIns / $totalAttended : 0.0;
+        $lastPreReg = $lastEvent->preRegistrations()->count();
+        $walkIns    = max(0, $lastVisits - $lastPreReg);
+        $walkInRate = $lastVisits > 0 ? $walkIns / $lastVisits : 0.0;
 
         if ($walkInRate < 1) {
             $projectedTotal = (int) round($currentPreReg / (1 - $walkInRate));
         } else {
-            $projectedTotal = $avgAttended;
+            $projectedTotal = $lastVisits;
         }
 
-        // Floor at the historical baseline so a low-pre-reg week does not
-        // under-staff a venue that always pulls 100+ regardless of sign-ups.
-        $projectedTotal   = max($projectedTotal, $avgAttended);
+        // Floor at last event's visit count so the forecast never undershoots
+        // the venue's known capacity from one event ago.
+        $projectedTotal   = max($projectedTotal, $lastVisits);
         $projectedWalkIns = max(0, $projectedTotal - $currentPreReg);
 
         return [
             'enabled'            => true,
-            'past_events_used'   => $pastEventCount,
+            'last_event_visits'  => $lastVisits,
             'projected_total'    => $projectedTotal,
             'projected_walk_ins' => $projectedWalkIns,
-            'avg_attended'       => $avgAttended,
             'walk_in_rate'       => round($walkInRate, 3),
             'current_pre_reg'    => $currentPreReg,
         ];
