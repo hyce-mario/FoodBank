@@ -152,54 +152,44 @@ class EventInventoryAllocationController extends Controller
     // ─── Bulk allocate (Phase D) ──────────────────────────────────────────────
 
     /**
-     * Atomic bulk allocate. Accepts an array of {inventory_item_id,
-     * allocated_quantity} rows plus a batch-level `mode` of add | subtract
-     * | replace. Each row passes through InventoryService so movements are
-     * recorded; rows that can't be processed (insufficient stock, no
-     * existing allocation to subtract from, replace-down below
-     * already-distributed) are SKIPPED and reported back via session
-     * flash. The whole batch is wrapped in DB::transaction so a thrown
-     * exception still rolls everything back together.
+     * Atomic bulk allocate. Add-only by intent: each non-zero row pulls
+     * stock from the shelf and adds to the event's allocation total. If
+     * the item already has an allocation row, the new quantity is added
+     * to the existing one (so a follow-up bulk submit topping up an event
+     * "just works"). Returning surplus to the shelf is a separate flow
+     * via the per-row Return action — bulk submit never reduces.
      *
-     * Mode semantics:
-     *   add      — submitted is the increment (delta = +submitted)
-     *   subtract — submitted is the decrement; clamped at existing alloc
-     *              and at maxReturnable (delta = -min(submitted, max))
-     *   replace  — submitted is the new total; delta = submitted - existing
-     *              (positive → allocate more; negative → return surplus,
-     *              capped at maxReturnable)
-     *
-     * Audit-trail invariant: subtract / replace-down increment the
-     * allocation row's `returned_quantity` rather than decrementing
-     * `allocated_quantity`. This preserves the "we originally pulled X"
-     * record even after later corrections.
+     * Each row passes through InventoryService so movements are recorded.
+     * Rows whose requested quantity exceeds the on-hand stock are SKIPPED
+     * and reported back via the alloc_warning flash; other rows in the
+     * same batch still process. The whole batch is wrapped in
+     * DB::transaction so a thrown exception still rolls everything back
+     * together.
      */
     public function bulkStore(BulkAllocateInventoryRequest $request, Event $event): RedirectResponse
     {
         $validated = $request->validated();
         $rows      = $validated['items'];
-        $mode      = $validated['mode'];
         $notes     = $validated['notes'] ?? null;
 
-        $allocatedRows = 0;   // count of rows that resulted in any movement
-        $totalUnits    = 0;   // sum of |delta| across processed rows
+        $allocatedRows = 0;   // count of rows that resulted in a movement
+        $totalUnits    = 0;   // sum of allocated quantities across processed rows
         $skipped       = [];  // [['name' => ..., 'reason' => ...], ...]
 
         DB::transaction(function () use (
-            $event, $rows, $mode, $notes,
+            $event, $rows, $notes,
             &$allocatedRows, &$totalUnits, &$skipped
         ) {
             foreach ($rows as $row) {
-                $submitted = (int) $row['allocated_quantity'];
+                $qty = (int) $row['allocated_quantity'];
 
                 // Operator left the row blank — silent skip, no warning.
-                if ($submitted === 0) {
+                if ($qty === 0) {
                     continue;
                 }
 
                 // Lock the item row so concurrent allocations on the same
-                // SKU serialize cleanly; matches the lockForUpdate pattern
-                // used by adjustStock().
+                // SKU serialize cleanly.
                 $item = InventoryItem::lockForUpdate()->find($row['inventory_item_id']);
                 if (! $item) {
                     // exists rule passed validation but the row may have
@@ -209,102 +199,46 @@ class EventInventoryAllocationController extends Controller
                     continue;
                 }
 
-                $existing    = EventInventoryAllocation::where('event_id', $event->id)
+                if ($qty > $item->quantity_on_hand) {
+                    $skipped[] = [
+                        'name'   => $item->name,
+                        'reason' => "insufficient stock (need {$qty} {$item->unit_type}, only {$item->quantity_on_hand} on hand)",
+                    ];
+                    continue;
+                }
+
+                $this->inventory->allocateToEvent(
+                    item:     $item,
+                    event:    $event,
+                    quantity: $qty,
+                    notes:    $notes,
+                    userId:   auth()->id(),
+                );
+
+                $existing = EventInventoryAllocation::where('event_id', $event->id)
                     ->where('inventory_item_id', $item->id)
                     ->lockForUpdate()
                     ->first();
-                $existingQty = $existing?->allocated_quantity ?? 0;
 
-                // Compute the delta to apply against the inventory shelf.
-                // Positive = pull from shelf (allocateToEvent).
-                // Negative = return to shelf (returnFromEvent).
-                $delta = match ($mode) {
-                    'add'      => $submitted,
-                    'subtract' => -min($submitted, $existingQty),
-                    'replace'  => $submitted - $existingQty,
-                };
-
-                // Subtract with no existing allocation → nothing to do.
-                if ($mode === 'subtract' && $existingQty === 0) {
-                    $skipped[] = ['name' => $item->name, 'reason' => 'nothing to subtract from'];
-                    continue;
-                }
-
-                if ($delta === 0) {
-                    // Replace-with-same value — operator chose the existing
-                    // amount. No movement, no skip warning.
-                    continue;
-                }
-
-                if ($delta > 0) {
-                    // Pull more stock from the shelf.
-                    if ($delta > $item->quantity_on_hand) {
-                        $skipped[] = [
-                            'name'   => $item->name,
-                            'reason' => "insufficient stock (need {$delta} {$item->unit_type}, only {$item->quantity_on_hand} on hand)",
-                        ];
-                        continue;
-                    }
-
-                    $this->inventory->allocateToEvent(
-                        item:     $item,
-                        event:    $event,
-                        quantity: $delta,
-                        notes:    $notes,
-                        userId:   auth()->id(),
-                    );
-
-                    if ($existing) {
-                        $existing->increment('allocated_quantity', $delta);
-                    } else {
-                        EventInventoryAllocation::create([
-                            'event_id'           => $event->id,
-                            'inventory_item_id'  => $item->id,
-                            'allocated_quantity' => $delta,
-                            'notes'              => $notes,
-                        ]);
-                    }
+                if ($existing) {
+                    $existing->increment('allocated_quantity', $qty);
                 } else {
-                    // delta < 0 — return surplus to the shelf. Capped at
-                    // maxReturnable so we don't undershoot what's already
-                    // been handed out.
-                    $absDelta      = -$delta;
-                    $maxReturnable = $existing
-                        ? $existing->allocated_quantity - $existing->distributed_quantity - $existing->returned_quantity
-                        : 0;
-
-                    if ($absDelta > $maxReturnable) {
-                        $alreadyDistributed = $existing?->distributed_quantity ?? 0;
-                        $skipped[] = [
-                            'name'   => $item->name,
-                            'reason' => "can't reduce below already-distributed amount ({$alreadyDistributed} {$item->unit_type} already handed out)",
-                        ];
-                        continue;
-                    }
-
-                    $this->inventory->returnFromEvent(
-                        item:     $item,
-                        event:    $event,
-                        quantity: $absDelta,
-                        notes:    $notes,
-                        userId:   auth()->id(),
-                    );
-
-                    // History-preserving rollback — increment returned
-                    // rather than decrement allocated.
-                    $existing->increment('returned_quantity', $absDelta);
+                    EventInventoryAllocation::create([
+                        'event_id'           => $event->id,
+                        'inventory_item_id'  => $item->id,
+                        'allocated_quantity' => $qty,
+                        'notes'              => $notes,
+                    ]);
                 }
 
                 $allocatedRows++;
-                $totalUnits += abs($delta);
+                $totalUnits += $qty;
             }
         });
 
-        // Build human-readable flash. Even when nothing landed (every row
-        // skipped), surface the warning so the operator knows.
         $successMsg = $allocatedRows > 0
             ? "{$allocatedRows} item" . ($allocatedRows === 1 ? '' : 's')
-                . " updated ({$totalUnits} units total)."
+                . " allocated ({$totalUnits} units total)."
             : null;
 
         $warningMsg = null;

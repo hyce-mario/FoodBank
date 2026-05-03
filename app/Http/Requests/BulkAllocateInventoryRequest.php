@@ -4,15 +4,18 @@ namespace App\Http\Requests;
 
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 /**
  * Phase D — Validates the bulk-allocate payload submitted from the wide
  * drawer on the event details > inventory tab.
  *
+ * Bulk allocation is add-only by intent: the operator picks quantities for
+ * one or more inventory items and the totals get pulled from the shelf and
+ * attached to the event. Returning surplus to the shelf after the event is
+ * a separate flow (the per-row Return action on the existing allocations
+ * table) — bulk submit never reduces.
+ *
  * Locked decisions:
- *  - Mode is one of add | subtract | replace, applied to ALL conflict rows
- *    in the batch (not per-row).
  *  - inventory_item_id values must be unique within a single submission;
  *    a duplicate id is treated as user error and rejected with 422.
  *  - Zero-quantity rows are accepted by validation and silently skipped by
@@ -31,7 +34,6 @@ class BulkAllocateInventoryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'mode'                       => ['required', Rule::in(['add', 'subtract', 'replace'])],
             'items'                      => ['required', 'array', 'min:1'],
             'items.*.inventory_item_id'  => ['required', 'integer', 'exists:inventory_items,id'],
             'items.*.allocated_quantity' => ['required', 'integer', 'min:0'],

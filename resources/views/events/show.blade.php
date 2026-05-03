@@ -1858,36 +1858,31 @@
                 <form method="POST" action="{{ route('events.inventory.bulk', $event) }}" class="flex-1 flex flex-col min-h-0">
                     @csrf
 
-                    {{-- Search + mode --}}
-                    <div class="px-6 py-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
-                        <div class="relative flex-1 min-w-[200px]">
+                    {{-- Search bar (no mode selector — bulk submit is add-only;
+                         use the per-row Return action on the existing
+                         allocations table to walk amounts back). --}}
+                    <div class="px-6 py-4 border-b border-gray-100">
+                        <div class="relative">
                             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
                             <input type="text" x-model="bulkSearch" placeholder="Search items..."
                                    class="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400">
                         </div>
-                        <fieldset class="flex items-center gap-1 text-xs">
-                            <legend class="sr-only">Mode for items already allocated</legend>
-                            <span class="text-gray-500 mr-2">When already allocated:</span>
-                            <template x-for="opt in [{val:'add', label:'Add'}, {val:'subtract', label:'Subtract'}, {val:'replace', label:'Replace'}]" :key="opt.val">
-                                <label class="cursor-pointer">
-                                    <input type="radio" name="mode" :value="opt.val" x-model="bulkMode" class="sr-only peer">
-                                    <span class="px-3 py-1.5 rounded-lg font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 peer-checked:bg-brand-50 peer-checked:border-brand-400 peer-checked:text-brand-700 transition-colors"
-                                          x-text="opt.label"></span>
-                                </label>
-                            </template>
-                        </fieldset>
+                        <p class="text-[11px] text-gray-400 mt-2">
+                            Adds the entered quantity to this event's allocation. Items with stock already on hand show a "Max" shortcut next to the input.
+                        </p>
                     </div>
 
-                    {{-- Scrollable table --}}
-                    <div class="flex-1 overflow-auto">
-                        <table class="w-full text-sm">
+                    {{-- Scrollable table. table-fixed + min-w-0 + truncate on
+                         the item name keeps long product names from blowing
+                         the table wider than the modal. --}}
+                    <div class="flex-1 overflow-y-auto overflow-x-hidden">
+                        <table class="w-full text-sm table-fixed">
                             <thead class="sticky top-0 bg-white z-10 border-b border-gray-100">
                                 <tr>
-                                    <th class="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
-                                    <th class="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">On Hand</th>
-                                    <th class="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Reorder</th>
-                                    <th class="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Already Alloc</th>
-                                    <th class="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">Quantity</th>
+                                    <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                                    <th class="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-20">On Hand</th>
+                                    <th class="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-24">Already</th>
+                                    <th class="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-44">Quantity</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
@@ -1895,37 +1890,49 @@
                                     @php
                                         $existing  = $existingAllocByItem->get($item->id);
                                         $alreadyQty = $existing?->allocated_quantity ?? 0;
+                                        $itemNameJs = strtolower(addslashes($item->name));
                                     @endphp
                                     <tr data-bulk-row
                                         data-item-name="{{ strtolower($item->name) }}"
-                                        x-show="bulkRowMatches('{{ strtolower(addslashes($item->name)) }}')"
+                                        x-show="bulkRowMatches('{{ $itemNameJs }}')"
                                         class="hover:bg-gray-50/60 transition-colors">
-                                        <td class="px-5 py-2.5">
+                                        <td class="px-4 py-2.5 min-w-0">
                                             <input type="hidden" name="items[{{ $i }}][inventory_item_id]" value="{{ $item->id }}">
-                                            <p class="font-semibold text-gray-800">{{ $item->name }}</p>
-                                            <p class="text-xs text-gray-400">{{ $item->category?->name ?? 'Uncategorized' }} · {{ $item->unit_type }}</p>
+                                            <p class="font-semibold text-gray-800 truncate" title="{{ $item->name }}">{{ $item->name }}</p>
+                                            <p class="text-xs text-gray-400 truncate">{{ $item->category?->name ?? 'Uncategorized' }} · {{ $item->unit_type }}</p>
                                         </td>
-                                        <td class="px-4 py-2.5 text-right tabular-nums">
+                                        <td class="px-3 py-2.5 text-right tabular-nums">
                                             <span class="font-semibold {{ $item->stockStatus() === 'out' ? 'text-red-600' : ($item->stockStatus() === 'low' ? 'text-amber-600' : 'text-gray-800') }}">
                                                 {{ number_format($item->quantity_on_hand) }}
                                             </span>
                                         </td>
-                                        <td class="px-4 py-2.5 text-right tabular-nums text-gray-500">{{ number_format($item->reorder_level) }}</td>
-                                        <td class="px-4 py-2.5 text-right tabular-nums">
+                                        <td class="px-3 py-2.5 text-right tabular-nums">
                                             @if ($alreadyQty > 0)
                                                 <span class="font-semibold text-blue-700">{{ number_format($alreadyQty) }}</span>
                                             @else
                                                 <span class="text-gray-300">—</span>
                                             @endif
                                         </td>
-                                        <td class="px-4 py-2.5 text-right">
-                                            <input type="number" min="0" step="1"
-                                                   name="items[{{ $i }}][allocated_quantity]"
-                                                   value="0"
-                                                   data-item-qty
-                                                   @input="recalcBulkTotals()"
-                                                   class="w-24 px-2 py-1 text-sm text-right border border-gray-200 rounded-lg bg-gray-50
-                                                          focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 tabular-nums">
+                                        <td class="px-3 py-2.5">
+                                            <div class="flex items-center justify-end gap-1.5">
+                                                <input type="number" min="0" max="{{ $item->quantity_on_hand }}" step="1"
+                                                       name="items[{{ $i }}][allocated_quantity]"
+                                                       value="0"
+                                                       data-item-qty
+                                                       data-item-stock="{{ $item->quantity_on_hand }}"
+                                                       @input="recalcBulkTotals()"
+                                                       class="w-20 px-2 py-1 text-sm text-right border border-gray-200 rounded-lg bg-gray-50
+                                                              focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 tabular-nums">
+                                                @if ($item->quantity_on_hand > 0)
+                                                    <button type="button" @click="setRowMax($event)"
+                                                            title="Allocate all available stock ({{ number_format($item->quantity_on_hand) }})"
+                                                            class="text-[11px] font-bold text-brand-600 hover:text-brand-700 px-1.5 py-1 rounded hover:bg-brand-50 transition-colors flex-shrink-0">
+                                                        MAX
+                                                    </button>
+                                                @else
+                                                    <span class="text-[11px] text-gray-300 px-1.5 py-1 flex-shrink-0">—</span>
+                                                @endif
+                                            </div>
                                         </td>
                                     </tr>
                                 @endforeach
@@ -2195,13 +2202,11 @@ function eventShow() {
         // ── Phase D — bulk allocate drawer ────────────────────────────────
         bulkOpen:           false,
         bulkSearch:         '',
-        bulkMode:           'add',
         bulkSelectedCount:  0,
         bulkTotalUnits:     0,
         openBulkAllocate() {
             this.bulkOpen          = true;
             this.bulkSearch        = '';
-            this.bulkMode          = 'add';
             this.bulkSelectedCount = 0;
             this.bulkTotalUnits    = 0;
             // Reset every qty input to 0 — the markup renders with value="0",
@@ -2213,6 +2218,16 @@ function eventShow() {
         bulkRowMatches(itemNameLower) {
             const q = this.bulkSearch.trim().toLowerCase();
             return q === '' || itemNameLower.includes(q);
+        },
+        setRowMax(ev) {
+            // The MAX button sits next to the qty input in the same flex row;
+            // walk up to the cell and find the input with data-item-qty.
+            const cell  = ev.currentTarget.closest('td');
+            const input = cell?.querySelector('[data-item-qty]');
+            if (input) {
+                input.value = input.dataset.itemStock || '0';
+                this.recalcBulkTotals();
+            }
         },
         recalcBulkTotals() {
             let count = 0, units = 0;

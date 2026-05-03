@@ -18,14 +18,13 @@ use Tests\TestCase;
  *
  * Pins the contract for POST /events/{event}/inventory/bulk:
  *   - Per-row validation (exists, integer, min 0)
- *   - Mode is one of add / subtract / replace (422 otherwise)
  *   - Duplicate item ids in one payload return 422
- *   - Rows are processed atomically: insufficient stock or replace-down
- *     below already-distributed → row is SKIPPED and reported via flash;
- *     other rows in the same batch still process.
- *   - History-preserving subtract: the allocation row's `returned_quantity`
- *     increments, never `allocated_quantity`.
- *   - Every processed row records an InventoryMovement of the right type.
+ *   - Bulk submit is ADD-ONLY: each non-zero row pulls quantity from the
+ *     shelf and adds to the event's allocation total. Returning surplus
+ *     after the event is a separate flow (per-row Return action).
+ *   - Insufficient stock → row SKIPPED and reported via flash; other rows
+ *     in the same batch still process.
+ *   - Every processed row records an event_allocated InventoryMovement.
  */
 class EventInventoryBulkAllocationTest extends TestCase
 {
@@ -70,14 +69,14 @@ class EventInventoryBulkAllocationTest extends TestCase
         ]);
     }
 
-    private function makeExistingAllocation(Event $event, InventoryItem $item, int $alloc, int $distributed = 0, int $returned = 0): EventInventoryAllocation
+    private function makeExistingAllocation(Event $event, InventoryItem $item, int $alloc): EventInventoryAllocation
     {
         return EventInventoryAllocation::create([
             'event_id'             => $event->id,
             'inventory_item_id'    => $item->id,
             'allocated_quantity'   => $alloc,
-            'distributed_quantity' => $distributed,
-            'returned_quantity'    => $returned,
+            'distributed_quantity' => 0,
+            'returned_quantity'    => 0,
         ]);
     }
 
@@ -89,34 +88,8 @@ class EventInventoryBulkAllocationTest extends TestCase
         $item  = $this->makeItem('A');
 
         $this->post(route('events.inventory.bulk', $event), [
-            'mode'  => 'add',
             'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 5]],
         ])->assertRedirect(route('login'));
-    }
-
-    public function test_missing_mode_returns_422(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A');
-
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 5]],
-             ])
-             ->assertSessionHasErrors(['mode']);
-    }
-
-    public function test_invalid_mode_returns_422(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A');
-
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'multiply',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 5]],
-             ])
-             ->assertSessionHasErrors(['mode']);
     }
 
     public function test_empty_items_array_returns_422(): void
@@ -125,7 +98,6 @@ class EventInventoryBulkAllocationTest extends TestCase
 
         $this->actingAs($this->admin)
              ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
                  'items' => [],
              ])
              ->assertSessionHasErrors(['items']);
@@ -138,7 +110,6 @@ class EventInventoryBulkAllocationTest extends TestCase
 
         $this->actingAs($this->admin)
              ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
                  'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => -1]],
              ])
              ->assertSessionHasErrors(['items.0.allocated_quantity']);
@@ -151,7 +122,6 @@ class EventInventoryBulkAllocationTest extends TestCase
 
         $this->actingAs($this->admin)
              ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
                  'items' => [
                      ['inventory_item_id' => $a->id, 'allocated_quantity' => 5],
                      ['inventory_item_id' => $a->id, 'allocated_quantity' => 3],
@@ -160,9 +130,9 @@ class EventInventoryBulkAllocationTest extends TestCase
              ->assertSessionHasErrors(['items']);
     }
 
-    // ─── Add mode (happy path) ───────────────────────────────────────────────
+    // ─── Happy path ──────────────────────────────────────────────────────────
 
-    public function test_add_mode_creates_allocations_and_movements(): void
+    public function test_creates_allocations_and_decrements_stock(): void
     {
         $event = $this->makeEvent();
         $a = $this->makeItem('A', stock: 100);
@@ -170,7 +140,6 @@ class EventInventoryBulkAllocationTest extends TestCase
 
         $this->actingAs($this->admin)
              ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
                  'items' => [
                      ['inventory_item_id' => $a->id, 'allocated_quantity' => 10],
                      ['inventory_item_id' => $b->id, 'allocated_quantity' => 5],
@@ -199,7 +168,6 @@ class EventInventoryBulkAllocationTest extends TestCase
 
         $this->actingAs($this->admin)
              ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
                  'items' => [
                      ['inventory_item_id' => $a->id, 'allocated_quantity' => 10],
                      ['inventory_item_id' => $b->id, 'allocated_quantity' => 0], // blank row
@@ -211,6 +179,41 @@ class EventInventoryBulkAllocationTest extends TestCase
         $this->assertSame(1, EventInventoryAllocation::count());
     }
 
+    public function test_existing_allocation_is_incremented_not_replaced(): void
+    {
+        $event = $this->makeEvent();
+        $item  = $this->makeItem('A', stock: 100);
+        $this->makeExistingAllocation($event, $item, alloc: 10);
+
+        $this->actingAs($this->admin)
+             ->post(route('events.inventory.bulk', $event), [
+                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 5]],
+             ])
+             ->assertRedirect();
+
+        $this->assertSame(15, EventInventoryAllocation::where('inventory_item_id', $item->id)->value('allocated_quantity'));
+        $this->assertSame(95, $item->fresh()->quantity_on_hand); // 100 - 5 (only the new pull)
+    }
+
+    public function test_full_stock_can_be_allocated_via_max_button_value(): void
+    {
+        // Pins the "MAX" UX path: a row submitted with allocated_quantity
+        // equal to quantity_on_hand fully empties the shelf.
+        $event = $this->makeEvent();
+        $item  = $this->makeItem('A', stock: 42);
+
+        $this->actingAs($this->admin)
+             ->post(route('events.inventory.bulk', $event), [
+                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 42]],
+             ])
+             ->assertRedirect();
+
+        $this->assertSame(0, $item->fresh()->quantity_on_hand);
+        $this->assertSame(42, EventInventoryAllocation::where('inventory_item_id', $item->id)->value('allocated_quantity'));
+    }
+
+    // ─── Insufficient stock skip ─────────────────────────────────────────────
+
     public function test_insufficient_stock_skips_row_and_processes_others(): void
     {
         $event = $this->makeEvent();
@@ -219,7 +222,6 @@ class EventInventoryBulkAllocationTest extends TestCase
 
         $this->actingAs($this->admin)
              ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
                  'items' => [
                      ['inventory_item_id' => $tight->id, 'allocated_quantity' => 100],
                      ['inventory_item_id' => $ok->id,    'allocated_quantity' => 5],
@@ -229,7 +231,6 @@ class EventInventoryBulkAllocationTest extends TestCase
              ->assertSessionHas('alloc_warning')
              ->assertSessionHas('success');
 
-        // Tight skipped, OK processed.
         $this->assertDatabaseMissing('event_inventory_allocations', ['inventory_item_id' => $tight->id]);
         $this->assertDatabaseHas('event_inventory_allocations', [
             'inventory_item_id' => $ok->id, 'allocated_quantity' => 5,
@@ -245,7 +246,6 @@ class EventInventoryBulkAllocationTest extends TestCase
 
         $this->actingAs($this->admin)
              ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
                  'items' => [['inventory_item_id' => $tight->id, 'allocated_quantity' => 50]],
              ])
              ->assertSessionHas('alloc_warning', function ($msg) {
@@ -253,173 +253,6 @@ class EventInventoryBulkAllocationTest extends TestCase
                      && str_contains($msg, 'insufficient stock');
              });
     }
-
-    public function test_add_mode_increments_existing_allocation(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A', stock: 100);
-        $this->makeExistingAllocation($event, $item, alloc: 10);
-
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 5]],
-             ])
-             ->assertRedirect();
-
-        $this->assertSame(15, EventInventoryAllocation::where('inventory_item_id', $item->id)->value('allocated_quantity'));
-        $this->assertSame(95, $item->fresh()->quantity_on_hand); // 100 - 5 (new pull only)
-    }
-
-    // ─── Subtract mode ───────────────────────────────────────────────────────
-
-    public function test_subtract_mode_increments_returned_quantity_not_allocated(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A', stock: 90);
-        $this->makeExistingAllocation($event, $item, alloc: 10);
-
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'subtract',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 4]],
-             ])
-             ->assertRedirect();
-
-        $row = EventInventoryAllocation::where('inventory_item_id', $item->id)->first();
-        // History-preserving: allocated stays at 10, returned increments to 4.
-        $this->assertSame(10, $row->allocated_quantity);
-        $this->assertSame(4, $row->returned_quantity);
-        // Stock returns to shelf.
-        $this->assertSame(94, $item->fresh()->quantity_on_hand);
-        // Movement is event_returned.
-        $this->assertSame(1, InventoryMovement::where('movement_type', 'event_returned')->count());
-    }
-
-    public function test_subtract_with_no_existing_allocation_skips_with_reason(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('Unallocated', stock: 100);
-
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'subtract',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 5]],
-             ])
-             ->assertSessionHas('alloc_warning', function ($msg) {
-                 return str_contains($msg, 'Unallocated')
-                     && str_contains($msg, 'nothing to subtract');
-             });
-
-        $this->assertSame(0, EventInventoryAllocation::count());
-        $this->assertSame(100, $item->fresh()->quantity_on_hand);
-    }
-
-    public function test_subtract_clamps_at_existing_allocation(): void
-    {
-        // Operator submits 100 but only 5 was allocated. Clamp at 5.
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A', stock: 95);
-        $this->makeExistingAllocation($event, $item, alloc: 5);
-
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'subtract',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 100]],
-             ])
-             ->assertRedirect();
-
-        $row = EventInventoryAllocation::where('inventory_item_id', $item->id)->first();
-        $this->assertSame(5, $row->allocated_quantity);
-        $this->assertSame(5, $row->returned_quantity);
-        $this->assertSame(100, $item->fresh()->quantity_on_hand); // 95 + 5 returned
-    }
-
-    // ─── Replace mode ────────────────────────────────────────────────────────
-
-    public function test_replace_mode_with_higher_value_allocates_delta(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A', stock: 90);
-        $this->makeExistingAllocation($event, $item, alloc: 10);
-
-        // Replace 10 → 25 = pull 15 more.
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'replace',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 25]],
-             ])
-             ->assertRedirect();
-
-        $row = EventInventoryAllocation::where('inventory_item_id', $item->id)->first();
-        $this->assertSame(25, $row->allocated_quantity);
-        $this->assertSame(0, $row->returned_quantity);
-        $this->assertSame(75, $item->fresh()->quantity_on_hand);
-    }
-
-    public function test_replace_mode_with_lower_value_returns_surplus(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A', stock: 80);
-        $this->makeExistingAllocation($event, $item, alloc: 20);
-
-        // Replace 20 → 5 = return 15 to shelf.
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'replace',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 5]],
-             ])
-             ->assertRedirect();
-
-        $row = EventInventoryAllocation::where('inventory_item_id', $item->id)->first();
-        // History-preserving: allocated stays at 20, returned = 15.
-        $this->assertSame(20, $row->allocated_quantity);
-        $this->assertSame(15, $row->returned_quantity);
-        $this->assertSame(95, $item->fresh()->quantity_on_hand); // 80 + 15
-    }
-
-    public function test_replace_down_below_distributed_floor_skips_with_reason(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A', stock: 100);
-        // 20 allocated, 12 already distributed → can return at most 8.
-        $this->makeExistingAllocation($event, $item, alloc: 20, distributed: 12);
-
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'replace',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 5]], // would need to return 15
-             ])
-             ->assertSessionHas('alloc_warning', function ($msg) {
-                 return str_contains($msg, 'already-distributed')
-                     || str_contains($msg, 'already handed out');
-             });
-
-        $row = EventInventoryAllocation::where('inventory_item_id', $item->id)->first();
-        $this->assertSame(20, $row->allocated_quantity); // unchanged
-        $this->assertSame(0,  $row->returned_quantity);  // unchanged
-        $this->assertSame(100, $item->fresh()->quantity_on_hand);
-    }
-
-    public function test_replace_with_same_value_is_a_noop(): void
-    {
-        $event = $this->makeEvent();
-        $item  = $this->makeItem('A', stock: 90);
-        $this->makeExistingAllocation($event, $item, alloc: 10);
-
-        $this->actingAs($this->admin)
-             ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'replace',
-                 'items' => [['inventory_item_id' => $item->id, 'allocated_quantity' => 10]],
-             ])
-             ->assertRedirect();
-
-        // No movement records.
-        $this->assertSame(0, InventoryMovement::count());
-        $this->assertSame(90, $item->fresh()->quantity_on_hand);
-    }
-
-    // ─── Bulk semantics across multiple rows ─────────────────────────────────
 
     public function test_mixed_rows_are_processed_independently(): void
     {
@@ -430,7 +263,6 @@ class EventInventoryBulkAllocationTest extends TestCase
 
         $this->actingAs($this->admin)
              ->post(route('events.inventory.bulk', $event), [
-                 'mode'  => 'add',
                  'items' => [
                      ['inventory_item_id' => $a->id, 'allocated_quantity' => 10], // OK
                      ['inventory_item_id' => $b->id, 'allocated_quantity' => 50], // skip (insufficient)
@@ -439,7 +271,6 @@ class EventInventoryBulkAllocationTest extends TestCase
              ])
              ->assertRedirect();
 
-        // A and C land, B skipped.
         $this->assertDatabaseHas('event_inventory_allocations', ['inventory_item_id' => $a->id]);
         $this->assertDatabaseMissing('event_inventory_allocations', ['inventory_item_id' => $b->id]);
         $this->assertDatabaseHas('event_inventory_allocations', ['inventory_item_id' => $c->id]);
