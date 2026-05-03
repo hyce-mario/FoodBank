@@ -36,7 +36,12 @@ class EventAnalyticsService
             ->filter(fn ($v) => $v->exited_at && $v->start_time)
             ->avg(fn ($v) => $v->start_time->diffInSeconds($v->exited_at) / 60);
 
-        $peopleSumFn = fn ($v) => $v->households->sum('household_size');
+        // Phase 1.2.c: people-served sums the pivot snapshot (vh.household_size),
+        // not the live households.household_size. Without this, editing a
+        // household after their visit silently rewrites historical reports.
+        // ReportAnalyticsService::eventReport() already does this; this service
+        // was missed in the original 1.2.c sweep.
+        $peopleSumFn = fn ($v) => $v->households->sum(fn ($h) => (int) ($h->pivot->household_size ?? 0));
 
         return [
             'total_visits'          => $visits->count(),
@@ -67,7 +72,17 @@ class EventAnalyticsService
             ->orderBy('start_time')
             ->get()
             ->map(function (Visit $v) {
-                $household = $v->households->first();
+                $primary         = $v->households->first();
+                $householdCount  = $v->households->count();
+
+                // Phase 1.2.c: read demographics from the pivot snapshot, sum
+                // across ALL households on the visit so a representative
+                // pickup (one visit, multiple families) reconciles with the
+                // people-served KPI in summary().
+                $householdSize  = (int) $v->households->sum(fn ($h) => (int) ($h->pivot->household_size ?? 0));
+                $childrenCount  = (int) $v->households->sum(fn ($h) => (int) ($h->pivot->children_count ?? 0));
+                $adultsCount    = (int) $v->households->sum(fn ($h) => (int) ($h->pivot->adults_count   ?? 0));
+                $seniorsCount   = (int) $v->households->sum(fn ($h) => (int) ($h->pivot->seniors_count  ?? 0));
 
                 $checkinToQueue = ($v->queued_at && $v->start_time)
                     ? (int) round($v->start_time->diffInSeconds($v->queued_at) / 60)
@@ -99,12 +114,14 @@ class EventAnalyticsService
                     'queue_to_loaded'   => $queueToLoaded,
                     'loaded_to_exited'  => $loadedToExited,
                     'total_time'        => $totalTime,
-                    'household_number'  => $household?->household_number ?? '—',
-                    'full_name'         => $household?->full_name ?? '—',
-                    'household_size'    => $household?->household_size ?? 0,
-                    'children_count'    => $household?->children_count ?? 0,
-                    'adults_count'      => $household?->adults_count ?? 0,
-                    'seniors_count'     => $household?->seniors_count ?? 0,
+                    'household_number'  => $primary?->household_number ?? '—',
+                    'full_name'         => $primary?->full_name ?? '—',
+                    'household_count'   => $householdCount,
+                    'additional_count'  => max(0, $householdCount - 1),
+                    'household_size'    => $householdSize,
+                    'children_count'    => $childrenCount,
+                    'adults_count'      => $adultsCount,
+                    'seniors_count'     => $seniorsCount,
                 ];
             });
     }
@@ -118,39 +135,14 @@ class EventAnalyticsService
             ->get();
 
         return [
-            'processTime'    => $this->processTimeChart($visits),
-            'hourlyCheckins' => $this->hourlyCheckinsChart($visits, $event),
-            'lanePerformance'=> $this->lanePerformanceChart($visits, $event),
+            'hourlyCheckins'  => $this->hourlyCheckinsChart($visits),
+            'lanePerformance' => $this->lanePerformanceChart($visits, $event),
         ];
     }
 
     // ─── Private chart builders ────────────────────────────────────────────────
 
-    private function processTimeChart(Collection $visits): array
-    {
-        $checkinToQueue = $visits
-            ->filter(fn ($v) => $v->queued_at && $v->start_time)
-            ->avg(fn ($v) => $v->start_time->diffInSeconds($v->queued_at) / 60);
-
-        $queueToLoaded = $visits
-            ->filter(fn ($v) => $v->loading_completed_at && $v->queued_at)
-            ->avg(fn ($v) => $v->queued_at->diffInSeconds($v->loading_completed_at) / 60);
-
-        $loadedToExited = $visits
-            ->filter(fn ($v) => $v->exited_at && $v->loading_completed_at)
-            ->avg(fn ($v) => $v->loading_completed_at->diffInSeconds($v->exited_at) / 60);
-
-        return [
-            'labels' => ['Check-in → Queue', 'Queue → Loading', 'Loading → Exit'],
-            'values' => [
-                round($checkinToQueue ?? 0, 1),
-                round($queueToLoaded ?? 0, 1),
-                round($loadedToExited ?? 0, 1),
-            ],
-        ];
-    }
-
-    private function hourlyCheckinsChart(Collection $visits, Event $event): array
+    private function hourlyCheckinsChart(Collection $visits): array
     {
         $withTime = $visits->filter(fn ($v) => $v->start_time !== null);
 

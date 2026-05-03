@@ -235,6 +235,7 @@ Route::middleware('auth')->group(function () {
 
     // Visit Log / Event Operations Report
     Route::get('visit-log',        [VisitLogController::class, 'index'])  ->name('visit-log.index');
+    Route::get('visit-log/print',  [VisitLogController::class, 'print'])  ->name('visit-log.print');
     Route::get('visit-log/export', [VisitLogController::class, 'export']) ->name('visit-log.export');
 
     // Finance Module
