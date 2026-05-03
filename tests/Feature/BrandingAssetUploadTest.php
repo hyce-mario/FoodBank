@@ -262,4 +262,38 @@ class BrandingAssetUploadTest extends TestCase
              ->delete(route('settings.branding.delete', 'logo'))
              ->assertForbidden();
     }
+
+    // ─── Render of the branding settings page ────────────────────────────────
+
+    public function test_branding_settings_page_renders_upload_card(): void
+    {
+        // Pins the wiring between SettingsController::show + show.blade.php +
+        // branding_above.blade.php. Earlier architecture used @push/@stack
+        // but the @stack yielded BEFORE the section was included, so the
+        // upload card was silently dropped from the rendered HTML. This
+        // test catches that regression class — if the upload card stops
+        // rendering, the suite fails immediately.
+        $this->actingAs($this->admin)
+             ->get(route('settings.show', 'branding'))
+             ->assertOk()
+             ->assertSee('Logo &amp; Favicon', false)
+             ->assertSee('Application Logo')
+             ->assertSee('Favicon')
+             ->assertSee('Upload Logo')
+             ->assertSee('Upload Favicon');
+    }
+
+    public function test_branding_page_shows_replace_label_when_logo_set(): void
+    {
+        $this->actingAs($this->admin)
+             ->post(route('settings.branding.upload', 'logo'), [
+                 'file' => $this->fixture('logo-200.png'),
+             ]);
+
+        $this->actingAs($this->admin)
+             ->get(route('settings.show', 'branding'))
+             ->assertOk()
+             ->assertSee('Replace Logo')
+             ->assertDontSee('>Upload Logo<', false);
+    }
 }
