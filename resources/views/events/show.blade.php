@@ -1448,13 +1448,14 @@
             <h2 class="text-sm font-semibold text-gray-800">Inventory Allocations</h2>
             @if (!$event->isLocked())
             <div class="flex items-center gap-2">
-                {{-- Phase D — bulk drawer trigger. Hidden only on phone-sized
-                     screens (under md / 768px) since the 5-column table needs
-                     room to breathe; iPad portrait + landscape and laptops
-                     all see it. --}}
+                {{-- Phase D — bulk drawer trigger. Visible on every screen
+                     size; the prebuilt Tailwind bundle does not include
+                     responsive variants like `md:inline-flex`, so we can't
+                     hide it on phone via utility classes. The drawer itself
+                     scales down acceptably to mobile width. --}}
                 <button type="button"
                         @click="openBulkAllocate()"
-                        class="hidden md:inline-flex items-center gap-1.5 bg-white border border-brand-500 text-brand-600
+                        class="inline-flex items-center gap-1.5 bg-white border border-brand-500 text-brand-600
                                hover:bg-brand-50 font-semibold text-xs rounded-lg px-3 py-2 transition-colors">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M5.625 4.5h12.75a1.875 1.875 0 0 1 0 3.75H5.625a1.875 1.875 0 0 1 0-3.75Z"/>
