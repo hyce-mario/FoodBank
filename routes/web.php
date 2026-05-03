@@ -153,6 +153,8 @@ Route::middleware('auth')->group(function () {
 
     // Event Inventory Allocations
     Route::post('events/{event}/inventory',                                      [EventInventoryAllocationController::class, 'store'])              ->name('events.inventory.store');
+    // Phase D — atomic bulk allocation drawer
+    Route::post('events/{event}/inventory/bulk',                                 [EventInventoryAllocationController::class, 'bulkStore'])          ->name('events.inventory.bulk');
     Route::patch('events/{event}/inventory/{allocation}/distributed',            [EventInventoryAllocationController::class, 'updateDistributed'])   ->name('events.inventory.distributed');
     Route::post('events/{event}/inventory/{allocation}/return',                  [EventInventoryAllocationController::class, 'returnStock'])         ->name('events.inventory.return');
     Route::delete('events/{event}/inventory/{allocation}',                       [EventInventoryAllocationController::class, 'destroy'])             ->name('events.inventory.destroy');

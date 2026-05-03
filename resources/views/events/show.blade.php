@@ -1410,6 +1410,16 @@
     </div>
     @endif
 
+    {{-- Phase D — bulk allocation summary warning. Listed rows that got
+         skipped due to insufficient stock / no existing alloc / replace-down
+         floor surface here, line by line. --}}
+    @if (session('alloc_warning'))
+    <div class="mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
+        <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.732 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+        <pre class="whitespace-pre-wrap font-sans">{{ session('alloc_warning') }}</pre>
+    </div>
+    @endif
+
     {{-- Summary stats --}}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-5 py-4 text-center">
@@ -1437,14 +1447,27 @@
         <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <h2 class="text-sm font-semibold text-gray-800">Inventory Allocations</h2>
             @if (!$event->isLocked())
-            <button @click="openInvModal('allocate')"
-                    class="inline-flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 text-white
-                           font-semibold text-xs rounded-lg px-3 py-2 transition-colors">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-                </svg>
-                Allocate Item
-            </button>
+            <div class="flex items-center gap-2">
+                {{-- Phase D — desktop-only bulk drawer trigger. Mobile keeps
+                     the single-add path so this button hides under lg. --}}
+                <button type="button"
+                        @click="openBulkAllocate()"
+                        class="hidden lg:inline-flex items-center gap-1.5 bg-white border border-brand-500 text-brand-600
+                               hover:bg-brand-50 font-semibold text-xs rounded-lg px-3 py-2 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 0 1 0 3.75H5.625a1.875 1.875 0 0 1 0-3.75Z"/>
+                    </svg>
+                    Bulk Allocate
+                </button>
+                <button @click="openInvModal('allocate')"
+                        class="inline-flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 text-white
+                               font-semibold text-xs rounded-lg px-3 py-2 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                    </svg>
+                    Allocate Item
+                </button>
+            </div>
             @endif
         </div>
 
@@ -1780,6 +1803,168 @@
             </template>
         </div>
     </div>
+
+    {{-- ── Phase D — Bulk Allocate Drawer ───────────────────────────────────
+         Wide centered modal: search box, scrollable item table with running
+         per-row qty input, mode selector (add / subtract / replace), sticky
+         footer with running totals. Desktop-only (the trigger button is
+         hidden under lg). Submits as a single POST to events.inventory.bulk.
+         Each item row carries its own pre-existing allocation as initial
+         data so the operator sees what's already there at a glance. --}}
+    @if (!$event->isLocked())
+        @php
+            $existingAllocByItem = $event->inventoryAllocations->keyBy('inventory_item_id');
+        @endphp
+
+        <div x-show="bulkOpen"
+             x-transition:enter="transition ease-out duration-150"
+             x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-100"
+             x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+             class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-40"
+             @click="bulkOpen = false"
+             style="display:none">
+        </div>
+
+        <div x-show="bulkOpen"
+             x-transition:enter="transition ease-out duration-150"
+             x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-100"
+             x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+             class="fixed inset-0 z-50 flex items-center justify-center p-4"
+             style="display:none"
+             @click.self="bulkOpen = false"
+             @keydown.escape.window="bulkOpen = false">
+            <div class="w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col" @click.stop>
+
+                {{-- Header --}}
+                <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-brand-100 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-brand-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 0 1 0 3.75H5.625a1.875 1.875 0 0 1 0-3.75Z"/>
+                            </svg>
+                        </div>
+                        <h2 class="text-base font-bold text-gray-900">Bulk Allocate Inventory</h2>
+                    </div>
+                    <button @click="bulkOpen = false" class="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                <form method="POST" action="{{ route('events.inventory.bulk', $event) }}" class="flex-1 flex flex-col min-h-0">
+                    @csrf
+
+                    {{-- Search + mode --}}
+                    <div class="px-6 py-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+                        <div class="relative flex-1 min-w-[200px]">
+                            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
+                            <input type="text" x-model="bulkSearch" placeholder="Search items..."
+                                   class="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400">
+                        </div>
+                        <fieldset class="flex items-center gap-1 text-xs">
+                            <legend class="sr-only">Mode for items already allocated</legend>
+                            <span class="text-gray-500 mr-2">When already allocated:</span>
+                            <template x-for="opt in [{val:'add', label:'Add'}, {val:'subtract', label:'Subtract'}, {val:'replace', label:'Replace'}]" :key="opt.val">
+                                <label class="cursor-pointer">
+                                    <input type="radio" name="mode" :value="opt.val" x-model="bulkMode" class="sr-only peer">
+                                    <span class="px-3 py-1.5 rounded-lg font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 peer-checked:bg-brand-50 peer-checked:border-brand-400 peer-checked:text-brand-700 transition-colors"
+                                          x-text="opt.label"></span>
+                                </label>
+                            </template>
+                        </fieldset>
+                    </div>
+
+                    {{-- Scrollable table --}}
+                    <div class="flex-1 overflow-auto">
+                        <table class="w-full text-sm">
+                            <thead class="sticky top-0 bg-white z-10 border-b border-gray-100">
+                                <tr>
+                                    <th class="text-left px-5 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                                    <th class="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">On Hand</th>
+                                    <th class="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Reorder</th>
+                                    <th class="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Already Alloc</th>
+                                    <th class="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">Quantity</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @foreach ($inventoryItems as $i => $item)
+                                    @php
+                                        $existing  = $existingAllocByItem->get($item->id);
+                                        $alreadyQty = $existing?->allocated_quantity ?? 0;
+                                    @endphp
+                                    <tr data-bulk-row
+                                        data-item-name="{{ strtolower($item->name) }}"
+                                        x-show="bulkRowMatches('{{ strtolower(addslashes($item->name)) }}')"
+                                        class="hover:bg-gray-50/60 transition-colors">
+                                        <td class="px-5 py-2.5">
+                                            <input type="hidden" name="items[{{ $i }}][inventory_item_id]" value="{{ $item->id }}">
+                                            <p class="font-semibold text-gray-800">{{ $item->name }}</p>
+                                            <p class="text-xs text-gray-400">{{ $item->category?->name ?? 'Uncategorized' }} · {{ $item->unit_type }}</p>
+                                        </td>
+                                        <td class="px-4 py-2.5 text-right tabular-nums">
+                                            <span class="font-semibold {{ $item->stockStatus() === 'out' ? 'text-red-600' : ($item->stockStatus() === 'low' ? 'text-amber-600' : 'text-gray-800') }}">
+                                                {{ number_format($item->quantity_on_hand) }}
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-2.5 text-right tabular-nums text-gray-500">{{ number_format($item->reorder_level) }}</td>
+                                        <td class="px-4 py-2.5 text-right tabular-nums">
+                                            @if ($alreadyQty > 0)
+                                                <span class="font-semibold text-blue-700">{{ number_format($alreadyQty) }}</span>
+                                            @else
+                                                <span class="text-gray-300">—</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-4 py-2.5 text-right">
+                                            <input type="number" min="0" step="1"
+                                                   name="items[{{ $i }}][allocated_quantity]"
+                                                   value="0"
+                                                   data-item-qty
+                                                   @input="recalcBulkTotals()"
+                                                   class="w-24 px-2 py-1 text-sm text-right border border-gray-200 rounded-lg bg-gray-50
+                                                          focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 tabular-nums">
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+
+                        @if ($inventoryItems->isEmpty())
+                            <div class="text-center py-12 text-gray-400 text-sm">
+                                No active inventory items. <a href="{{ route('inventory.items.create') }}" class="text-brand-600 hover:underline font-semibold">Add one →</a>
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Notes + sticky footer --}}
+                    <div class="px-6 py-3 border-t border-gray-100 bg-gray-50/40 flex-shrink-0">
+                        <input type="text" name="notes" placeholder="Optional batch note (applied to every line)"
+                               class="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400">
+                    </div>
+                    <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 flex-shrink-0">
+                        <p class="text-xs text-gray-500">
+                            <span class="font-semibold text-gray-800 tabular-nums" x-text="bulkSelectedCount"></span> item(s) selected,
+                            <span class="font-semibold text-gray-800 tabular-nums" x-text="bulkTotalUnits"></span> total units
+                        </p>
+                        <div class="flex items-center gap-3">
+                            <button type="button" @click="bulkOpen = false"
+                                    class="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors font-medium">
+                                Cancel
+                            </button>
+                            <button type="submit"
+                                    :disabled="bulkSelectedCount === 0"
+                                    class="inline-flex items-center gap-2 px-5 py-2 bg-brand-500 hover:bg-brand-600 disabled:bg-gray-300 disabled:cursor-not-allowed
+                                           text-white text-sm font-semibold rounded-lg transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+                                Apply Allocation
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+
 </div>
 
 {{-- ── Reviews Tab ─────────────────────────────────────────────────────────── --}}
@@ -2003,6 +2188,39 @@ function eventShow() {
             this.invAllocUnit = unit;
         },
         closeInvModal() { this.invModal = null; this.invAllocId = null; },
+
+        // ── Phase D — bulk allocate drawer ────────────────────────────────
+        bulkOpen:           false,
+        bulkSearch:         '',
+        bulkMode:           'add',
+        bulkSelectedCount:  0,
+        bulkTotalUnits:     0,
+        openBulkAllocate() {
+            this.bulkOpen          = true;
+            this.bulkSearch        = '';
+            this.bulkMode          = 'add';
+            this.bulkSelectedCount = 0;
+            this.bulkTotalUnits    = 0;
+            // Reset every qty input to 0 — the markup renders with value="0",
+            // but the form may have been populated by a previous open.
+            this.$nextTick(() => {
+                document.querySelectorAll('[data-item-qty]').forEach(el => { el.value = 0; });
+            });
+        },
+        bulkRowMatches(itemNameLower) {
+            const q = this.bulkSearch.trim().toLowerCase();
+            return q === '' || itemNameLower.includes(q);
+        },
+        recalcBulkTotals() {
+            let count = 0, units = 0;
+            document.querySelectorAll('[data-item-qty]').forEach(el => {
+                const n = parseInt(el.value || '0', 10);
+                if (n > 0) { count++; units += n; }
+            });
+            this.bulkSelectedCount = count;
+            this.bulkTotalUnits    = units;
+        },
+
         regLinkOpen: false,
         regenOpen:   false,
         copied:     false,
