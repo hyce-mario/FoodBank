@@ -559,10 +559,25 @@
                 </div>
             </div>
 
-            {{-- Phase C.2 — Forecast card. One headline number + small breakdown.
-                 Renders a "not enough history yet" placeholder when there are
-                 no past events to baseline against. --}}
-            <div data-card="forecast" class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
+            {{-- Phase C.2 — Forecast card. Card face stays clean (icon + big
+                 number + label); the breakdown lives in a callout that reveals
+                 on hover, click, or keyboard activation, so the 5-card row
+                 reads as one calm strip until someone reaches for the detail. --}}
+            <div data-card="forecast"
+                 @if ($attendeeForecast['enabled'])
+                    x-data="{ open: false }"
+                    @mouseenter="open = true"
+                    @mouseleave="open = false"
+                    @click="open = !open"
+                    @keydown.enter.prevent="open = !open"
+                    @keydown.space.prevent="open = !open"
+                    @keydown.escape="open = false"
+                    role="button"
+                    tabindex="0"
+                    :aria-expanded="open.toString()"
+                    aria-haspopup="true"
+                 @endif
+                 class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5 relative @if ($attendeeForecast['enabled']) cursor-help focus:outline-none focus:ring-2 focus:ring-brand-400 @endif">
                 @if ($attendeeForecast['enabled'])
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
@@ -570,17 +585,36 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941"/>
                             </svg>
                         </div>
-                        <div class="min-w-0">
+                        <div class="min-w-0 flex-1">
                             <p data-stat="forecast-total" class="text-2xl font-black text-gray-900 tabular-nums leading-none">~{{ number_format($attendeeForecast['projected_total']) }}</p>
-                            <p class="text-xs text-gray-500 mt-1.5 font-medium">Forecast</p>
+                            <p class="text-xs text-gray-500 mt-1.5 font-medium flex items-center gap-1">
+                                Attendees Predicted
+                                <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"/>
+                                </svg>
+                            </p>
                         </div>
                     </div>
-                    <p class="text-[11px] text-gray-400 mt-3 leading-snug">
-                        Pre-reg: <span class="font-semibold text-gray-600 tabular-nums">{{ number_format($attendeeForecast['current_pre_reg']) }}</span>
-                        · Walk-in (est): <span class="font-semibold text-gray-600 tabular-nums">{{ number_format($attendeeForecast['projected_walk_ins']) }}</span>
-                        <br>
-                        <span class="italic">Based on last event ({{ number_format($attendeeForecast['last_event_visits']) }} visits)</span>
-                    </p>
+
+                    {{-- Callout: aligned to the right edge so it never spills off
+                         the rightmost card in the 5-up grid. Dark surface for
+                         legibility against the light page. --}}
+                    <div x-show="open"
+                         x-transition.opacity.duration.150ms
+                         x-cloak
+                         data-testid="forecast-callout"
+                         class="absolute top-full right-0 mt-2 z-20 w-64 bg-gray-900 text-white text-xs rounded-lg shadow-lg px-4 py-3 leading-relaxed">
+                        <p class="text-gray-400 uppercase tracking-wider text-[10px] font-semibold mb-1.5">Forecast breakdown</p>
+                        <p>
+                            Pre-reg: <span class="font-semibold tabular-nums">{{ number_format($attendeeForecast['current_pre_reg']) }}</span>
+                        </p>
+                        <p>
+                            Walk-in (est): <span class="font-semibold tabular-nums">{{ number_format($attendeeForecast['projected_walk_ins']) }}</span>
+                        </p>
+                        <p class="text-gray-400 mt-2 italic">
+                            Based on last event ({{ number_format($attendeeForecast['last_event_visits']) }} visits)
+                        </p>
+                    </div>
                 @else
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">

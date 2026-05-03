@@ -286,4 +286,47 @@ class EventAttendeeTabTest extends TestCase
         // The subtitle reflects last event's visit count.
         $this->assertStringContainsString('Based on last event (20 visits)', $html);
     }
+
+    public function test_forecast_callout_renders_when_forecast_is_enabled(): void
+    {
+        // The callout is x-show-toggled so the breakdown text always sits
+        // in the DOM; pin its presence + ARIA contract so a future refactor
+        // can't silently strip it. Note: the entire stat-card row only
+        // renders when the current event has at least one pre-reg (the
+        // attendee tab uses the empty-state placeholder otherwise).
+        $past = $this->makeEvent(date: now()->subDay()->toDateString(), status: 'past');
+        for ($j = 0; $j < 5; $j++) {
+            $hh = $this->makeHousehold();
+            $this->addExitedVisit($past, $hh);
+            $this->addPreReg($past);
+        }
+        $current = $this->makeEvent(date: now()->toDateString(), status: 'current');
+        $this->addPreReg($current); // unblock the @if-isEmpty branch
+
+        $html = $this->actingAs($this->admin)
+                     ->get(route('events.show', $current))
+                     ->assertOk()
+                     ->getContent();
+
+        $this->assertStringContainsString('data-testid="forecast-callout"', $html);
+        $this->assertStringContainsString('aria-haspopup="true"', $html);
+        $this->assertStringContainsString('Forecast breakdown', $html);
+    }
+
+    public function test_forecast_callout_is_absent_when_no_history(): void
+    {
+        $event = $this->makeEvent();
+        $this->addPreReg($event); // need a pre-reg so the cards render at all
+
+        $html = $this->actingAs($this->admin)
+                     ->get(route('events.show', $event))
+                     ->assertOk()
+                     ->getContent();
+
+        // Placeholder branch: no callout, no aria-haspopup hint.
+        $this->assertStringNotContainsString('data-testid="forecast-callout"', $html);
+        $this->assertStringNotContainsString('aria-haspopup="true"', $html);
+        // But the placeholder copy IS visible on the card.
+        $this->assertStringContainsString('Not enough history yet', $html);
+    }
 }
