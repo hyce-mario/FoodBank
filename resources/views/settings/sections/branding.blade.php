@@ -256,6 +256,7 @@
         </form>
     </div>
 </div>
+@endpush
 
 @push('scripts')
 <script>
@@ -297,7 +298,6 @@
         };
     }
 </script>
-@endpush
 @endpush
 
 {{-- Brand Colors — inside the outer PUT form --}}
