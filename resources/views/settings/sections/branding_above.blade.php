@@ -197,10 +197,7 @@
 
         </div>
 
-        <p class="mt-5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
-            <strong>Storage note:</strong> Files are saved to <code>storage/app/public/branding/</code>.
-            Run <code>php artisan storage:link</code> once if images do not appear after uploading.
-        </p>
+        
     </div>
 </div>
 
