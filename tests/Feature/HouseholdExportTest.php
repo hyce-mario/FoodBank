@@ -70,19 +70,6 @@ class HouseholdExportTest extends TestCase
         $response->assertSee('30 households');
     }
 
-    public function test_pdf_export_returns_pdf_mime(): void
-    {
-        $this->makeHousehold('Alice');
-        $this->makeHousehold('Bob');
-
-        $response = $this->actingAs($this->admin)->get(route('households.export.pdf'));
-        $response->assertOk();
-        $response->assertHeader('Content-Type', 'application/pdf');
-
-        // PDF byte stream — PDFs always start with "%PDF-".
-        $this->assertStringStartsWith('%PDF-', $response->getContent());
-    }
-
     public function test_xlsx_export_returns_xlsx_mime(): void
     {
         $this->makeHousehold('Alice');
@@ -154,7 +141,7 @@ class HouseholdExportTest extends TestCase
             'email_verified_at' => now(),
         ]);
 
-        $response = $this->actingAs($user)->get(route('households.export.pdf'));
+        $response = $this->actingAs($user)->get(route('households.export.print'));
         $response->assertForbidden();
     }
 }

@@ -87,12 +87,6 @@
                 $exportQuery = request()->except(['page', 'per_page']);
             @endphp
 
-            {{-- PDF --}}
-            <a href="{{ route('households.export.pdf', $exportQuery) }}"
-               class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500 hover:bg-red-600 transition-colors"
-               title="Export PDF (all matching rows)">
-                <span class="text-[10px] font-bold text-white">PDF</span>
-            </a>
             {{-- XLS --}}
             <a href="{{ route('households.export.xlsx', $exportQuery) }}"
                class="w-8 h-8 flex items-center justify-center rounded-lg bg-green-600 hover:bg-green-700 transition-colors"

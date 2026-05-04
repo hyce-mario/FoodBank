@@ -10,12 +10,9 @@ use App\Models\VolunteerGroup;
 use App\Services\SettingService;
 use App\Services\VolunteerCheckInService;
 use App\Services\VolunteerMergeService;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -407,44 +404,6 @@ class VolunteerController extends Controller
         return view('volunteers.exports.print', compact(
             'volunteers', 'appliedFilters', 'branding', 'autoPrint',
         ));
-    }
-
-    /**
-     * PDF download of the volunteer roster. Renders the same Blade
-     * template as the print view, in landscape A4 (the table is wide
-     * enough that portrait truncates badly).
-     *
-     * Falls back to logo-stripped render if dompdf trips on the
-     * embedded PNG — same defensive pattern as the household exports;
-     * the underlying cause is dompdf's Image\Cache temp-file race on
-     * Windows + Apache + GD.
-     */
-    public function exportPdf(Request $request): Response
-    {
-        $this->authorize('viewAny', Volunteer::class);
-
-        $volunteers = $this->filteredVolunteerQuery($request)->get();
-        $groupsLookup = VolunteerGroup::get(['id', 'name']);
-        $appliedFilters = $this->exportFilterSummary($request, $groupsLookup);
-        $branding = $this->exportBranding();
-
-        $filename = 'volunteers-' . now()->format('Y-m-d-His') . '.pdf';
-        $data = compact('volunteers', 'appliedFilters', 'branding');
-
-        try {
-            return Pdf::loadView('volunteers.exports.pdf', $data)
-                ->setPaper('a4', 'landscape')
-                ->download($filename);
-        } catch (\Throwable $e) {
-            Log::warning(
-                'volunteer-export-pdf: dompdf failed with logo embedded; retrying without logo.',
-                ['message' => $e->getMessage(), 'at' => $e->getFile() . ':' . $e->getLine()],
-            );
-            $data['branding']['logo_src'] = null;
-            return Pdf::loadView('volunteers.exports.pdf', $data)
-                ->setPaper('a4', 'landscape')
-                ->download($filename);
-        }
     }
 
     /**

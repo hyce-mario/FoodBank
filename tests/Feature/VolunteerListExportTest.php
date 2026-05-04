@@ -13,15 +13,17 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Phase 5.12 — Volunteer roster list-level Print / PDF / CSV exports.
+ * Phase 5.12 — Volunteer roster list-level Print + CSV exports.
  *
  * Pins:
  *   - auth gate: unauth → /login, viewer-without-perms → 403, admin → 200
  *   - print: branded HTML carries org name + table rows
- *   - pdf: returns application/pdf with %PDF magic
  *   - csv: UTF-8 BOM, header row, one row per matched volunteer
  *   - active filters (search / role / group) apply to the export so a
  *     filtered view exports the same subset
+ *
+ * (Roster PDF was shipped earlier and removed by user request — the per-
+ *  record service-history exports stay separate and are not tested here.)
  */
 class VolunteerListExportTest extends TestCase
 {
@@ -52,16 +54,16 @@ class VolunteerListExportTest extends TestCase
 
     // ─── Auth gate ────────────────────────────────────────────────────────────
 
-    public function test_unauth_redirects_to_login_for_all_three_endpoints(): void
+    public function test_unauth_redirects_to_login_for_both_endpoints(): void
     {
-        foreach (['print', 'pdf', 'csv'] as $kind) {
+        foreach (['print', 'csv'] as $kind) {
             $this->get(route("volunteers.export.{$kind}"))->assertRedirect('/login');
         }
     }
 
     public function test_viewer_without_perms_gets_403(): void
     {
-        foreach (['print', 'pdf', 'csv'] as $kind) {
+        foreach (['print', 'csv'] as $kind) {
             $this->actingAs($this->viewer)
                  ->get(route("volunteers.export.{$kind}"))
                  ->assertForbidden();
@@ -87,25 +89,6 @@ class VolunteerListExportTest extends TestCase
         $this->assertStringContainsString('Total Volunteers', $html);
         // Auto-print is fired by the embedded script on load
         $this->assertStringContainsString('window.print()', $html);
-    }
-
-    // ─── PDF ──────────────────────────────────────────────────────────────────
-
-    public function test_pdf_returns_pdf_content_type_with_pdf_magic_bytes(): void
-    {
-        Volunteer::create(['first_name' => 'Mary', 'last_name' => 'Johnson', 'phone' => '5550001']);
-
-        $response = $this->actingAs($this->admin)
-                         ->get(route('volunteers.export.pdf'))
-                         ->assertOk();
-
-        $this->assertSame('application/pdf', $response->headers->get('Content-Type'));
-        // PDF files start with %PDF — sanity-check the body really is a PDF
-        $this->assertStringStartsWith('%PDF', $response->getContent());
-        // Filename uses today's date with seconds-precision suffix
-        $disposition = $response->headers->get('Content-Disposition');
-        $this->assertStringContainsString('volunteers-', $disposition);
-        $this->assertStringContainsString('.pdf', $disposition);
     }
 
     // ─── CSV ──────────────────────────────────────────────────────────────────

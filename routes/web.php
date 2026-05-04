@@ -110,7 +110,6 @@ Route::middleware('auth')->group(function () {
     // Phase C exports — registered BEFORE the resource route so /households/export/*
     // doesn't get parsed as Route::resource's show action with {household}=export.
     Route::get('households/export/print', [HouseholdController::class, 'exportPrint'])->name('households.export.print');
-    Route::get('households/export/pdf',   [HouseholdController::class, 'exportPdf'])->name('households.export.pdf');
     Route::get('households/export/xlsx',  [HouseholdController::class, 'exportXlsx'])->name('households.export.xlsx');
 
     Route::resource('households', HouseholdController::class);
@@ -183,7 +182,6 @@ Route::middleware('auth')->group(function () {
     // List exports — registered BEFORE the resource route so /volunteers/export/*
     // doesn't get parsed as Route::resource's show action with {volunteer}=export.
     Route::get('volunteers/export/print', [VolunteerController::class, 'exportPrint'])->name('volunteers.export.print');
-    Route::get('volunteers/export/pdf',   [VolunteerController::class, 'exportPdf'])  ->name('volunteers.export.pdf');
     Route::get('volunteers/export/csv',   [VolunteerController::class, 'exportCsv'])  ->name('volunteers.export.csv');
 
     Route::resource('volunteers', VolunteerController::class);
@@ -271,6 +269,12 @@ Route::middleware('auth')->group(function () {
 
         Route::resource('categories', FinanceCategoryController::class)
              ->except(['show', 'create', 'edit']);
+
+        // Transaction list exports — registered BEFORE the resource route so
+        // /finance/transactions/export/* doesn't get parsed as Route::resource's
+        // show action with {transaction}=export.
+        Route::get('transactions/export/print', [FinanceTransactionController::class, 'exportPrint'])->name('transactions.export.print');
+        Route::get('transactions/export/csv',   [FinanceTransactionController::class, 'exportCsv'])  ->name('transactions.export.csv');
 
         Route::resource('transactions', FinanceTransactionController::class);
         Route::get('transactions/{transaction}/attachment',    [FinanceTransactionController::class, 'downloadAttachment'])->name('transactions.attachment.download');

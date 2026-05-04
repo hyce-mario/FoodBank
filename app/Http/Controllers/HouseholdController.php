@@ -124,28 +124,6 @@ class HouseholdController extends Controller
     }
 
     /**
-     * PDF export of the full filtered household list. Renders the same Blade
-     * template the print view uses, in landscape A4 for table width.
-     */
-    public function exportPdf(Request $request): Response
-    {
-        $this->authorize('viewAny', Household::class);
-
-        $households     = $this->filteredHouseholdQuery($request)->get();
-        $appliedFilters = $this->exportFilterSummary($request);
-        $branding       = $this->exportBranding();
-
-        $filename = 'households-' . now()->format('Y-m-d-His') . '.pdf';
-        return $this->renderPdfWithLogoFallback(
-            'households.exports.pdf',
-            compact('households', 'appliedFilters', 'branding'),
-            'a4',
-            'landscape',
-            $filename,
-        );
-    }
-
-    /**
      * Render a Blade view to PDF, retrying without the embedded logo if
      * dompdf's image pipeline trips on it. Some Windows + Apache + dompdf
      * combinations throw "PHP GD extension is required" intermittently
