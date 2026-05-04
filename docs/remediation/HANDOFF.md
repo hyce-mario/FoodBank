@@ -4,43 +4,85 @@
 
 ---
 
-## Current state — 2026-05-01 (Session 6 — **Post-Phase-6 UX/feature work; large uncommitted batch**)
+## Current state — 2026-05-04 (Session 7 — **Visit-log audit + Phase 5.6 volunteer security/correctness**)
 
 ### Where we are
 
-**Audit remediation (Phases 0–6) remains fully closed** at the level documented in Session 5. This session is **post-remediation product work** — UX polish, new features, bug fixes the user surfaced while testing the live app. None of it is in AUDIT_REPORT.md Part 13.
+**Audit remediation Phases 0–6 remain fully closed** (per Session 5/6 status). This session added:
 
-**Suite is green at 212/212** (was 148 at end of Session 5; +64 across this session, 10 new test files).
+1. **Phase 5.6 — Volunteer security + correctness** (NEW, post-audit). Four sub-tasks (5.6.a–d) addressing issues a user-requested audit of the volunteers module surfaced. The fixes pattern-match findings in AUDIT_REPORT.md (FormRequest `authorize: true`, live-vs-snapshot drift, validator doc-comment lying, UNIQUE + updateOrCreate silently overwriting history) but the volunteers module wasn't in the original audit scope. See LOG.md "Phase 5 — Workflow & UX quality" + Deviations table for the full reasoning.
+2. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
 
-### ⚠️ Nothing is committed yet
+**Suite is green at 302/302** (was 287 at session start; +15 across 3 new test files).
 
-Every change in this session is **uncommitted**. Last commit on `main` is still `e4828a9` (Session 5 HANDOFF refresh). Working tree at handoff time:
+### ⚠️ What's committed vs. uncommitted
 
-- 16 modified tracked files
-- 10 new files created this session (controllers, request, migration, tests, blade)
-- 1 mysqldump backup in `backups/` (pre-document-enum migration)
-- All of Session 5's "untracked legacy" still untracked (unchanged from Session 5 — see git status)
+**Committed this session (Session 7):**
 
-The user has been working in browse-test-discuss mode rather than commit-as-we-go. Next agent should ask before squashing into a single commit vs. multiple — the work spans **9 distinct sub-features** that would naturally split into several commits.
+| Commit | Subject |
+|---|---|
+| `f38e1d5` | docs(remediation): log Phase 5.6 — Volunteer security + correctness |
+| `dcb2a1c` | fix(volunteers): add event_id index before dropping composite unique (MySQL FK) |
+| `6c65448` | fix(volunteers): enforce admin check-in time bounds the validator already claimed |
+| `1732c18` | fix(volunteers): index correctly distinguishes 'New' from 'First Timer' |
+| `3622c11` | fix(volunteers): preserve prior session on re-check-in (drop strict unique) |
+| `6e90342` | fix(volunteers): authorize VolunteerGroup actions behind volunteers.* perms |
+| `59914dc` | feat(visit-log): pagination + print export + audit fixes |
+
+The 8 commits between `59914dc` and `76ed22f` predate this session — they were pre-existing user work from the post-Session-6 product arc (events Phase C/D, settings logo upload, etc.). They reached `main` during Session 6/early-Session-7 housekeeping.
+
+**Still uncommitted (144 working-tree entries, mostly Session 6 leftover):**
+
+The Session 6 "untracked legacy" set never made it to `main`. Snapshot of categories still on the working tree:
+
+- 11 modified tracked files (`HouseholdController`, `Household` model, `SettingService`, composer.{json,lock}, household + branding blades, `routes/web.php`, layouts, `HANDOFF.md` itself)
+- ~80 untracked files spanning controllers, models, requests, migrations, services, blades from across the post-remediation product work — Finance module, Inventory module, Allocation Rulesets, Volunteer Groups, Roles, Profiles, Reviews, Reports, Reports views, Volunteer views
+- ~40 untracked migrations (the original Phase 1–6 migration files were never tracked)
+- Several test files (HouseholdEventReportExportTest, HouseholdExportTest, HouseholdShowEventReportTest)
+
+The Phase 5.6 commits **explicitly avoided bundling** any of this leftover work — staged paths only, never `git add .`. `routes/web.php` for example carries 6 unrelated household-export routes that I temporarily reverted-then-restored to keep the 5.6.a/d commits clean. `Volunteer.php` and `VolunteerGroup.php` were untracked legacy and ended up tracked when 5.6.b/a needed to modify them — same pattern as `SettingService.php` in 1.3.a per the established phase-organic-pull-in convention.
+
+**Recommendation for next agent**: ask the user before sweeping any of the leftover into a commit. Several pieces look complete (Finance module, Inventory module, Volunteer Groups views) and could land independently with their tests. Others may be in-flight or experimental.
 
 ### What changed this session
 
-The session was a long arc of UX/feature work driven by the user testing the live app. Rough order:
+#### A. Visit-log audit + improvements (commit `59914dc`, single bundled commit)
 
-1. **Event-day page — bookmarkable landing per role** (`GET /intake`, `/scanner`, `/loader`, `/exit`) so tablets bookmark a stable URL, see a picker of current events, then enter the auth code. Logout now returns to `/{role}` (the picker), not `/{role}/{event}`. Memory entry saved: see [feedback_event_day_bookmark_flow.md](C:\Users\Tobby\.claude\projects\c--xampp-htdocs-Foodbank\memory\feedback_event_day_bookmark_flow.md). 8 tests in [tests/Feature/EventDayLandingTest.php](tests/Feature/EventDayLandingTest.php).
-2. **Family tag chip** rolled out across event-day Scanner, Visit Monitor (intake + scanner cards). Replaces "X ppl" with a hover/tap-revealed demographic breakdown (children/adult/senior, blue/green/amber). VisitResource + VisitMonitorController data feeds extended with the demographic counts. Tests: [tests/Feature/VisitResourceTest.php](tests/Feature/VisitResourceTest.php) + 1 new pinning the counts ship to all roles.
-3. **Purchase Order line item — quick-create inventory** via icon button + footer link in dropdown → modal with name/unit/category/description → JSON `POST /inventory/items/quick-create` → auto-selects new item. 8 tests in [tests/Feature/InventoryItemQuickStoreTest.php](tests/Feature/InventoryItemQuickStoreTest.php).
-4. **Dashboard — current event banner color rework + family composition donut.** Banner: green-600 → white card + brand-orange accent + LIVE pulse dot (mirrors Next Upcoming style; user wanted "calmness"). Donut: switched from household-size buckets to family composition (children/adults/seniors) with rank-based colours (largest = navy, middle = amber, smallest = gray) so colour weight follows data without breaking brand. Custom keyframe `live-ring` defined inline (Tailwind's `animate-ping` not in prebuilt CSS).
-5. **Dashboard tables — pagination at 7/page** for Recent Events + Inventory Alerts (combined out-of-stock + low-stock into one paginated list, sorted by severity). Each table uses its own `?<table>_page=N` query string. Drive-by portability fix: monthly chart query was using MySQL-only `MONTH()` — switched to PHP-side grouping. 7 tests in [tests/Feature/DashboardPaginationTest.php](tests/Feature/DashboardPaginationTest.php).
-6. **Event details page — Phase A polish (3 pieces in one effort)**:
-   - **Live stat cards** with real data: rename Food Bundle → **Food Pack Served**, plus Households Served / Volunteers Served become real numbers. White card + border + shadow + colored icon per metric (orange / blue / green / navy).
-   - **Photo upload error handler rewrite** — previous handler swallowed every failure as "Network error". Now branches on HTTP status (401/419/413/422/429/5xx) with actionable messages; reads response as text first then attempts JSON parse so non-JSON server responses don't blow up.
-   - **Attendee delete confirmation modal** — replaced browser `confirm()` with proper Alpine modal in same style as the override / stock modals. 6 stat-card tests in [tests/Feature/EventShowStatCardsTest.php](tests/Feature/EventShowStatCardsTest.php).
-7. **Photo upload bug — root cause + fix.** User hit a real 5xx on upload (now visible thanks to the new status mapping). Root cause: `EventMediaController::store()` called `$file->getSize()` AFTER `$file->move()`, and the moved-away temp file's stat() throws. Fix: capture every metadata field BEFORE move(). 7 tests pinning the upload contract end-to-end in [tests/Feature/EventMediaUploadTest.php](tests/Feature/EventMediaUploadTest.php).
-8. **Upload settings backed by SettingService** — new `general.max_upload_size_mb` (integer, default 50) + `general.allowed_upload_formats` (multi_select). New `multi_select` setting type added end-to-end (cast on AppSetting, validation on SettingsController, renderer on `_field.blade.php`, persistence on SettingService). EventMediaController + EventController fallback paths read from settings at request time; file picker `accept` attribute and JS error copy use the live setting too. 4 settings tests inside the upload test file.
-9. **Volunteer admin check-in (Phase E — un-skipped from earlier)** — new `EventVolunteerCheckInController` with `store` (single, with time picker), `bulkStore` (check in all assigned), `checkout` (single, with time picker, computes hours_served), and `bulkCheckout` (close every active row). Three Alpine modals in `_volunteers_tab.blade.php`. 16 tests in [tests/Feature/EventVolunteerCheckInTest.php](tests/Feature/EventVolunteerCheckInTest.php).
-10. **Multi-select dropdown widget** — replaced the bogus checkbox grid with chip-based dropdown (chips show selected, click to open, click option to toggle, × on chip to remove). Added PDF to allowed-upload defaults. Migration `2026_05_01_140000_add_document_to_event_media_type_enum.php` adds `'document'` to event_media.type enum (MySQL ALTER + SQLite add-copy-drop-rename rebuild). Photos tab renders document items as red PDF tile cards with "Open / Download" link instead of broken thumbnails. mysqldump backup before applying.
-11. **Multi-select bug fixes**: empty sentinel input was failing `in:` per-element validation; switched both `select` and `multi_select` rules to `Rule::in($options)` to fix a separate pre-existing comma-in-value bug (e.g. `date_format` value `'M j, Y'` was being mis-split by the implode-built rule). Added defensive empty-string filter pre-validation. 6 tests in [tests/Feature/SettingsMultiSelectTest.php](tests/Feature/SettingsMultiSelectTest.php).
+User asked for an audit of `/visit-log`, then 15-row default pagination + print export. While auditing, found 7 issues; user asked to fix all of them. Single commit covers:
+
+- **15-row pagination** with show-N/All selector and Prev/Next, resets to page 1 on filter change. Alpine-only, no server pagination (preserved the existing client-side filter UX).
+- **Print export** at `GET /visit-log/print` — branded standalone HTML sheet matching the events/attendees print pattern, auto-fires `window.print()`. Header surfaces active filters when present.
+- **CSV column-count mismatch fix** — pre-fix the export wrote 16 column headers but only 15 values per row; every row's "People"/"Bags" columns were shifted left.
+- **Phase 1.2.c retroactive fix** — `EventAnalyticsService::summary()` and `visitsDetail()` were reading live `households.household_size` instead of the `vh.*` pivot snapshot. ReportAnalyticsService was correctly switched in the original 1.2.c sweep; this service was missed. Now both pages agree on people-served after a household edit.
+- **Multi-household visit reconciliation** — visits with representative pickups now sum across all households for the People count, and the table row gets a "+N more" badge so the table reconciles to the People Served KPI.
+- **"Bags" column shows '—' for non-exited rows** so summing the column matches the "Bags Distributed" KPI (which only counts exited).
+- **Dead code removed**: `processTimeChart()` was being computed every page load but never rendered.
+- **Print + CSV exports respect active filters** — the buttons rebuild their hrefs reactively from `search`/`filterLane`/`filterStatus` state. Server-side filter helper (`applyFilters`) shared between `print()` and `export()`.
+
+#### B. Phase 5.6 — Volunteer security + correctness (5 commits)
+
+User requested an audit of the volunteers module. The audit surfaced 8 critical/high findings; user said "fix all these issues" picking the security + correctness batch. Shipped as four sub-task commits:
+
+- **5.6.a — VolunteerGroup authorization** (`6e90342`). New `VolunteerGroupPolicy` mirroring VolunteerPolicy / EventPolicy / HouseholdPolicy. Reuses existing `volunteers.*` permission set so seeded `VOL_MANAGER` role keeps working without RoleSeeder edits; `manageMembers` ability maps to `volunteers.edit`. Three FormRequest `authorize()` returns swapped from hard-coded `true` → real `->can()` checks. Belt-and-suspenders `$this->authorize(...)` added to every action in `VolunteerGroupController` (was completely unprotected — same shape as the `UpdateUserRequest::authorize()` privilege escalation in AUDIT_REPORT.md §3). 7 new tests.
+
+- **5.6.b — Re-check-in data loss** (`3622c11` + `dcb2a1c` for the FK fix). Pre-fix `volunteer_check_ins` UNIQUE(event_id, volunteer_id) + service `updateOrCreate(...)` caused a re-check-in after checkout to silently overwrite the prior session's row. Migration drops the unique. Service `checkIn()` now wraps an open-row `lockForUpdate` lookup + `create()` in `DB::transaction`. `stats()` totalEvents + `Volunteer::isFirstTimer()` switched to DISTINCT event_id count. Adds `totalHours` lifetime sum. 5 new tests. **Initial migration failed on dev MySQL with error 1553** — composite unique was the FK's covering index on `event_id`. Fix commit (`dcb2a1c`) adds standalone `event_id` index BEFORE dropUnique. SQLite ignores FK-index requirements so the test suite stayed green; bug surfaced only on MySQL. **Carry-forward learning**: when dropping a composite unique on a table whose FKs depend on it for coverage, add the standalone covering index in the SAME migration.
+
+- **5.6.c — Index "First Timer" label** (`1732c18`). Pre-fix index labeled `check_ins_count === 0` (never served) as "First Timer" — semantically backwards. Switched controller from `withCount('checkIns')` (rows) to `selectSub` counting DISTINCT event_id (matches 5.6.b semantics). Three-state badge: 0 → gray "New", 1 → yellow "First Timer", 2+ → no badge. Drive-by: empty-state colspan 6→7.
+
+- **5.6.d — Admin check-in validator bounds** (`6c65448`). `StoreEventVolunteerCheckInRequest` doc-comment promised refusal of times >1h ahead and >24h before event — actual rule was just `nullable|date`. A year-off typo would have computed ~8760 fictitious hours. Now enforces `after_or_equal` (event_date − 1 day) and `before_or_equal` (now + 1h clock skew). 3 new tests.
+
+#### C. Volunteers module — open audit findings NOT addressed this session
+
+The audit surfaced more issues than 5.6.a–d covered. Remaining open:
+
+1. **PII leak via public search endpoint** — `/volunteer-checkin/search` returns volunteer phone + email to anyone hitting it (unauthenticated). Suggestion: scope to first-name + last-initial only.
+2. **Public sign-up duplicate spam** — `signUp()` creates a new Volunteer every time, no dedup on name/phone/email. Throttle is 5/IP/min. No CAPTCHA.
+3. **No identity verification on public check-in** — POST `/volunteer-checkin/checkin` requires only `volunteer_id`; whoever knows the ID can impersonate.
+4. **Cascade-delete history loss** — `volunteer_check_ins` cascades on event AND volunteer delete; deleting either wipes service history. Should be `restrictOnDelete` or soft-deletes (compliance concern if hours_served becomes a payroll/grant input).
+5. **`volunteers` table has no unique on email/phone** — DB-level dedup gap.
+6. **UI improvements**: filter by group, total-hours stat card, paginated service history, mailto/tel links, volunteer merge tool, "Add to group" quick-action on Show page. (Audit findings #18–28.)
+
+User has been asked which to take next; awaiting direction.
 
 ### Active branch
 
@@ -53,105 +95,109 @@ The session was a long arc of UX/feature work driven by the user testing the liv
 - `phase-3-complete`
 - `phase-4-complete`
 
-> Note: `phase-3-complete` and `phase-4-complete` tags point to the original commits. The 3.2 revert and nav-link additions are new commits on top of those tags. The tags are not wrong — they mark where those phases were first closed. The new commits are corrections, not re-openings.
+> Phase 5.6 is **not tagged**. Tags so far have only been applied to original audit phases; 5.6 is post-audit additive scope. Tag if/when user wants a release marker.
 
 ### Recent commits (this session, newest first)
 
-**None this session yet.** Last commit on main is `e4828a9` (Session 5 HANDOFF refresh). All Session 6 work is uncommitted in the working tree.
+```
+f38e1d5 docs(remediation): log Phase 5.6 — Volunteer security + correctness
+dcb2a1c fix(volunteers): add event_id index before dropping composite unique (MySQL FK)
+6c65448 fix(volunteers): enforce admin check-in time bounds the validator already claimed
+1732c18 fix(volunteers): index correctly distinguishes 'New' from 'First Timer'
+3622c11 fix(volunteers): preserve prior session on re-check-in (drop strict unique)
+6e90342 fix(volunteers): authorize VolunteerGroup actions behind volunteers.* perms
+59914dc feat(visit-log): pagination + print export + audit fixes
+```
 
-### Files this session created (all uncommitted)
+Pre-this-session, post-Session-6 commits already on `main`:
+```
+76ed22f fix(settings): render branding upload card via _above partial, not @push
+2234c53 fix(settings): unnest @push('scripts') from @push('settings_standalone_forms')
+fba5250 feat(settings): production-ready logo + favicon upload/replace/remove
+c7e0513 refactor(events): simplify bulk allocate — add-only, MAX shortcut, fix overflow
+ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
+4a231e0 fix(events): show bulk-allocate trigger on iPad too (md: not lg:)
+08080f2 feat(events): Phase D atomic bulk inventory allocation drawer
+85f7238 feat(events): forecast breakdown reveals via hover/click callout
+```
 
-- `app/Http/Controllers/EventVolunteerCheckInController.php` — new admin controller (store/bulkStore/checkout/bulkCheckout)
-- `app/Http/Requests/StoreEventVolunteerCheckInRequest.php`
-- `database/migrations/2026_05_01_140000_add_document_to_event_media_type_enum.php` (already applied to dev MySQL; mysqldump in `backups/foodbank-pre-event-media-document-type-20260501-135612.sql`)
-- `resources/views/event-day/picker.blade.php`
-- `tests/Feature/EventDayLandingTest.php` (8 tests)
-- `tests/Feature/EventShowStatCardsTest.php` (6 tests)
-- `tests/Feature/EventMediaUploadTest.php` (12 tests — 7 contract + 4 settings + 1 PDF)
-- `tests/Feature/EventVolunteerCheckInTest.php` (16 tests)
-- `tests/Feature/InventoryItemQuickStoreTest.php` (8 tests)
-- `tests/Feature/SettingsMultiSelectTest.php` (6 tests)
-- `tests/Feature/DashboardPaginationTest.php` (7 tests)
+### Files this session created
 
-### Files this session modified (all uncommitted)
+- `app/Http/Controllers/VisitLogController.php` (was untracked legacy, pulled in via `59914dc`)
+- `app/Policies/VolunteerGroupPolicy.php` (5.6.a)
+- `app/Models/Volunteer.php` (was untracked legacy, pulled in via 5.6.b — `isFirstTimer()` rewrite)
+- `app/Http/Requests/StoreVolunteerGroupRequest.php` (untracked legacy, pulled in via 5.6.a — `authorize()` fix)
+- `app/Http/Requests/UpdateVolunteerGroupRequest.php` (untracked legacy, pulled in via 5.6.a)
+- `app/Http/Requests/UpdateGroupMembersRequest.php` (untracked legacy, pulled in via 5.6.a)
+- `app/Http/Controllers/VolunteerGroupController.php` (untracked legacy, pulled in via 5.6.a)
+- `database/migrations/2026_05_04_120000_relax_volunteer_check_ins_unique_to_open_rows.php`
+- `resources/views/visit-log/index.blade.php` (untracked legacy, pulled in)
+- `resources/views/visit-log/print.blade.php`
+- `resources/views/volunteers/index.blade.php` (untracked legacy, pulled in via 5.6.c)
+- `tests/Feature/VolunteerGroupAuthorizationTest.php` (7 tests)
+- `tests/Feature/VolunteerReCheckInTest.php` (5 tests)
 
-Controllers: `DashboardController`, `EventController`, `EventDayController`, `EventMediaController`, `InventoryItemController`, `PurchaseOrderController`, `SettingsController`, `VisitMonitorController`, `EventVolunteerCheckInController`.
+### Files this session modified (already-tracked)
 
-Models / Resources / Services: `AppSetting` (multi_select cast), `VisitResource` (demographic counts on primary payload), `SettingService` (multi_select handling, new general.max_upload_size_mb + allowed_upload_formats definitions).
-
-Views: `dashboard/index.blade.php`, `events/show.blade.php`, `events/partials/_volunteers_tab.blade.php`, `purchase-orders/create.blade.php`, `settings/_field.blade.php`, `settings/sections/general.blade.php`, `event-day/scanner.blade.php`, `checkin/monitor.blade.php`.
-
-Routes: `routes/web.php` — added event-day landing routes, inventory quick-create, volunteer check-in / bulk-check-in / checkout / bulk-checkout.
-
-Tests: `VisitResourceTest.php` modified (1 new assertion).
+- `app/Http/Controllers/VolunteerController.php` — selectSub for events_served_count, removed obsolete `withCount('checkIns')`
+- `app/Services/VolunteerCheckInService.php` — transaction-wrapped checkIn with lockForUpdate, distinct-event stats, totalHours
+- `app/Services/EventAnalyticsService.php` — Phase 1.2.c retroactive fix + visit-log audit fixes (multi-household summing, dead code removed)
+- `app/Http/Requests/StoreEventVolunteerCheckInRequest.php` — time bounds (5.6.d)
+- `tests/Feature/EventVolunteerCheckInTest.php` — +3 bound tests (5.6.d)
+- `routes/web.php` — added `visit-log/print` route only (Phase C/D household export routes still uncommitted on the working tree)
+- `docs/remediation/LOG.md` — Phase 5.6 entries + Deviations rows
 
 ### What's next — start here on resume
 
-**Active deliberation in flight: post-Session-5 Event detail page overhaul.** Phases A and E are done (this session). **Phases B, C, D from the deliberation are still pending.**
+Two natural next-up paths; **ask the user which they want**:
 
-The user explicitly answered the open questions during deliberation. Locked decisions:
+#### Path 1 — Continue volunteer remediation (open Phase 5.7?)
 
-- **Phase B "ID" column** = household number (`#01234`)
-- **Phase C export** = CSV + Print (Excel via `phpoffice/phpspreadsheet` deferred unless explicitly asked again)
-- **Phase C forecast** = average of last 3 events
-- **Phase D bulk modal** = desktop-only is fine
+The audit surfaced security/data findings that 5.6 didn't cover. In rough priority:
 
-Ordered next-up:
+1. **PII leak on `/volunteer-checkin/search`** — make search response strip phone/email; return only first-name + last-initial. Public-facing endpoint, unauthenticated, indexable.
+2. **Cascade-delete decisions** — `volunteer_check_ins.event_id` and `.volunteer_id` both cascade on delete. Decide: `softDeletes` on `volunteers`, or `restrictOnDelete` on the FKs, or accept the destructive cascade.
+3. **DB-level unique on `volunteers.email` / `.phone`** — partial uniques (where not null) to prevent duplicates from any source.
+4. **Public sign-up dedup** — match existing volunteer by name + phone + email before creating a new row in `signUp()`.
+5. **Identity verification on public check-in** — at minimum require last-name + last-4-of-phone in addition to volunteer_id.
 
-1. **Phase B — Event report table.** Currently a placeholder "No check-ins recorded yet" row at events/show details tab. Build it with real Visit data: columns **Household # / Size / Bags / Status / Check-in Time**. **Rep-pickup row expansion**: a visit with primary + 3 represented = 4 rows (primary first, then ↳-indented represented). Bags split per household via active ruleset, "—" if no ruleset. Pagination at 10–15/page. Status column reuses existing visit-status badge classes.
-2. **Phase C — Attendee tab depth (3 sub-pieces)**:
-   - **C.1 Pre-reg stat cards**: Total / Children / Adults / Seniors. White card + outline + shadow + colored icon per metric (matches the pattern used for the Event detail stat cards in Phase A). Counts come from `event_pre_registrations` columns.
-   - **C.2 Forecast card**: average of last 3 past events as the baseline; formula like `forecast = max(current_pre_reg + projected_walk_ins, avg_last_3)` where projected_walk_ins ≈ historical walk-in % from those 3. One big number + small breakdown ("Pre-reg: X / Walk-in (est): Y").
-   - **C.3 Print + Export, enterprise-grade**: standalone printable sheet at `/events/{event}/attendees/print` (auto-print, branded header, page-break-friendly — mirror the existing PO print sheet pattern). CSV export at `/events/{event}/attendees/export.csv` streamed via `LazyCollection`, UTF-8 BOM for Excel compat.
-3. **Phase D — Inventory bulk allocation.** Wide drawer / full-screen modal with: search box, filterable scrollable table (Item / Qty + Unit / Reorder Level / Allocate qty input per row), sticky footer with running totals. Backend: new `POST /events/{event}/inventory/bulk` accepting `[{inventory_item_id, allocated_quantity}, …]`. Atomic — wrap in `DB::transaction`, call existing `InventoryService::allocateToEvent()` per item to keep the audit trail consistent. Single-add modal stays for one-off additions. Desktop-only per user — mobile gets the existing single-item path.
-4. **Live smoke-test follow-ups from prior sessions** (carry-forward — still relevant):
-   - Existing duplicate "Linda" household records — Phase 6.5 prevents new duplicates but does NOT auto-merge. One-off data fix needed if user wants them cleaned.
-   - Audit Log `permissions_changed` diff view — edit a role's permissions and verify the entry renders cleanly.
+#### Path 2 — Volunteers module UX improvements
 
-### Phase A sub-task status (this session)
+Audit findings #18–28. Lower-stakes than Path 1:
 
-- ✅ A.1 Photo upload error handler rewrite (status code branching + Accept headers + real per-status messages)
-- ✅ A.2 Live stat cards on Event details (Food Pack / Households / Volunteers / Attendees, real numbers, white-card + colored icon design)
-- ✅ A.3 Attendee delete confirmation modal (Alpine, replaces browser confirm)
-- ✅ A.4 Upload size + format settings (general group, multi_select type added end-to-end)
+- Filter volunteers index by group (currently only role + name search)
+- "Total Hours Served" stat card on Show page (groundwork already laid via `stats()['totalHours']`)
+- Paginated Service History on Show page (currently dumps every check-in)
+- `tel:` / `mailto:` links on phone + email
+- Volunteer merge tool (with the dedup gap, duplicates are inevitable)
+- "Add to group" quick-action on Volunteer Show page
 
-### Phase E sub-task status (this session)
+#### Path 3 — Sweep up Session 6 leftover
 
-- ✅ E.1 Single check-in with time picker modal + duplicate-rejection guard
-- ✅ E.2 Bulk check-in confirmation modal (atomic, lockForUpdate-snapshot, skips already-checked-in)
-- ✅ E.3 Single checkout with time picker modal + computes hours_served from in/out delta
-- ✅ E.4 Bulk checkout confirmation modal (closes every active row, computes hours per volunteer)
+Many uncommitted Session-6 features look complete and could land in their own commits: Finance module, Inventory module, Allocation Rulesets, Volunteer Groups views, Roles/Profile, Reports views, Reviews. **Ask the user before staging** — some pieces may still be experimental.
+
+#### Carried forward open questions
+
+- **Existing duplicate "Linda showing twice" household records** — Phase 6.5 prevents new duplicates, but doesn't merge existing ones. Confirm before any cleanup script touches data.
+- **Backfill scope** (Phase 2.1.f): historical exited visits — forward-only or backfill?
+- **Tab name for "Photos & Video"** — now that PDFs upload too, is the name still accurate? User hasn't decided.
+
+### Phase 5.6 sub-task status
+
+- ✅ **5.6.a** VolunteerGroup authorization (`6e90342`)
+- ✅ **5.6.b** Re-check-in preserves prior session (`3622c11` + `dcb2a1c` MySQL FK fix)
+- ✅ **5.6.c** Index "New / First Timer / Returner" badge (`1732c18`)
+- ✅ **5.6.d** Admin check-in time validator bounds (`6c65448`)
+- ⬜ **5.6.e** (potential next, not yet started) Public-search PII strip
+- ⬜ **5.6.f** Cascade-delete decisions on `volunteer_check_ins`
+- ⬜ **5.6.g** DB-level unique on volunteers.email + phone (partial)
 
 ### Drive-by fixes this session
 
-- **Photo upload 5xx bug** — `$file->move()` invalidates the UploadedFile, so subsequent `getSize()` throws. Fix: capture metadata BEFORE move. Pinned by 7 tests.
-- **Dashboard `MONTH()` SQL** — was MySQL-only, broke sqlite test runs. Switched to PHP-side grouping via Carbon. Bounded by ~12 months of completed visits, trivial in memory.
-- **Settings `in:` rule comma bug** — `implode(',', $options)` mis-split values containing commas (e.g. `date_format` value `'M j, Y'` → `'M j'` + `' Y'`, neither matches the submitted value). Pre-existing latent bug uncovered by the multi_select test setup. Fixed by switching to `Rule::in($options)` (takes an array, no comma escaping needed).
-
-### Phase 5 sub-task status (Session 5, retained for reference)
-
-- ✅ **5.1** Bag composition on loader card (`36fe926`)
-- ✅ **5.2** Pre-reg reconciliation — dismiss + register-as-household (`0a45a52`)
-- ✅ **5.3.a** Volunteer auto-checkout artisan command (`39035c8`)
-- ✅ **5.3.b** Public "Check Out" button (`39035c8`)
-- ✅ **5.3.c** `hours_served` column + service + search results (`39035c8`)
-- ⚪ **5.4** Zero-stock UX modal — already closed by Phase 2.1.e
-- ✅ **5.5** A11y pass on Alpine modals (`36fe926`)
-
-### Phase 6 sub-task status
-
-- ✅ **6.3** Cycle prevention on representative chains (`d33dbb8`)
-- ✅ **6.5.a** Block same-event duplicate pre-registrations (`bef618e`)
-- ✅ **6.5.b** Never create duplicate households via registerAttendee (`bef618e`)
-- ✅ **6.5.c** Fuzzy duplicate detection on household create (`7508f29`)
-- ✅ **6.7** Cached events_attended_count column (`584bc2e`)
-- ✅ **6.10** Granular role-permission audit + diff view (`c15bfd8`)
-- ✅ **6.8** VisitResource — API Resource pattern (`3697ffe`)
-- ✅ **6.6** Finance ↔ Inventory link via purchase orders (`2664f5d`)
-- ⚪ **6.1** WebSockets — declined (no Node, polling fine for v1)
-- ⚪ **6.2** First-class lanes table — declined (deferred)
-- ⚪ **6.4** CAPTCHA on auth-code form — declined (no abuse problem)
-- ⚪ **6.9** Volunteer signup verification — declined
+- **Visit-log Phase 1.2.c retroactive** — `EventAnalyticsService` was reading live `households.*` while `ReportAnalyticsService` correctly used the `vh.*` pivot. Same module-name shape Phase 1.2.c targeted. Folded into the visit-log feature commit `59914dc`.
+- **Visit-log multi-household reconciliation** — table rows now sum people across all households on a visit, primary household name gets a "+N more" suffix when applicable.
+- **Visit-log dead code** — `processTimeChart()` removed (computed every page load, never rendered).
+- **MySQL FK + dropUnique gotcha** — captured as a Deviations row in LOG.md.
 
 ### Key learnings (carry forward)
 
@@ -161,55 +207,55 @@ Ordered next-up:
 - **`updating` event for Auditable** — `getOriginal()` still has pre-change values. After `updated`, `getOriginal()` is stale. Risk: orphan audit rows on rollback. Documented in trait.
 - **Bulk `Visit::where()->update()` in VisitReorderService bypasses Auditable** — intentional (not auditing position/lane). Comment added to service.
 - **ADR-003**: `checkin_overrides` stays as its own table, not absorbed into `audit_logs`.
-- **Stage explicitly** — the previous agent left large uncommitted changes; sweeping them in with `git add .` caused a messy commit. Always `git add <specific files>` only.
+- **Stage explicitly** — never `git add .` or `git add -A`. Multiple sessions have demonstrated unrelated work bleeding into commits when path-staging is skipped.
 
-#### Session 6 additions
+#### Session 6 additions (still relevant)
 
-- **`UploadedFile` is single-use after `move()`** — calling `getSize()` / `getMimeType()` / `getClientOriginalName()` after `move()` triggers `stat()` on the now-gone temp path and throws `RuntimeException`. Always capture metadata BEFORE moving. Pinned by `EventMediaUploadTest`.
-- **Multi_select setting type, end-to-end** — when adding new types, four files need updates in lockstep: `AppSetting::getCastedValueAttribute` (cast), `SettingService::updateGroup` (persistence), `SettingsController::update` (validation), `_field.blade.php` (render). Skipping any one of them silently breaks one direction of the round-trip.
-- **`in:` validation rule + comma in option value** — `'in:' . implode(',', $options)` mis-splits when option values contain commas (e.g. `'M j, Y'`). Use `Rule::in($options)` (takes an array) for any option list that might contain commas. This was a latent pre-existing bug surfaced by adding a multi_select test.
-- **Tablet bookmark flow for event-day pages** — bookmarked URL is `/{role}` (the picker), NEVER auto-skip even with one current event, logout returns to `/{role}`. Captured in [feedback_event_day_bookmark_flow.md](C:\Users\Tobby\.claude\projects\c--xampp-htdocs-Foodbank\memory\feedback_event_day_bookmark_flow.md).
-- **Alpine `x-data` on innerHTML-injected nodes** — Alpine 3's MutationObserver picks up `x-data`/`x-show`/`@click` on dynamically inserted markup, so vanilla-JS card builders (scanner, monitor) can embed Alpine widgets like the family-tag chip without re-initializing.
+- **`UploadedFile` is single-use after `move()`** — calling `getSize()` / `getMimeType()` / `getClientOriginalName()` after `move()` triggers `stat()` on the now-gone temp path and throws `RuntimeException`. Always capture metadata BEFORE moving.
+- **Multi_select setting type, end-to-end** — adding a new setting type requires lockstep updates to `AppSetting::getCastedValueAttribute` (cast), `SettingService::updateGroup` (persistence), `SettingsController::update` (validation), `_field.blade.php` (render). Skipping any one silently breaks one direction of the round-trip.
+- **`in:` validation rule + comma in option value** — `'in:' . implode(',', $options)` mis-splits when option values contain commas. Use `Rule::in($options)` (takes an array).
+- **Tablet bookmark flow for event-day pages** — bookmarked URL is `/{role}` (the picker), NEVER auto-skip even with one current event, logout returns to `/{role}`. See [feedback_event_day_bookmark_flow.md](C:\Users\Tobby\.claude\projects\c--xampp-htdocs-Foodbank\memory\feedback_event_day_bookmark_flow.md).
 - **PHP-side aggregation > MySQL-only SQL** for small bounded sets — `MONTH()`, `TIMESTAMPDIFF`, `YEARWEEK` etc. break sqlite tests. For sub-100-row groupings, `->get()->groupBy(fn ($r) => $r->created_at->month)` is portable and trivial in memory.
-- **Tailwind prebuilt CSS quirks specific to this build**: `animate-ping` is NOT in the bundle — define a custom keyframe via `@push('styles')`. `bg-yellow-*` is NOT in the bundle — use `bg-amber-*` if you want a warm yellow. `bg-blue-500/green-500/amber-500` ARE compiled (used elsewhere). Brand shades 50/100/200/400/500/600/700 only (no 300 or 800/900). Navy 50/100/600/700/800/900 only (no 200–500).
+- **Tailwind prebuilt CSS quirks**: `animate-ping` is NOT in the bundle — define a custom keyframe via `@push('styles')`. `bg-yellow-*` is NOT in the bundle — use `bg-amber-*`. Brand shades 50/100/200/400/500/600/700 only (no 300 or 800/900). Navy 50/100/600/700/800/900 only (no 200–500).
+
+#### Session 7 additions (NEW)
+
+- **MySQL error 1553 on dropUnique** — when a composite unique index is the only one covering a foreign-key column (because the FK column was the leading column), MySQL refuses to drop it. SQLite doesn't enforce FK-index coverage, so test suites can stay green while real-DB migrations fail. **Always add a standalone index on the FK column BEFORE dropping the composite, in the SAME migration.** Captured in LOG.md Deviations.
+- **Snapshot-vs-live drift is a recurring pattern** — Phase 1.2.c fixed it for `ReportAnalyticsService`. Visit-log session found `EventAnalyticsService` had been missed in the original sweep. Phase 5.6.b found a third instance in `Volunteer::isFirstTimer()` and `VolunteerCheckInService::stats()` (count vs distinct count after the unique-drop). When auditing a new module, **specifically grep for live reads of denormalizable fields** (`->household_size`, `->checkIns()->count()`, etc.) and ask whether they should snapshot.
+- **Pivot reads need `withPivot()` declared on BOTH sides** of a `belongsToMany` — already documented from 1.2.a but worth re-stating: `Volunteer::groups()` and `VolunteerGroup::volunteers()` both need `withPivot('joined_at')` for the join-date to be readable on either side.
+- **Selectsub + select() ordering** — `selectSub()` calls `addSelect()` (additive), but `select(['col'])` REPLACES all selects including any prior `withCount` and `selectSub` columns. If using both, put the bare `select('table.*')` FIRST, then `withCount` / `selectSub`. Tripped me on the volunteers index `events_served_count` change.
+- **Belt-and-suspenders authorize** — VolunteerController and VolunteerGroupController both call `$this->authorize(...)` AND have FormRequest `authorize()` returning the same policy ability. Convention in this project. New controllers should match.
 
 ### Environment state
 
 - PHP 8.2.12 via XAMPP, `c:\xampp\htdocs\Foodbank`.
-- MySQL dev DB. **All Phase 1–6 migrations applied + Session 6 add-document-to-event-media-type-enum applied.** mysqldump backups for each schema-changing phase + the Session 6 enum migration live in `backups/` (gitignored).
-- Tests use sqlite `:memory:`. **212 tests passing** on the working tree (was 148 at end of Session 5; +64 across 10 new test files).
-- Node/npm not installed — prebuilt CSS constraint applies; safelisted dynamic colour classes live in `tailwind.config.js`. See "Session 6 additions" under Key Learnings for the specific palette quirks.
-- Windows scheduled task runs `php artisan schedule:run` every minute.
+- MySQL dev DB. **All Phase 1–6 migrations applied + Session 6 add-document-to-event-media-type-enum applied + Session 7 relax-volunteer-check-ins-unique-to-open-rows applied.** mysqldump backups for each schema-changing remediation phase live in `backups/` (gitignored). **No backup taken for the 5.6.b migration** — reversible via working `down()`, and the failed first attempt never committed any DDL. Flagged in LOG.md Deviations.
+- Tests use sqlite `:memory:`. **302 tests passing** (was 287 pre-session, +15 across `VolunteerGroupAuthorizationTest`, `VolunteerReCheckInTest`, and 3 added tests in `EventVolunteerCheckInTest`).
+- Node/npm not installed — prebuilt CSS constraint applies.
+- Windows scheduled task `FoodBank Schedule Runner` runs `php artisan schedule:run` every minute (LogonType=S4U, hidden).
 - Git identity: `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"` (the global git config has no user; pass `-c` on every commit).
 - mysqldump path on this host: `c:/xampp/mysql/bin/mysqldump.exe`.
 
 ### Open questions for the user
 
-#### Carried forward from earlier sessions
+#### From Session 7 (this session)
 
-- **Existing duplicate household records** (the "Linda showing twice" data) — Phase 6.5 prevents new duplicates, but doesn't merge existing ones. Confirm before any cleanup script touches data.
-- **Backfill scope** (Phase 2.1.f): historical exited visits — forward-only or backfill?
+- **Continue volunteer remediation as Phase 5.7+?** Or treat 5.6 as the close and shelve the remaining audit findings? My recommendation: bundle the security-tier ones (PII leak, cascade-delete) as Phase 5.7 and treat the UX ones as separate product polish.
+- **Phase 5.6 tag?** No tag exists. Decide whether to tag `phase-5.6-complete` or wait for a fuller phase-5.x close.
 
-#### Session 6 — answered, locked in
-
-(These are the open questions from the Phase B/C/D deliberation. The user already answered; capturing here so the next agent doesn't re-open them.)
+#### Carried forward from Session 6 — answered, locked in
 
 - B "ID" column → **household number** (`#01234`)
-- C export → **CSV + Print** for v1; Excel via `phpoffice/phpspreadsheet` deferred unless explicitly asked
+- C export → **CSV + Print** for v1; Excel via `phpoffice/phpspreadsheet` deferred
 - C forecast baseline → **average of last 3 events**
-- D mobile UX → **desktop-only bulk modal is fine**; mobile keeps existing single-add modal
+- D mobile UX → **desktop-only bulk modal is fine**
 
-#### Session 6 — open / not yet decided
+#### Carried forward — still open
 
-- **Commit strategy for Session 6 work** — entire session is uncommitted (~16 modified, 10 created). Squash into one big commit, or split into ~9 commits per sub-feature? Recommendation: split, because each sub-feature has its own test file and could land independently. Ask the user before committing.
-- **Tab name for Photos & Video** — now that PDFs upload too, the tab name "Photos & Video" is technically inaccurate. Leaving alone for now; ask if user wants "Media" or "Photos, Video & Documents".
-
-### Purchase Orders — live state notes (post-6.6 polish)
-
-- **Item picker is client-side filter** (commit `038ed4f`). All active items embedded in the page once and filtered in-browser. Server-side typeahead was attempted in `6e85c79` and reverted — for catalogs under ~500 items the client-side approach is faster (no network round-trip per keystroke).
-- **Print sheet** at `/purchase-orders/{po}/print` is a **standalone HTML doc** (no app layout), auto-fires `window.print()` 250ms after load. Uses org branding settings (logo, name, contact).
-- **Receive workflow is atomic.** Inside one DB transaction: N×`InventoryMovement(stock_in)` + 1×`FinanceTransaction(expense)`, with FK back-links on both sides. If anything throws, both sides roll back and the PO stays in `draft`. Pinned by `test_failed_receive_rolls_back_atomically` using a deliberate FK violation.
-- **Non-inventory finance transactions** (staff payments, rent) still use `FinanceTransaction` directly — POs are an additive opt-in path, not a replacement.
+- **Existing duplicate household records** ("Linda showing twice") — Phase 6.5 prevents new dups, doesn't merge existing ones.
+- **Backfill scope** (Phase 2.1.f): historical exited visits — forward-only or backfill?
+- **Tab name for "Photos & Video"** — PDFs upload too now; "Media" or "Photos, Video & Documents"?
+- **Session 6 leftover commit strategy** — the 144 working-tree entries from the post-Session-6 product work are still uncommitted. Squash, split, or selectively land?
 
 ### ADR index
 
@@ -222,17 +268,17 @@ Ordered next-up:
 - **Tailwind prebuilt CSS is frozen.** Check class presence before using a new utility class.
 - **Settings section blades are hardcoded.** Edit blade AND definitions array when adding a key.
 - **JS fetch paths need `appUrl()`** — raw paths break subdirectory deployment.
-- **IDE Blade/JS false positives** — TypeScript LSP misreads Blade directives in `<script>` blocks. Not real errors.
+- **IDE Blade/JS false positives** — TypeScript LSP misreads Blade directives in `<script>` blocks. Not real errors. Same for `{{ }}` interpolations inside Tailwind class strings — pre-existing noise that doesn't reflect compile errors.
 
-### Coverage gaps (carry forward)
+### Coverage gaps (carry forward + Session 7 additions)
 
 - HTTP feature tests for event-day routes (markExited, EventDayController::reorder) — Phase 5.
 - Monitor route is `auth`-only (no `permission:` middleware). Phase 5 should add `permission:checkin.view` (or similar).
 - MySQL-only SQL in ReportAnalyticsService not covered by sqlite tests.
 - Override modal + insufficient-stock modal — no browser-level tests (Phase 5 Dusk).
 - PII retention on `checkin_overrides.reason` and `audit_logs` — Phase 5/6 retention policy.
-- Substitute option on insufficient-stock modal — "coming soon."
-- `audit_logs` rollback orphan risk — accepted, documented in Auditable trait.
+- **NEW (Session 7)**: SQLite test suite cannot catch MySQL FK-index dependency issues like the 5.6.b error 1553. Mitigation: when a migration manipulates indexes on tables with foreign keys, manually verify on dev MySQL before declaring done.
+- **NEW (Session 7)**: VolunteerCheckInService and EventAnalyticsService aren't covered by integration tests that confirm the live MySQL DB applies the Phase 1.2.c snapshot semantics — only sqlite test paths.
 
 ### Working rules (carry forward)
 
@@ -242,5 +288,5 @@ Ordered next-up:
 - Commit messages reference `AUDIT_REPORT.md` Part/Phase OR (post-remediation) the feature area: `feat(events): …`, `fix(uploads): …`, etc.
 - Stage explicitly — never `git add .` or `git add -A`.
 - User discusses and approves each phase/sub-task before work begins. **For multi-piece feature work**, lay out a phase plan and get explicit answers on open questions before starting.
-- **Production live grade architecture** — user explicit instruction Session 6. No hacks, full migrations, FormRequests for new endpoints, HTTP feature tests for new actions, defensive guards (clamps, fallbacks, transactions where needed).
-- **Bug fix workflow this session**: when the user reports an error, read `storage/logs/laravel.log` first to get the actual exception + stack trace before guessing. Saved a lot of time on the upload bug.
+- **Production live grade architecture** — no hacks, full migrations, FormRequests for new endpoints, HTTP feature tests for new actions, defensive guards (clamps, fallbacks, transactions where needed).
+- **Bug fix workflow**: when the user reports an error, read `storage/logs/laravel.log` and re-run the failing command to capture the actual exception + stack trace before guessing.
