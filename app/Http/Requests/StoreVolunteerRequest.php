@@ -19,8 +19,10 @@ class StoreVolunteerRequest extends FormRequest
         return [
             'first_name' => ['required', 'string', 'max:100'],
             'last_name'  => ['required', 'string', 'max:100'],
-            'phone'      => ['nullable', 'string', 'max:20'],
-            'email'      => ['nullable', 'email', 'max:255'],
+            // Phase 5.6.g: phone + email are unique when present. NULLs
+            // coexist freely (matching the DB-level UNIQUE behavior).
+            'phone'      => ['nullable', 'string', 'max:20', 'unique:volunteers,phone'],
+            'email'      => ['nullable', 'email', 'max:255', 'unique:volunteers,email'],
             'role'       => ['nullable', 'string', Rule::in(array_keys(Volunteer::ROLES))],
         ];
     }
@@ -30,6 +32,8 @@ class StoreVolunteerRequest extends FormRequest
         return [
             'first_name.required' => 'First name is required.',
             'last_name.required'  => 'Last name is required.',
+            'phone.unique'        => 'A volunteer with this phone number already exists.',
+            'email.unique'        => 'A volunteer with this email already exists.',
             'role.in'             => 'Selected role is not valid.',
         ];
     }
