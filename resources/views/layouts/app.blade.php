@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name', 'FoodBank') }} &mdash; @yield('title', 'Dashboard')</title>
-    @php $faviconPath = \App\Services\SettingService::get('branding.favicon_path', ''); @endphp
-    @if($faviconPath)
-        <link rel="icon" href="{{ \Illuminate\Support\Facades\Storage::url($faviconPath) }}">
+    @php $faviconDataUri = \App\Services\SettingService::brandingFaviconDataUri(); @endphp
+    @if($faviconDataUri)
+        <link rel="icon" href="{{ $faviconDataUri }}">
     @endif
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -55,9 +55,9 @@
 
     {{-- Logo ──────────────────────────────────────────────────────── --}}
     <div class="flex items-center gap-3 px-5 py-5 border-b border-gray-100 flex-shrink-0">
-        @php $logoPath = \App\Services\SettingService::get('branding.logo_path', ''); @endphp
-        @if($logoPath)
-            <img src="{{ \Illuminate\Support\Facades\Storage::url($logoPath) }}"
+        @php $logoDataUri = \App\Services\SettingService::brandingLogoDataUri(); @endphp
+        @if($logoDataUri)
+            <img src="{{ $logoDataUri }}"
                  alt="{{ config('app.name') }}"
                  class="h-9 w-auto max-w-[140px] object-contain flex-shrink-0">
         @else
