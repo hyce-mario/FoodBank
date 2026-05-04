@@ -7,10 +7,17 @@ use App\Http\Requests\UpdateHouseholdRequest;
 use App\Models\Household;
 use App\Services\HouseholdService;
 use App\Services\SettingService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class HouseholdController extends Controller
 {
@@ -26,10 +33,21 @@ class HouseholdController extends Controller
             ? (int) $request->get('per_page', $defaultPerPage)
             : $defaultPerPage;
 
-        // Phase 6.7: events_attended_count is now a cached column on
-        // households (maintained by EventCheckInService + Visit observer).
-        // Only first_event_date still needs a correlated subquery — caching
-        // it would require recomputation every time a Visit is deleted.
+        $households = $this->filteredHouseholdQuery($request)->paginate($perPage)->withQueryString();
+
+        return view('households.index', compact('households'));
+    }
+
+    /**
+     * Build the filtered + sorted Household query used by both the paginated
+     * directory view and the export endpoints (Phase C). Pulled out so a
+     * future change to filter semantics ripples to all four call sites.
+     *
+     * Includes the `first_event_date` correlated subquery (Phase 6.7 design:
+     * everything else is on the cached events_attended_count column).
+     */
+    private function filteredHouseholdQuery(Request $request)
+    {
         $firstEventDateSub = DB::table('visit_households as vh2')
             ->join('visits as v2', 'vh2.visit_id', '=', 'v2.id')
             ->join('events as e2', 'v2.event_id', '=', 'e2.id')
@@ -44,15 +62,6 @@ class HouseholdController extends Controller
             $query->search($search);
         }
 
-        if ($zip = $request->get('zip')) {
-            $query->where('zip', $zip);
-        }
-
-        if ($size = $request->get('size')) {
-            $query->where('household_size', $size);
-        }
-
-        // Phase 6.7: filter on the cached column (no subquery)
         $attendance = $request->get('attendance');
         if ($attendance === 'first_timer') {
             $query->where('events_attended_count', 1);
@@ -67,12 +76,173 @@ class HouseholdController extends Controller
 
         $query->orderBy($sort, $direction);
 
-        $households = $query->paginate($perPage)->withQueryString();
+        return $query;
+    }
 
-        $zipCodes = Household::whereNotNull('zip')->distinct()->orderBy('zip')->pluck('zip');
-        $sizes    = Household::distinct()->orderBy('household_size')->pluck('household_size');
+    /**
+     * Build the human-readable applied-filters summary shown in the print/PDF
+     * header so the export is self-documenting.
+     */
+    private function exportFilterSummary(Request $request): array
+    {
+        $applied = [];
+        if ($s = $request->get('search'))     $applied[] = "Search: \"{$s}\"";
+        if (($a = $request->get('attendance')) === 'first_timer') $applied[] = "First-timers only";
+        elseif ($a === 'returning')                               $applied[] = "Returning only";
+        return $applied;
+    }
 
-        return view('households.index', compact('households', 'zipCodes', 'sizes'));
+    /**
+     * Build the branding payload (logo + org name) used by every export.
+     * Logo is delivered as a base64 data URI via SettingService — same
+     * helper the live sidebar uses, so dev / prod render identically.
+     */
+    private function exportBranding(): array
+    {
+        return [
+            'logo_src' => SettingService::brandingLogoDataUri(),
+            'app_name' => (string) SettingService::get('general.app_name', config('app.name')),
+        ];
+    }
+
+    // ─── Exports (Phase C) ────────────────────────────────────────────────────
+
+    /**
+     * Print-friendly HTML view of the full filtered household list.
+     * Opens in a new tab; the template auto-triggers window.print().
+     */
+    public function exportPrint(Request $request): View
+    {
+        $this->authorize('viewAny', Household::class);
+
+        $households       = $this->filteredHouseholdQuery($request)->get();
+        $appliedFilters   = $this->exportFilterSummary($request);
+        $branding         = $this->exportBranding();
+        $autoPrint        = true;
+
+        return view('households.exports.print', compact('households', 'appliedFilters', 'branding', 'autoPrint'));
+    }
+
+    /**
+     * PDF export of the full filtered household list. Renders the same Blade
+     * template the print view uses, in landscape A4 for table width.
+     */
+    public function exportPdf(Request $request): Response
+    {
+        $this->authorize('viewAny', Household::class);
+
+        $households     = $this->filteredHouseholdQuery($request)->get();
+        $appliedFilters = $this->exportFilterSummary($request);
+        $branding       = $this->exportBranding();
+
+        $filename = 'households-' . now()->format('Y-m-d-His') . '.pdf';
+        return $this->renderPdfWithLogoFallback(
+            'households.exports.pdf',
+            compact('households', 'appliedFilters', 'branding'),
+            'a4',
+            'landscape',
+            $filename,
+        );
+    }
+
+    /**
+     * Render a Blade view to PDF, retrying without the embedded logo if
+     * dompdf's image pipeline trips on it. Some Windows + Apache + dompdf
+     * combinations throw "PHP GD extension is required" intermittently
+     * even when GD is fully loaded — likely a temp-file write race in
+     * dompdf's Image\Cache. The fallback keeps the export functional and
+     * logs the underlying cause so we can diagnose without 500ing the user.
+     */
+    private function renderPdfWithLogoFallback(string $view, array $data, string $size, string $orientation, string $filename): Response
+    {
+        try {
+            $pdf = Pdf::loadView($view, $data)->setPaper($size, $orientation);
+            return $pdf->download($filename);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning(
+                'dompdf failed with logo embedded; retrying without logo.',
+                ['view' => $view, 'message' => $e->getMessage(), 'at' => $e->getFile() . ':' . $e->getLine()],
+            );
+
+            // Strip the logo from the branding payload and retry.
+            if (isset($data['branding']) && is_array($data['branding'])) {
+                $data['branding']['logo_src'] = null;
+            }
+            $pdf = Pdf::loadView($view, $data)->setPaper($size, $orientation);
+            return $pdf->download($filename);
+        }
+    }
+
+    /**
+     * XLSX export of the full filtered household list, with a styled header
+     * row, frozen top row, auto-sized columns, and a leading metadata row
+     * carrying the applied filters so the spreadsheet is self-documenting.
+     */
+    public function exportXlsx(Request $request): StreamedResponse
+    {
+        $this->authorize('viewAny', Household::class);
+
+        $households     = $this->filteredHouseholdQuery($request)->get();
+        $appliedFilters = $this->exportFilterSummary($request);
+        $branding       = $this->exportBranding();
+
+        $spreadsheet = new Spreadsheet();
+        $sheet       = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Households');
+
+        // Metadata band (A1:H3) ----------------------------------------------
+        $sheet->setCellValue('A1', $branding['app_name'] . ' — Households Report');
+        $sheet->mergeCells('A1:H1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+
+        $sheet->setCellValue('A2', 'Generated ' . now()->format('M j, Y g:i A') . ($appliedFilters ? ' · ' . implode(' · ', $appliedFilters) : ''));
+        $sheet->mergeCells('A2:H2');
+        $sheet->getStyle('A2')->getFont()->setItalic(true)->setSize(10);
+
+        // Header row (row 4) -------------------------------------------------
+        $headers = ['ID', 'Household', 'Email', 'Phone', 'Location', 'Zip', 'Size', 'Events Attended'];
+        foreach ($headers as $i => $label) {
+            $col = chr(ord('A') + $i);
+            $sheet->setCellValue($col . '4', $label);
+        }
+        $sheet->getStyle('A4:H4')->getFont()->setBold(true);
+        $sheet->getStyle('A4:H4')->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('1B2B4B');
+        $sheet->getStyle('A4:H4')->getFont()->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A4:H4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        $sheet->freezePane('A5');
+
+        // Data rows ----------------------------------------------------------
+        $row = 5;
+        foreach ($households as $h) {
+            $sheet->setCellValueExplicit('A' . $row, $h->household_number, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValue('B' . $row, $h->full_name);
+            $sheet->setCellValue('C' . $row, $h->email ?? '');
+            $sheet->setCellValue('D' . $row, $h->phone ?? '');
+            $sheet->setCellValue('E' . $row, $h->location ?: '');
+            $sheet->setCellValueExplicit('F' . $row, $h->zip ?? '', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValue('G' . $row, $h->household_size);
+            $sheet->setCellValue('H' . $row, (int) $h->events_attended_count);
+            $row++;
+        }
+
+        foreach (range('A', 'H') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $filename = 'households-' . now()->format('Y-m-d-His') . '.xlsx';
+        $writer   = new XlsxWriter($spreadsheet);
+
+        return response()->streamDownload(
+            fn () => $writer->save('php://output'),
+            $filename,
+            [
+                'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Cache-Control'       => 'max-age=0',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ],
+        );
     }
 
     // ─── Create ───────────────────────────────────────────────────────────────
@@ -112,7 +282,7 @@ class HouseholdController extends Controller
 
     // ─── Show ─────────────────────────────────────────────────────────────────
 
-    public function show(Household $household): View
+    public function show(Request $request, Household $household): View
     {
         $this->authorize('view', $household);
         $household->load(['representative', 'representedHouseholds']);
@@ -123,7 +293,199 @@ class HouseholdController extends Controller
             ->orderBy('first_name')
             ->get(['id', 'first_name', 'last_name', 'household_number']);
 
-        return view('households.show', compact('household', 'attachCandidates'));
+        $perPage = in_array((int) $request->get('per_page', 10), [10, 25, 50])
+            ? (int) $request->get('per_page', 10)
+            : 10;
+
+        $eventHistory = $this->eventHistoryQuery($household)->paginate($perPage)->withQueryString();
+        $historyStats = $this->historyStats($household);
+
+        return view('households.show', compact('household', 'attachCandidates', 'eventHistory', 'historyStats'));
+    }
+
+    /**
+     * Shared event-history query for the show page (paginated) and per-household
+     * exports (Phase D). Pulls visits this household appeared on, eager-loading
+     * the event + ruleset (for bag calculation) and sibling households (for the
+     * "picked up by" label on rep pickups). Newest visit first.
+     */
+    private function eventHistoryQuery(Household $household)
+    {
+        return $household->visits()
+            ->with([
+                'event.ruleset',
+                'households' => fn ($q) => $q->select('households.id', 'first_name', 'last_name', 'household_number'),
+            ])
+            ->orderByDesc('visits.start_time');
+    }
+
+    /**
+     * Aggregate stats for the household detail page stat cards.
+     *
+     * Counts only completed visits (visit_status = 'exited') because mid-flow
+     * visits are part of an event still in progress; surfacing them as
+     * "Total Visits" / "Total Bags Received" would double-count a household
+     * that's currently on-site. Last Served uses the same filter.
+     *
+     * Bag totals use the event ruleset's getBagsFor() against the pivot
+     * snapshot — matching how DistributionPostingService and the live monitor
+     * compute per-household allocation. This keeps the stat consistent with
+     * what the household actually received at the time of each visit, even if
+     * their household_size has been edited since.
+     */
+    private function historyStats(Household $household): array
+    {
+        $exitedVisits = $household->visits()
+            ->with('event.ruleset')
+            ->where('visits.visit_status', 'exited')
+            ->get();
+
+        $totalBags = 0;
+        $lastDate  = null;
+        foreach ($exitedVisits as $visit) {
+            $ruleset = $visit->event?->ruleset;
+            if ($ruleset) {
+                $snapshotSize = (int) ($visit->pivot->household_size ?? $household->household_size);
+                $totalBags   += (int) $ruleset->getBagsFor($snapshotSize);
+            }
+
+            $eventDate = $visit->event?->date;
+            if ($eventDate && (! $lastDate || $eventDate->greaterThan($lastDate))) {
+                $lastDate = $eventDate;
+            }
+        }
+
+        return [
+            'total_visits'        => $exitedVisits->count(),
+            'total_bags_received' => $totalBags,
+            'last_served_at'      => $lastDate,
+        ];
+    }
+
+    /**
+     * Build presentation rows (event, date, location, bags, status, picked-up-by)
+     * from the event history for the per-household exports. Mirrors what the
+     * show-page table renders so the export matches what the user sees.
+     */
+    private function eventHistoryRows(Household $household): \Illuminate\Support\Collection
+    {
+        return $this->eventHistoryQuery($household)->get()->map(function ($visit) use ($household) {
+            $event        = $visit->event;
+            $ruleset      = $event?->ruleset;
+            $snapshotSize = (int) ($visit->pivot->household_size ?? $household->household_size);
+            $bags         = $ruleset ? (int) $ruleset->getBagsFor($snapshotSize) : 0;
+            $primary      = $visit->households->first();
+            $pickedUpBy   = ($primary && $primary->id !== $household->id) ? $primary : null;
+
+            return (object) [
+                'event_name'    => $event?->name ?? 'Event removed',
+                'event_date'    => $event?->date,
+                'event_location'=> $event?->location ?: '—',
+                'bags'          => $bags,
+                'status_label'  => $visit->visit_status === 'exited' ? 'Served' : 'In Progress',
+                'picked_up_by'  => $pickedUpBy?->full_name,
+            ];
+        });
+    }
+
+    // ─── Per-household event report exports (Phase D) ────────────────────────
+
+    public function eventReportPrint(Household $household): View
+    {
+        $this->authorize('view', $household);
+        $rows      = $this->eventHistoryRows($household);
+        $stats     = $this->historyStats($household);
+        $branding  = $this->exportBranding();
+        $autoPrint = true;
+
+        return view('households.exports.event-report-print', compact('household', 'rows', 'stats', 'branding', 'autoPrint'));
+    }
+
+    public function eventReportPdf(Household $household): Response
+    {
+        $this->authorize('view', $household);
+        $rows     = $this->eventHistoryRows($household);
+        $stats    = $this->historyStats($household);
+        $branding = $this->exportBranding();
+
+        $filename = "event-report-{$household->household_number}-" . now()->format('Y-m-d-His') . '.pdf';
+        return $this->renderPdfWithLogoFallback(
+            'households.exports.event-report-pdf',
+            compact('household', 'rows', 'stats', 'branding'),
+            'a4',
+            'portrait',
+            $filename,
+        );
+    }
+
+    public function eventReportXlsx(Household $household): StreamedResponse
+    {
+        $this->authorize('view', $household);
+        $rows     = $this->eventHistoryRows($household);
+        $stats    = $this->historyStats($household);
+        $branding = $this->exportBranding();
+
+        $spreadsheet = new Spreadsheet();
+        $sheet       = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Event Report');
+
+        // Metadata band ------------------------------------------------------
+        $sheet->setCellValue('A1', $branding['app_name'] . ' — Event Report');
+        $sheet->mergeCells('A1:F1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+
+        $sheet->setCellValue('A2', $household->full_name . ' · #' . $household->household_number);
+        $sheet->mergeCells('A2:F2');
+        $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(11);
+
+        $sheet->setCellValue('A3', 'Generated ' . now()->format('M j, Y g:i A')
+            . ' · Total visits: ' . $stats['total_visits']
+            . ' · Total bags received: ' . $stats['total_bags_received']
+            . ' · Last served: ' . ($stats['last_served_at']?->format('M j, Y') ?? '—'));
+        $sheet->mergeCells('A3:F3');
+        $sheet->getStyle('A3')->getFont()->setItalic(true)->setSize(10);
+
+        // Header row ---------------------------------------------------------
+        $headers = ['Event', 'Date', 'Location', 'Bags Received', 'Status', 'Picked Up By'];
+        foreach ($headers as $i => $label) {
+            $col = chr(ord('A') + $i);
+            $sheet->setCellValue($col . '5', $label);
+        }
+        $sheet->getStyle('A5:F5')->getFont()->setBold(true);
+        $sheet->getStyle('A5:F5')->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('1B2B4B');
+        $sheet->getStyle('A5:F5')->getFont()->getColor()->setRGB('FFFFFF');
+        $sheet->freezePane('A6');
+
+        // Data rows ----------------------------------------------------------
+        $row = 6;
+        foreach ($rows as $r) {
+            $sheet->setCellValue('A' . $row, $r->event_name);
+            $sheet->setCellValue('B' . $row, $r->event_date?->format('Y-m-d') ?? '');
+            $sheet->setCellValue('C' . $row, $r->event_location);
+            $sheet->setCellValue('D' . $row, $r->bags);
+            $sheet->setCellValue('E' . $row, $r->status_label);
+            $sheet->setCellValue('F' . $row, $r->picked_up_by ?? '');
+            $row++;
+        }
+
+        foreach (range('A', 'F') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $filename = "event-report-{$household->household_number}-" . now()->format('Y-m-d-His') . '.xlsx';
+        $writer   = new XlsxWriter($spreadsheet);
+
+        return response()->streamDownload(
+            fn () => $writer->save('php://output'),
+            $filename,
+            [
+                'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Cache-Control'       => 'max-age=0',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ],
+        );
     }
 
     // ─── Edit ─────────────────────────────────────────────────────────────────

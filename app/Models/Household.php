@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Household extends Model
 {
@@ -76,13 +77,21 @@ class Household extends Model
 
     public function scopeSearch(Builder $query, string $term): Builder
     {
-        return $query->where(function (Builder $q) use ($term) {
+        // Driver-aware concat: MySQL uses CONCAT(), SQLite uses ||. The
+        // sqlite branch keeps the in-memory test DB happy without changing
+        // production semantics.
+        $concat = DB::connection()->getDriverName() === 'sqlite'
+            ? "first_name || ' ' || last_name"
+            : "CONCAT(first_name, ' ', last_name)";
+
+        return $query->where(function (Builder $q) use ($term, $concat) {
             $q->where('first_name', 'like', "%{$term}%")
               ->orWhere('last_name', 'like', "%{$term}%")
-              ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$term}%"])
+              ->orWhereRaw("{$concat} LIKE ?", ["%{$term}%"])
               ->orWhere('household_number', 'like', "%{$term}%")
               ->orWhere('phone', 'like', "%{$term}%")
-              ->orWhere('email', 'like', "%{$term}%");
+              ->orWhere('email', 'like', "%{$term}%")
+              ->orWhere('zip', 'like', "%{$term}%");
         });
     }
 

@@ -39,39 +39,17 @@
     <form method="GET" action="{{ route('households.index') }}"
           class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-gray-100">
 
-        {{-- Search --}}
+        {{-- Search (also matches zip code) --}}
         <div class="relative flex-1 min-w-[180px]">
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/>
             </svg>
             <input type="text" name="search" value="{{ request('search') }}"
-                   placeholder="Search..."
+                   placeholder="Search by name, household #, phone, email, or zip..."
                    class="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50
                           focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400
                           placeholder:text-gray-400">
         </div>
-
-        {{-- Filter Zip --}}
-        <select name="zip"
-                class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50
-                       focus:outline-none focus:ring-2 focus:ring-brand-500/20
-                       text-gray-600 cursor-pointer min-w-[110px]">
-            <option value="">Filter Zip</option>
-            @foreach ($zipCodes as $zip)
-                <option value="{{ $zip }}" @selected(request('zip') === $zip)>{{ $zip }}</option>
-            @endforeach
-        </select>
-
-        {{-- Filter Size --}}
-        <select name="size"
-                class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50
-                       focus:outline-none focus:ring-2 focus:ring-brand-500/20
-                       text-gray-600 cursor-pointer min-w-[140px]">
-            <option value="">Household Size</option>
-            @foreach ($sizes as $s)
-                <option value="{{ $s }}" @selected(request('size') == $s)>{{ $s }} {{ $s == 1 ? 'Person' : 'People' }}</option>
-            @endforeach
-        </select>
 
         {{-- Filter Attendance --}}
         <select name="attendance"
@@ -83,7 +61,17 @@
             <option value="returning"    @selected(request('attendance') === 'returning')>Returning Only</option>
         </select>
 
-        @if (request()->hasAny(['search','zip','size','attendance','sort']))
+        {{-- Filter / Apply --}}
+        <button type="submit"
+                class="inline-flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 text-white
+                       text-sm font-semibold rounded-lg px-4 py-2 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z"/>
+            </svg>
+            Filter
+        </button>
+
+        @if (request()->hasAny(['search','attendance','sort']))
             <a href="{{ route('households.index') }}"
                class="text-xs text-gray-500 hover:text-gray-700 px-2 py-2 hover:bg-gray-100 rounded-lg transition-colors">
                 Clear
@@ -91,29 +79,34 @@
         @endif
 
         <div class="ml-auto flex items-center gap-1.5">
-            {{-- Submit hidden --}}
-            <button type="submit" class="hidden"></button>
+
+            @php
+                // Carry the current filters/sort onto the export URLs so the
+                // exported set matches exactly what's on screen. Strip the
+                // `page` and `per_page` keys since exports return all rows.
+                $exportQuery = request()->except(['page', 'per_page']);
+            @endphp
 
             {{-- PDF --}}
-            <button type="button"
-                    class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500 hover:bg-red-600 transition-colors"
-                    title="Export PDF">
+            <a href="{{ route('households.export.pdf', $exportQuery) }}"
+               class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500 hover:bg-red-600 transition-colors"
+               title="Export PDF (all matching rows)">
                 <span class="text-[10px] font-bold text-white">PDF</span>
-            </button>
+            </a>
             {{-- XLS --}}
-            <button type="button"
-                    class="w-8 h-8 flex items-center justify-center rounded-lg bg-green-600 hover:bg-green-700 transition-colors"
-                    title="Export Excel">
+            <a href="{{ route('households.export.xlsx', $exportQuery) }}"
+               class="w-8 h-8 flex items-center justify-center rounded-lg bg-green-600 hover:bg-green-700 transition-colors"
+               title="Export Excel (all matching rows)">
                 <span class="text-[10px] font-bold text-white">XLS</span>
-            </button>
+            </a>
             {{-- Print --}}
-            <button type="button" onclick="window.print()"
-                    class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors text-gray-500"
-                    title="Print">
+            <a href="{{ route('households.export.print', $exportQuery) }}" target="_blank" rel="noopener"
+               class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors text-gray-500"
+               title="Print (all matching rows)">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z"/>
                 </svg>
-            </button>
+            </a>
         </div>
     </form>
 
@@ -147,7 +140,10 @@
                         <td class="px-5 py-3.5 text-sm text-gray-500">{{ $h->household_number }}</td>
                         <td class="px-5 py-3.5">
                             <div class="flex items-center gap-2">
-                                <span class="font-semibold text-gray-900">{{ $h->full_name }}</span>
+                                <a href="{{ route('households.show', $h) }}"
+                                   class="font-semibold text-gray-900 hover:text-navy-700 hover:underline underline-offset-2 transition-colors">
+                                    {{ $h->full_name }}
+                                </a>
                                 @if ((int) $h->events_attended_count === 1)
                                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 ring-1 ring-green-200">
                                         First-Timer
@@ -192,7 +188,7 @@
                                 </a>
                                 {{-- QR --}}
                                 <button type="button" title="QR Code"
-                                        @click="openQr({ number: '{{ $h->household_number }}', name: '{{ addslashes($h->full_name) }}', size: {{ $h->household_size }}, token: '{{ $h->qr_token }}', regenerateUrl: '{{ route('households.regenerate-qr', $h) }}' })"
+                                        @click="openQr({ number: '{{ $h->household_number }}', name: '{{ addslashes($h->full_name) }}', size: {{ $h->household_size }}, children: {{ (int) $h->children_count }}, adults: {{ (int) $h->adults_count }}, seniors: {{ (int) $h->seniors_count }}, token: '{{ $h->qr_token }}', regenerateUrl: '{{ route('households.regenerate-qr', $h) }}' })"
                                         class="p-1.5 rounded-md text-gray-400 hover:text-navy-700 hover:bg-gray-100 transition-colors">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 3.75 9.375v-4.5ZM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 0 1-1.125-1.125v-4.5ZM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 13.5 9.375v-4.5Z"/>
@@ -254,7 +250,10 @@
                                 </span>
                             @endif
                         </div>
-                        <p class="font-semibold text-gray-900">{{ $h->full_name }}</p>
+                        <a href="{{ route('households.show', $h) }}"
+                           class="block font-semibold text-gray-900 hover:text-navy-700 hover:underline underline-offset-2 transition-colors">
+                            {{ $h->full_name }}
+                        </a>
                         @if ($h->email)<p class="text-sm text-gray-500 truncate">{{ $h->email }}</p>@endif
                         @if ($h->location)<p class="text-xs text-gray-400 mt-0.5">{{ $h->location }}{{ $h->zip ? ', '.$h->zip : '' }}</p>@endif
                         @if ($h->first_event_date)
@@ -273,7 +272,7 @@
                 </div>
                 <div class="grid grid-cols-3 gap-2">
                     <button type="button"
-                            @click="openQr({ number: '{{ $h->household_number }}', name: '{{ addslashes($h->full_name) }}', size: {{ $h->household_size }}, token: '{{ $h->qr_token }}', regenerateUrl: '{{ route('households.regenerate-qr', $h) }}' })"
+                            @click="openQr({ number: '{{ $h->household_number }}', name: '{{ addslashes($h->full_name) }}', size: {{ $h->household_size }}, children: {{ (int) $h->children_count }}, adults: {{ (int) $h->adults_count }}, seniors: {{ (int) $h->seniors_count }}, token: '{{ $h->qr_token }}', regenerateUrl: '{{ route('households.regenerate-qr', $h) }}' })"
                             class="flex items-center justify-center gap-1 py-2 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 3.75 9.375v-4.5ZM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 0 1-1.125-1.125v-4.5ZM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 13.5 9.375v-4.5Z"/></svg>
                         QR Code
@@ -358,7 +357,7 @@
     <div x-show="qrOpen"
          x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
          x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
-         class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+         class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 text-center">
 
         <h2 class="text-lg font-bold text-gray-900">QR Code</h2>
         <p class="text-sm text-gray-400 mb-4">User QR code and ID</p>
@@ -372,8 +371,30 @@
         </div>
 
         <p class="font-semibold text-gray-900" x-text="currentHousehold.name"></p>
-        <p class="text-sm text-gray-400 mt-0.5"
-           x-text="'Household Size: ' + (currentHousehold.size || '') + ' ' + (currentHousehold.size == 1 ? 'person' : 'people')"></p>
+
+        {{-- Family tag — same hover/tap-revealed demographic chip used on intake/scanner --}}
+        <div class="flex justify-center mt-1.5" x-data="{ showDemo: false }">
+            <span @mouseenter="showDemo = true" @mouseleave="showDemo = false"
+                  @click.stop="showDemo = !showDemo"
+                  class="relative inline-block cursor-help align-middle">
+                <span class="text-sm font-semibold text-gray-700">1 Family</span>
+                <span x-show="showDemo" style="display:none"
+                      x-transition:enter="transition ease-out duration-150"
+                      x-transition:enter-start="opacity-0 translate-y-1"
+                      x-transition:enter-end="opacity-100 translate-y-0"
+                      class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 min-w-[10rem] bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                    <span class="block text-sm font-semibold text-gray-900 mb-2">
+                        <span x-text="currentHousehold.size || 0"></span>
+                        <span x-text="(currentHousehold.size == 1) ? 'Member' : 'Members'"></span>
+                    </span>
+                    <span class="block text-xs text-gray-600 space-y-1">
+                        <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span><span class="font-semibold text-gray-800" x-text="currentHousehold.children || 0"></span><span x-text="(currentHousehold.children == 1) ? 'Child' : 'Children'"></span></span>
+                        <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span><span class="font-semibold text-gray-800" x-text="currentHousehold.adults || 0"></span><span x-text="(currentHousehold.adults == 1) ? 'Adult' : 'Adults'"></span></span>
+                        <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span><span class="font-semibold text-gray-800" x-text="currentHousehold.seniors || 0"></span><span x-text="(currentHousehold.seniors == 1) ? 'Senior' : 'Seniors'"></span></span>
+                    </span>
+                </span>
+            </span>
+        </div>
 
         <div class="flex items-stretch gap-2 mt-6">
             <button type="button" @click="qrOpen = false"

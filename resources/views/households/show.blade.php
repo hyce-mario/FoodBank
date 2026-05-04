@@ -61,12 +61,12 @@
 
     <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
         <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Total Visits</p>
-        <p class="text-3xl font-bold text-gray-900">0</p>
+        <p class="text-3xl font-bold text-gray-900">{{ $historyStats['total_visits'] }}</p>
     </div>
 
     <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
         <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Total Bags Received</p>
-        <p class="text-3xl font-bold text-gray-900">0</p>
+        <p class="text-3xl font-bold text-gray-900">{{ $historyStats['total_bags_received'] }}</p>
     </div>
 
     <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
@@ -87,7 +87,11 @@
 
     <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
         <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Last Served</p>
-        <p class="text-2xl font-bold text-gray-400">—</p>
+        @if ($historyStats['last_served_at'])
+            <p class="text-2xl font-bold text-gray-900">{{ $historyStats['last_served_at']->format('M j, Y') }}</p>
+        @else
+            <p class="text-2xl font-bold text-gray-400">—</p>
+        @endif
     </div>
 
 </div>
@@ -198,9 +202,28 @@
                         <p class="text-xs text-purple-400">65+</p>
                     </div>
                 </div>
-                <div class="mt-2 flex items-center justify-between bg-navy-700 text-white rounded-xl px-4 py-2.5">
+                <div class="mt-2 flex items-center justify-between bg-navy-700 text-white rounded-xl px-4 py-2.5"
+                     x-data="{ showDemo: false }">
                     <span class="text-sm font-semibold">Total Household Size</span>
-                    <span class="text-sm font-bold">{{ $household->household_size }} {{ $household->household_size == 1 ? 'person' : 'people' }}</span>
+                    <span @mouseenter="showDemo = true" @mouseleave="showDemo = false"
+                          @click.stop="showDemo = !showDemo"
+                          class="relative inline-block cursor-help align-middle">
+                        <span class="text-sm font-bold">1 Family</span>
+                        <span x-show="showDemo" style="display:none"
+                              x-transition:enter="transition ease-out duration-150"
+                              x-transition:enter-start="opacity-0 translate-y-1"
+                              x-transition:enter-end="opacity-100 translate-y-0"
+                              class="absolute right-0 top-full mt-1 z-30 min-w-[10rem] bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                            <span class="block text-sm font-semibold text-gray-900 mb-2">
+                                {{ $household->household_size }} {{ $household->household_size == 1 ? 'Member' : 'Members' }}
+                            </span>
+                            <span class="block text-xs text-gray-600 space-y-1">
+                                <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span><span class="font-semibold text-gray-800">{{ $household->children_count }}</span><span>{{ $household->children_count == 1 ? 'Child' : 'Children' }}</span></span>
+                                <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span><span class="font-semibold text-gray-800">{{ $household->adults_count }}</span><span>{{ $household->adults_count == 1 ? 'Adult' : 'Adults' }}</span></span>
+                                <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span><span class="font-semibold text-gray-800">{{ $household->seniors_count }}</span><span>{{ $household->seniors_count == 1 ? 'Senior' : 'Seniors' }}</span></span>
+                            </span>
+                        </span>
+                    </span>
                 </div>
             </div>
 
@@ -326,24 +349,24 @@
     <div class="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
         <h2 class="text-sm font-semibold text-gray-800">Event Report</h2>
         <div class="flex items-center gap-1.5">
-            <button type="button"
-                    class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500 hover:bg-red-600 transition-colors"
-                    title="Export PDF">
+            <a href="{{ route('households.event-report.pdf', $household) }}"
+               class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500 hover:bg-red-600 transition-colors"
+               title="Export PDF">
                 <span class="text-[10px] font-bold text-white leading-none">PDF</span>
-            </button>
-            <button type="button"
-                    class="w-8 h-8 flex items-center justify-center rounded-lg bg-green-600 hover:bg-green-700 transition-colors"
-                    title="Export Excel">
+            </a>
+            <a href="{{ route('households.event-report.xlsx', $household) }}"
+               class="w-8 h-8 flex items-center justify-center rounded-lg bg-green-600 hover:bg-green-700 transition-colors"
+               title="Export Excel">
                 <span class="text-[10px] font-bold text-white leading-none">XLS</span>
-            </button>
-            <button type="button" onclick="window.print()"
-                    class="h-8 px-3 flex items-center gap-1.5 text-xs font-semibold text-gray-600
-                           border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            </a>
+            <a href="{{ route('households.event-report.print', $household) }}" target="_blank" rel="noopener"
+               class="h-8 px-3 flex items-center gap-1.5 text-xs font-semibold text-gray-600
+                      border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z"/>
                 </svg>
                 Print
-            </button>
+            </a>
         </div>
     </div>
 
@@ -359,39 +382,159 @@
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 </tr>
             </thead>
-            <tbody>
-                <tr>
-                    <td colspan="5" class="px-5 py-12 text-center text-sm text-gray-400">
-                        No event history yet. Visits will appear here once this household checks in.
-                    </td>
-                </tr>
+            <tbody class="divide-y divide-gray-50">
+                @forelse ($eventHistory as $visit)
+                    @php
+                        $event       = $visit->event;
+                        $ruleset     = $event?->ruleset;
+                        $snapshotSize = (int) ($visit->pivot->household_size ?? $household->household_size);
+                        $bags        = $ruleset ? (int) $ruleset->getBagsFor($snapshotSize) : 0;
+                        $statusLabel = $visit->visit_status === 'exited' ? 'Served' : 'In Progress';
+                        $statusColor = $visit->visit_status === 'exited'
+                            ? 'bg-green-100 text-green-700 ring-green-200'
+                            : 'bg-amber-100 text-amber-700 ring-amber-200';
+                        // Picked up by: when this visit's primary household
+                        // (first attached) is not THIS household, the listed
+                        // primary is the rep driver. Skip if the visit only
+                        // has one household (i.e., self-pickup).
+                        $primary    = $visit->households->first();
+                        $pickedUpBy = ($primary && $primary->id !== $household->id) ? $primary : null;
+                    @endphp
+                    <tr class="hover:bg-gray-50/60 transition-colors">
+                        <td class="px-5 py-3.5">
+                            @if ($event)
+                                <a href="{{ route('events.show', $event) }}"
+                                   class="font-semibold text-gray-900 hover:text-brand-600 hover:underline underline-offset-2">
+                                    {{ $event->name }}
+                                </a>
+                                @if ($pickedUpBy)
+                                    <p class="text-xs text-amber-700 mt-0.5">
+                                        ★ Picked up by
+                                        <a href="{{ route('households.show', $pickedUpBy) }}"
+                                           class="font-semibold hover:underline">{{ $pickedUpBy->full_name }}</a>
+                                    </p>
+                                @endif
+                            @else
+                                <span class="text-gray-400 italic">Event removed</span>
+                            @endif
+                        </td>
+                        <td class="px-5 py-3.5 text-sm text-gray-600">
+                            {{ $event?->date?->format('M j, Y') ?? '—' }}
+                        </td>
+                        <td class="px-5 py-3.5 text-sm text-gray-600">
+                            {{ $event?->location ?: '—' }}
+                        </td>
+                        <td class="px-5 py-3.5">
+                            <span class="text-sm font-semibold text-gray-900">{{ $bags }}</span>
+                            <span class="text-xs text-gray-400">{{ $bags == 1 ? 'bag' : 'bags' }}</span>
+                        </td>
+                        <td class="px-5 py-3.5">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ring-1 {{ $statusColor }}">
+                                {{ $statusLabel }}
+                            </span>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="5" class="px-5 py-12 text-center text-sm text-gray-400">
+                            No event history yet. Visits will appear here once this household checks in.
+                        </td>
+                    </tr>
+                @endforelse
             </tbody>
         </table>
     </div>
 
-    {{-- Mobile empty state --}}
-    <div class="sm:hidden px-5 py-10 text-center text-sm text-gray-400">
-        No event history yet.
+    {{-- Mobile cards --}}
+    <div class="sm:hidden divide-y divide-gray-100">
+        @forelse ($eventHistory as $visit)
+            @php
+                $event        = $visit->event;
+                $ruleset      = $event?->ruleset;
+                $snapshotSize = (int) ($visit->pivot->household_size ?? $household->household_size);
+                $bags         = $ruleset ? (int) $ruleset->getBagsFor($snapshotSize) : 0;
+                $statusLabel  = $visit->visit_status === 'exited' ? 'Served' : 'In Progress';
+                $statusColor  = $visit->visit_status === 'exited'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-amber-100 text-amber-700';
+                $primary      = $visit->households->first();
+                $pickedUpBy   = ($primary && $primary->id !== $household->id) ? $primary : null;
+            @endphp
+            <div class="px-4 py-3">
+                <div class="flex items-start justify-between gap-3 mb-1">
+                    <div class="min-w-0">
+                        @if ($event)
+                            <a href="{{ route('events.show', $event) }}" class="font-semibold text-gray-900 hover:underline">
+                                {{ $event->name }}
+                            </a>
+                        @else
+                            <span class="text-gray-400 italic">Event removed</span>
+                        @endif
+                        <p class="text-xs text-gray-500 mt-0.5">
+                            {{ $event?->date?->format('M j, Y') ?? '—' }}
+                            @if ($event?->location)
+                                &middot; {{ $event->location }}
+                            @endif
+                        </p>
+                        @if ($pickedUpBy)
+                            <p class="text-xs text-amber-700 mt-0.5">★ Picked up by {{ $pickedUpBy->full_name }}</p>
+                        @endif
+                    </div>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold {{ $statusColor }}">
+                        {{ $statusLabel }}
+                    </span>
+                </div>
+                <p class="text-xs text-gray-500">
+                    <span class="font-semibold text-gray-900">{{ $bags }}</span> {{ $bags == 1 ? 'bag' : 'bags' }} received
+                </p>
+            </div>
+        @empty
+            <div class="px-5 py-10 text-center text-sm text-gray-400">No event history yet.</div>
+        @endforelse
     </div>
 
     {{-- Table footer --}}
     <div class="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/50">
         <div class="flex items-center gap-2 text-sm text-gray-500">
             <span>Rows per page</span>
-            <select class="text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-                <option>10</option>
-                <option>25</option>
-                <option>50</option>
+            <select onchange="window.location.href=this.value"
+                    class="text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                @foreach ([10, 25, 50] as $pp)
+                    <option value="{{ request()->fullUrlWithQuery(['per_page' => $pp, 'page' => 1]) }}"
+                            @selected(request('per_page', 10) == $pp)>{{ $pp }}</option>
+                @endforeach
             </select>
         </div>
-        <div class="flex items-center gap-1">
-            <button class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 19.5-7.5-7.5 7.5-7.5"/></svg>
-            </button>
-            <span class="w-8 h-8 flex items-center justify-center rounded-lg bg-navy-700 text-white text-sm font-semibold">1</span>
-            <button class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
-            </button>
+        <div class="flex items-center gap-1 text-sm">
+            @if ($eventHistory->onFirstPage())
+                <span class="w-8 h-8 flex items-center justify-center text-gray-300 cursor-not-allowed">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 19.5-7.5-7.5 7.5-7.5"/></svg>
+                </span>
+            @else
+                <a href="{{ $eventHistory->previousPageUrl() }}"
+                   class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 19.5-7.5-7.5 7.5-7.5"/></svg>
+                </a>
+            @endif
+
+            @foreach ($eventHistory->getUrlRange(max(1, $eventHistory->currentPage() - 2), min($eventHistory->lastPage(), $eventHistory->currentPage() + 2)) as $page => $url)
+                <a href="{{ $url }}"
+                   class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors
+                          {{ $page == $eventHistory->currentPage() ? 'bg-navy-700 text-white' : 'text-gray-600 hover:bg-gray-100' }}">
+                    {{ $page }}
+                </a>
+            @endforeach
+
+            @if ($eventHistory->hasMorePages())
+                <a href="{{ $eventHistory->nextPageUrl() }}"
+                   class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+                </a>
+            @else
+                <span class="w-8 h-8 flex items-center justify-center text-gray-300 cursor-not-allowed">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+                </span>
+            @endif
         </div>
     </div>
 
@@ -406,7 +549,7 @@
     <div x-show="qrOpen"
          x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
          x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
-         class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+         class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 text-center">
         <h2 class="text-base font-bold text-gray-900 mb-0.5">QR Code</h2>
         <p class="text-xs text-gray-400 mb-4">Scan to identify this household at check-in</p>
         <p class="text-xl font-bold text-gray-900 mb-3">#{{ $household->household_number }}</p>
@@ -416,12 +559,29 @@
             </div>
         </div>
         <p class="font-semibold text-gray-900 text-sm">{{ $household->full_name }}</p>
-        <p class="text-xs text-gray-400 mt-0.5 mb-5">
-            {{ $household->household_size }} {{ $household->household_size == 1 ? 'person' : 'people' }}
-            @if ($household->children_count || $household->seniors_count)
-                &middot; {{ $household->children_count }}C {{ $household->adults_count }}A {{ $household->seniors_count }}S
-            @endif
-        </p>
+
+        {{-- Family tag — same hover/tap-revealed demographic chip used on intake/scanner --}}
+        <div class="flex justify-center mt-1.5 mb-5" x-data="{ showDemo: false }">
+            <span @mouseenter="showDemo = true" @mouseleave="showDemo = false"
+                  @click.stop="showDemo = !showDemo"
+                  class="relative inline-block cursor-help align-middle">
+                <span class="text-sm font-semibold text-gray-700">1 Family</span>
+                <span x-show="showDemo" style="display:none"
+                      x-transition:enter="transition ease-out duration-150"
+                      x-transition:enter-start="opacity-0 translate-y-1"
+                      x-transition:enter-end="opacity-100 translate-y-0"
+                      class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 min-w-[10rem] bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-left">
+                    <span class="block text-sm font-semibold text-gray-900 mb-2">
+                        {{ $household->household_size }} {{ $household->household_size == 1 ? 'Member' : 'Members' }}
+                    </span>
+                    <span class="block text-xs text-gray-600 space-y-1">
+                        <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-blue-500 shrink-0"></span><span class="font-semibold text-gray-800">{{ $household->children_count }}</span><span>{{ $household->children_count == 1 ? 'Child' : 'Children' }}</span></span>
+                        <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-green-500 shrink-0"></span><span class="font-semibold text-gray-800">{{ $household->adults_count }}</span><span>{{ $household->adults_count == 1 ? 'Adult' : 'Adults' }}</span></span>
+                        <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-sm bg-amber-500 shrink-0"></span><span class="font-semibold text-gray-800">{{ $household->seniors_count }}</span><span>{{ $household->seniors_count == 1 ? 'Senior' : 'Seniors' }}</span></span>
+                    </span>
+                </span>
+            </span>
+        </div>
         <div class="flex items-center gap-2">
             <button @click="qrOpen = false"
                     class="flex-1 py-2.5 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors">
