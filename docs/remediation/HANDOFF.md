@@ -14,7 +14,7 @@
 2. **Phase 5.7 — Volunteer UX polish** (NEW, same audit conversation, split out for clarity). Five user-facing improvements bundled into one commit: index group filter + per-page selector, Show-page tel:/mailto: links, Total Hours tile, "Add to group" quick-action picker (+ new endpoint), Service History truncate-to-15 with Show-all toggle.
 3. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
 
-**Suite is green at 356/356** (was 287 at session start; +69 across 10 new test files).
+**Suite is green at 356/356** (was 287 at session start; +69 across 10 new test files; 5.10 added no tests — purely presentational kebab UX).
 
 ### ⚠️ What's committed vs. uncommitted
 
@@ -22,6 +22,9 @@
 
 | Commit | Subject |
 |---|---|
+| `cb4331f` | feat(volunteer-groups): Phase 5.10 — kebab overflow menu on group cards |
+| `f073d97` | fix(volunteers): merge button color — bg-amber-600 was rendering white |
+| `972c017` | docs(remediation): log Phase 5.9 — service-history print + CSV export |
 | `64a7308` | feat(volunteers): Phase 5.9 — service-history print + CSV export |
 | `ffb999f` | docs(remediation): log Phase 5.8 — atomic volunteer merge tool |
 | `58aa436` | feat(volunteers): Phase 5.8 — atomic volunteer merge tool |
@@ -183,19 +186,24 @@ ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
 
 ### What's next — start here on resume
 
-**Phase 5.6 is closed.** **5.7, 5.8, 5.9 shipped.** Remaining items in this arc:
+**The volunteer-module audit punch list from Sessions 7 is exhausted.** All audit-derived sub-tasks are closed: 5.6 (a–h, j; i dropped) + 5.7 + 5.8 + 5.9 + 5.10. The volunteer module is now in a clean state — secure, deduped, exportable, ergonomic.
 
-#### Path 1 — Group cards UX (Phase 5.10?)
-
-Audit finding #24. The volunteer-groups index renders 4 buttons (View / Members / Edit / Delete) inline in a divided row; on narrower viewports they wrap. Convert to an overflow menu (kebab) for the secondary actions, leaving View prominent.
-
-#### Path 2 — Sweep up Session 6 leftover
+#### Path 1 — Sweep up Session 6 leftover
 
 The 144-entry uncommitted Session-6 working tree is unchanged. Several pieces look complete (Finance module, Inventory module, Volunteer Groups views, Roles/Profile, Reports views, Reviews) and could land independently. Ask the user before staging anything — some pieces may still be experimental.
 
-#### Path 3 — Tag candidates
+#### Path 2 — Tag + push outstanding phase markers
 
-`phase-5.6-complete` was tagged at `1e66ed7` and pushed in this session. `phase-5.7-complete` (UX polish), `phase-5.8-complete` (merge tool), and `phase-5.9-complete` (service-history exports) are not yet tagged — could be added at the corresponding doc-close commits if the user wants release markers.
+`phase-5.6-complete` was tagged at `1e66ed7` and pushed earlier this session. Not yet tagged: `phase-5.7-complete` (UX polish), `phase-5.8-complete` (merge tool), `phase-5.9-complete` (service-history exports), `phase-5.10-complete` (group cards UX). Could be added at the corresponding doc-close commits if the user wants release markers, then pushed in one go.
+
+#### Path 3 — Look beyond the volunteer module
+
+Other modules surfaced findings in earlier audits this session that haven't been addressed:
+- visit-log Phase 1.2.c retroactive (already done in `59914dc`)
+- household merge tool — Phase 6.5 prevents new dups but doesn't merge legacy ones (carry-forward question from Session 5)
+- Backfill scope (Phase 2.1.f) — historical exited visits forward-only or backfill (carry-forward)
+
+Ask the user before opening any of these.
 
 #### Path 3 — Sweep up Session 6 leftover
 
