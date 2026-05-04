@@ -14,7 +14,7 @@
 2. **Phase 5.7 — Volunteer UX polish** (NEW, same audit conversation, split out for clarity). Five user-facing improvements bundled into one commit: index group filter + per-page selector, Show-page tel:/mailto: links, Total Hours tile, "Add to group" quick-action picker (+ new endpoint), Service History truncate-to-15 with Show-all toggle.
 3. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
 
-**Suite is green at 337/337** (was 287 at session start; +50 across 8 new test files).
+**Suite is green at 348/348** (was 287 at session start; +61 across 9 new test files).
 
 ### ⚠️ What's committed vs. uncommitted
 
@@ -22,6 +22,8 @@
 
 | Commit | Subject |
 |---|---|
+| `58aa436` | feat(volunteers): Phase 5.8 — atomic volunteer merge tool |
+| `15b9781` | docs(remediation): log Phase 5.6.j — multi-check-in safety rails |
 | `6ed0dee` | fix(volunteers): Phase 5.6.j — multi-check-in safety rails |
 | `93aad36` | fix(volunteers): Phase 5.6.f — restrict cascade-delete on volunteer_check_ins |
 | `e0e2962` | fix(volunteers): Phase 5.6.e — phone-only public check-in (PII strip) |
@@ -151,6 +153,9 @@ ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
 - `tests/Feature/PublicVolunteerSearchTest.php` (5 tests, 5.6.e)
 - `tests/Feature/VolunteerCheckInsRestrictDeleteTest.php` (4 tests, 5.6.f)
 - `tests/Feature/VolunteerMultiCheckInRailsTest.php` (9 tests, 5.6.j)
+- `tests/Feature/VolunteerMergeTest.php` (11 tests, 5.8)
+- `app/Services/VolunteerMergeService.php` (5.8)
+- `app/Exceptions/VolunteerMergeConflictException.php` (5.8)
 - `database/migrations/2026_05_04_180000_add_unique_constraints_to_volunteers.php` (5.6.g)
 - `database/migrations/2026_05_04_190000_restrict_volunteer_check_ins_fk_on_delete.php` (5.6.f)
 - `app/Exceptions/VolunteerCheckedInRecentlyException.php` (5.6.j)
@@ -174,23 +179,23 @@ ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
 
 ### What's next — start here on resume
 
-**Phase 5.6 is closed.** Remaining audit-derived items are bigger features, not security/correctness. Ask the user before starting any of them:
+**Phase 5.6 is closed.** **Phase 5.7 + 5.8 shipped.** Remaining audit-derived items are smaller polish, not security/correctness. Ask the user before starting any of them:
 
-#### Path 1 — Volunteer merge tool (probably Phase 5.8)
+#### Path 1 — Service-history CSV / print export (Phase 5.9?)
 
-Now that 5.6.g/h close most dedup gaps at the source (DB UNIQUE on phone+email; phone-match on public signup), legacy duplicates from before this session are still in the data. A merge tool — pick two volunteers, transfer check-ins + group memberships to the keeper, delete the duplicate — is the cleanest way to drain that backlog. Service + UI + tests.
+Audit finding #22. Volunteer Show page should be able to export a single volunteer's service history (events + hours + sources) as CSV or a branded print sheet, mirroring what we did for the visit-log + events/attendees pages. Cleanest pattern is a small `VolunteerExportController` (or methods on VolunteerController) following the events/attendees print/export shape established in commit a5b7f22.
 
-#### Path 2 — Service-history CSV / print export (Phase 5.8 sibling)
-
-Audit finding #22. Volunteer Show page should be able to export a single volunteer's service history (events + hours + sources) as CSV or a branded print sheet, mirroring what we did for the visit-log + events/attendees pages. Cleanest pattern is a `VolunteerExportController` similar to the one for events/attendees.
-
-#### Path 3 — Group cards UX
+#### Path 2 — Group cards UX (Phase 5.10?)
 
 Audit finding #24. The volunteer-groups index renders 4 buttons (View / Members / Edit / Delete) inline in a divided row; on narrower viewports they wrap. Convert to an overflow menu (kebab) for the secondary actions, leaving View prominent.
 
-#### Path 4 — Sweep up Session 6 leftover
+#### Path 3 — Sweep up Session 6 leftover
 
 The 144-entry uncommitted Session-6 working tree is unchanged. Several pieces look complete (Finance module, Inventory module, Volunteer Groups views, Roles/Profile, Reports views, Reviews) and could land independently. Ask the user before staging anything — some pieces may still be experimental.
+
+#### Path 4 — Tag candidates
+
+`phase-5.6-complete` was tagged at `1e66ed7` and pushed in this session. `phase-5.7-complete` (UX polish) and `phase-5.8-complete` (merge tool) are not yet tagged — could be added at the corresponding doc-close commits if the user wants release markers.
 
 #### Path 3 — Sweep up Session 6 leftover
 
