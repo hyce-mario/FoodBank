@@ -107,7 +107,19 @@ Route::middleware('auth')->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     // Households
+    // Phase C exports — registered BEFORE the resource route so /households/export/*
+    // doesn't get parsed as Route::resource's show action with {household}=export.
+    Route::get('households/export/print', [HouseholdController::class, 'exportPrint'])->name('households.export.print');
+    Route::get('households/export/pdf',   [HouseholdController::class, 'exportPdf'])->name('households.export.pdf');
+    Route::get('households/export/xlsx',  [HouseholdController::class, 'exportXlsx'])->name('households.export.xlsx');
+
     Route::resource('households', HouseholdController::class);
+
+    // Phase D — per-household event report exports
+    Route::get('households/{household}/event-report/print', [HouseholdController::class, 'eventReportPrint'])->name('households.event-report.print');
+    Route::get('households/{household}/event-report/pdf',   [HouseholdController::class, 'eventReportPdf'])->name('households.event-report.pdf');
+    Route::get('households/{household}/event-report/xlsx',  [HouseholdController::class, 'eventReportXlsx'])->name('households.event-report.xlsx');
+
     Route::post('households/{household}/regenerate-qr', [HouseholdController::class, 'regenerateQr'])
         ->name('households.regenerate-qr');
     Route::post('households/{household}/attach', [HouseholdController::class, 'attach'])
