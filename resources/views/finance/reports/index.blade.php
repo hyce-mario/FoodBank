@@ -28,12 +28,16 @@
     $categoryColors = [
         'Statements'  => 'bg-navy-50 text-navy-700 border-navy-100',
         'Detail'      => 'bg-indigo-50 text-indigo-700 border-indigo-100',
-        'Analysis'    => 'bg-emerald-50 text-emerald-600 border-green-100',
-        'Compliance'  => 'bg-amber-50 text-amber-700 border-amber-100',
+        'Analysis'    => 'bg-amber-50 text-amber-700 border-amber-100',
+        'Compliance'  => 'bg-gray-50 text-gray-700 border-gray-200',
     ];
 @endphp
 
-<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+{{-- Single-column row list. Each card is a horizontal banner — title +
+     description on the left, category tag + status + export pills on
+     the right. Reads top-to-bottom like a contents page, scannable at
+     iPad portrait widths. --}}
+<div class="space-y-3">
     @foreach ($reports as $r)
         @php
             $tagClass = $categoryColors[$r['category']] ?? 'bg-gray-50 text-gray-600 border-gray-200';
@@ -41,39 +45,44 @@
 
         @if ($r['live'])
             <a href="{{ route($r['route']) }}"
-               class="block bg-white rounded-2xl border border-gray-200 hover:border-navy-700 hover:shadow-md transition-all p-5 group">
+               class="block bg-white rounded-2xl border border-gray-200 hover:border-navy-700 hover:shadow-md transition-all px-5 py-4 group">
         @else
-            <div class="block bg-white rounded-2xl border border-gray-200 p-5 opacity-75 cursor-not-allowed" aria-disabled="true">
+            <div class="block bg-white rounded-2xl border border-gray-200 px-5 py-4 opacity-70 cursor-not-allowed" aria-disabled="true">
         @endif
 
-            <div class="flex items-start justify-between mb-3">
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide border {{ $tagClass }}">
-                    {{ $r['category'] }}
-                </span>
-                @if ($r['live'])
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">
-                        Live
-                    </span>
-                @else
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-500">
-                        Coming soon
-                    </span>
-                @endif
-            </div>
+            <div class="flex flex-col md:flex-row md:items-center gap-3">
+                {{-- Left: title + description ──────────────────────── --}}
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 mb-1 flex-wrap">
+                        <h3 class="text-base font-bold text-gray-900 {{ $r['live'] ? 'group-hover:text-navy-700' : '' }}">
+                            {{ $r['title'] }}
+                        </h3>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide border {{ $tagClass }}">
+                            {{ $r['category'] }}
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-500 leading-relaxed">{{ $r['description'] }}</p>
+                </div>
 
-            <h3 class="text-base font-bold text-gray-900 mb-1.5
-                       {{ $r['live'] ? 'group-hover:text-navy-700' : '' }}">
-                {{ $r['title'] }}
-            </h3>
-            <p class="text-sm text-gray-500 leading-relaxed mb-4">{{ $r['description'] }}</p>
-
-            <div class="flex items-center gap-1.5 pt-3 border-t border-gray-100">
-                <span class="text-xs font-semibold text-gray-400">Exports:</span>
-                <span class="text-xs font-semibold text-gray-600">Print</span>
-                <span class="text-gray-300">·</span>
-                <span class="text-xs font-semibold text-gray-600">PDF</span>
-                <span class="text-gray-300">·</span>
-                <span class="text-xs font-semibold text-gray-600">CSV</span>
+                {{-- Right: status + export pills ───────────────────── --}}
+                <div class="flex items-center gap-3 md:flex-shrink-0">
+                    <div class="flex items-center gap-1.5 text-xs">
+                        <span class="font-semibold text-gray-400">Exports:</span>
+                        <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-semibold">Print</span>
+                        <span class="px-1.5 py-0.5 rounded bg-red-50 text-red-700 font-semibold">PDF</span>
+                        <span class="px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-semibold">CSV</span>
+                    </div>
+                    @if ($r['live'])
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">
+                            Live
+                        </span>
+                        <svg class="w-4 h-4 text-gray-400 group-hover:text-navy-700" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+                    @else
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-500">
+                            Coming soon
+                        </span>
+                    @endif
+                </div>
             </div>
 
         @if ($r['live'])

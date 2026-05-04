@@ -309,7 +309,7 @@ class KioskTestDataSeeder extends Seeder
                 'payment_method'   => 'check',
                 'reference_number' => 'CHK-7831',
                 'event_id'         => $event->id,
-                'status'           => 'cleared',
+                'status'           => 'completed',
                 'notes'            => 'Seeded by KioskTestDataSeeder.',
             ],
         );
@@ -324,7 +324,7 @@ class KioskTestDataSeeder extends Seeder
                 'payment_method'   => 'card',
                 'reference_number' => 'INV-44521',
                 'event_id'         => $event->id,
-                'status'           => 'cleared',
+                'status'           => 'completed',
                 'notes'            => 'Seeded by KioskTestDataSeeder.',
             ],
         );

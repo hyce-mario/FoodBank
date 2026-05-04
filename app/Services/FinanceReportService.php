@@ -221,22 +221,22 @@ class FinanceReportService
     }
 
     /**
-     * Phase 7.1.b — Fixed 8-color palette for charts. Same colour for
-     * the same category across reports (Donations always navy, Food
-     * Supplies always red, etc.) so board members recognise categories
-     * after the second report. Colors chosen to be distinguishable in
-     * print, color-blind safer than full-saturation rainbow, and stable
-     * across both income and expense families.
+     * Phase 7.1+ — Brand-only palette. Per user direction (post-7.1
+     * review), the chart palette was reduced from a wide 8-color set
+     * to the navy/orange brand family + two supporting neutrals so
+     * board reports have a tight, on-brand visual identity rather
+     * than rainbow donuts.
+     *
+     * Same colour rule still applies — `colorFor(name)` hashes the
+     * category name so "Donations" always renders the same colour
+     * across every report, just within a tighter palette.
      */
     public const PALETTE = [
-        '#1b2b4b', // navy — primary brand
-        '#f97316', // orange — brand accent
-        '#047857', // emerald
-        '#0284c7', // sky
-        '#7c3aed', // violet
-        '#d97706', // amber
-        '#0d9488', // teal
-        '#e11d48', // rose
+        '#1b2b4b', // navy 700 — primary brand
+        '#f97316', // brand orange 500
+        '#1e3a8a', // deeper navy variant
+        '#c2410c', // deeper orange variant
+        '#6b7280', // gray 500 — neutral / "Other"
     ];
 
     /**

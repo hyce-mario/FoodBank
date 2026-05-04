@@ -4,6 +4,11 @@
     <meta charset="utf-8">
     <title>Statement of Activities — {{ $branding['app_name'] }}</title>
     <style>
+        /* Print-engine compatibility: tables instead of CSS Grid for the
+           stat strip + chart row. Some print engines + iOS Safari Print
+           don't reliably render CSS Grid even when the screen browser
+           does. Tables are universally supported and produce
+           identical output across browsers + print preview. */
         * { box-sizing: border-box; }
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
@@ -15,78 +20,91 @@
         }
         .sheet { max-width: 1100px; margin: 0 auto; }
 
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
+        /* Header */
+        table.header {
+            width: 100%;
+            border-collapse: collapse;
             border-bottom: 2px solid #1b2b4b;
-            padding-bottom: 16px;
             margin-bottom: 18px;
         }
+        table.header td { vertical-align: top; padding: 0 0 16px 0; }
+        table.header td.right { text-align: right; }
+        .org img { max-height: 56px; max-width: 220px; margin-bottom: 6px; display: block; }
         .org h1 { margin: 0; font-size: 20px; color: #1b2b4b; }
         .org p  { margin: 2px 0 0; color: #6b7280; font-size: 11px; }
-        .org img { max-height: 56px; max-width: 220px; margin-bottom: 6px; display: block; }
-        .doc-title { text-align: right; }
         .doc-title h2 { margin: 0; font-size: 22px; letter-spacing: 0.02em; color: #111; }
         .doc-title .meta { font-size: 11px; color: #6b7280; margin-top: 4px; }
 
-        .stat-strip {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
+        /* KPI strip — table cells with explicit 33% widths */
+        table.stats {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 12px 0;
             margin-bottom: 18px;
         }
-        .stat-card {
+        table.stats td {
             border: 1px solid #e5e7eb;
             border-radius: 8px;
             padding: 12px 14px;
             background: #fafafa;
+            width: 33%;
+            vertical-align: top;
         }
-        .stat-card .stat-value {
+        .stat-value {
             font-size: 22px;
             font-weight: 800;
             font-variant-numeric: tabular-nums;
             line-height: 1;
         }
-        .stat-card.income  .stat-value { color: #047857; }
-        .stat-card.expense .stat-value { color: #b91c1c; }
-        .stat-card.net.positive .stat-value { color: #047857; }
-        .stat-card.net.negative .stat-value { color: #b91c1c; }
-        .stat-card .stat-label {
+        .stat-value.income { color: #047857; }
+        .stat-value.expense { color: #b91c1c; }
+        .stat-value.net-positive { color: #047857; }
+        .stat-value.net-negative { color: #b91c1c; }
+        .stat-label {
             font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
             color: #6b7280; margin-top: 6px; font-weight: 600;
         }
-        .stat-card .stat-compare { font-size: 10px; color: #6b7280; margin-top: 4px; }
+        .stat-compare { font-size: 10px; color: #6b7280; margin-top: 4px; }
 
-        .charts {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
+        /* Charts — 2 cells side-by-side */
+        table.charts {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 16px 0;
             margin-bottom: 18px;
         }
-        .chart-card {
+        table.charts td {
             border: 1px solid #e5e7eb;
             border-radius: 8px;
             padding: 14px;
             background: #fff;
+            width: 50%;
+            vertical-align: top;
         }
-        .chart-card h3 { margin: 0 0 4px; font-size: 12px; color: #1b2b4b; }
-        .chart-card .sub { font-size: 10px; color: #9ca3af; margin: 0 0 10px; }
-        .chart-card .legend { margin-top: 10px; font-size: 10px; }
-        .chart-card .legend li {
-            list-style: none;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 2px 0;
-        }
-        .chart-card .legend .swatch {
-            display: inline-block; width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0;
-        }
-        .chart-card .legend .name { flex: 1; color: #4b5563; }
-        .chart-card .legend .pct  { color: #9ca3af; min-width: 28px; text-align: right; }
-        .chart-card .legend .amt  { color: #1f2937; font-weight: 700; min-width: 64px; text-align: right; }
+        table.charts h3 { margin: 0 0 4px; font-size: 12px; color: #1b2b4b; }
+        table.charts .sub { font-size: 10px; color: #9ca3af; margin: 0 0 10px; }
+        .chart-wrap { text-align: center; }
 
+        /* Legend — also a table for tight alignment */
+        table.legend {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 10px;
+        }
+        table.legend td {
+            padding: 2px 4px;
+            border: none;
+            background: transparent;
+        }
+        .swatch {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 2px;
+        }
+
+        /* Detail */
         table.detail {
             width: 100%;
             border-collapse: collapse;
@@ -105,7 +123,7 @@
             border-bottom: 1px solid #f3f4f6;
             vertical-align: top;
         }
-        .detail tbody td.num   { font-variant-numeric: tabular-nums; text-align: right; }
+        .detail tbody td.num { font-variant-numeric: tabular-nums; text-align: right; }
         .detail .section-row td {
             background: #f9fafb;
             font-weight: 700;
@@ -132,6 +150,7 @@
         .net-positive { color: #047857; }
         .net-negative { color: #b91c1c; }
 
+        /* Insights */
         .insights {
             border: 1px solid #e5e7eb;
             border-left: 4px solid #f97316;
@@ -149,15 +168,14 @@
             border-top: 1px solid #e5e7eb;
             font-size: 10px;
             color: #9ca3af;
-            display: flex;
-            justify-content: space-between;
         }
+        .footer .right { float: right; }
 
         @media print {
             body { padding: 12px; }
             .no-print { display: none !important; }
             tr { page-break-inside: avoid; }
-            .insights, .charts, table.detail { page-break-inside: avoid; }
+            .insights, table.charts, table.detail { page-break-inside: avoid; }
         }
     </style>
 </head>
@@ -176,97 +194,107 @@
         ])->values()->all();
     @endphp
 
-    <div class="header">
-        <div class="org">
-            @if (! empty($branding['logo_src']))
-                <img src="{{ $branding['logo_src'] }}" alt="{{ $branding['app_name'] }}">
-            @endif
-            <h1>{{ $branding['app_name'] }}</h1>
-            <p>Statement of Activities</p>
-        </div>
-        <div class="doc-title">
-            <h2>STATEMENT OF ACTIVITIES</h2>
-            <div class="meta">For the period: {{ $period['label'] }}</div>
-            @if ($hasCompare)
-                <div class="meta">Compared to: {{ $period['compare']['label'] }}</div>
-            @endif
-            <div class="meta">Generated {{ now()->format('M j, Y g:i A') }}</div>
-        </div>
-    </div>
+    <table class="header">
+        <tr>
+            <td>
+                <div class="org">
+                    @if (! empty($branding['logo_src']))
+                        <img src="{{ $branding['logo_src'] }}" alt="{{ $branding['app_name'] }}">
+                    @endif
+                    <h1>{{ $branding['app_name'] }}</h1>
+                    <p>Statement of Activities</p>
+                </div>
+            </td>
+            <td class="right">
+                <div class="doc-title">
+                    <h2>STATEMENT OF ACTIVITIES</h2>
+                    <div class="meta">For the period: {{ $period['label'] }}</div>
+                    @if ($hasCompare)
+                        <div class="meta">Compared to: {{ $period['compare']['label'] }}</div>
+                    @endif
+                    <div class="meta">Generated {{ now()->format('M j, Y g:i A') }}</div>
+                </div>
+            </td>
+        </tr>
+    </table>
 
     {{-- KPI strip ─────────────────────────────────────────────────── --}}
-    <div class="stat-strip">
-        <div class="stat-card income">
-            <div class="stat-value">{{ \App\Services\FinanceReportService::usd($data['income']['total']) }}</div>
-            <div class="stat-label">Income</div>
-            @if ($hasCompare && isset($data['income']['prior_total']) && $data['income']['prior_total'] > 0)
-                @php $delta = ($data['income']['total'] - $data['income']['prior_total']) / $data['income']['prior_total']; @endphp
-                <div class="stat-compare">
-                    {{ $delta >= 0 ? '▲' : '▼' }} {{ number_format(abs($delta) * 100, 0) }}% vs. prior
-                </div>
-            @endif
-        </div>
-        <div class="stat-card expense">
-            <div class="stat-value">{{ \App\Services\FinanceReportService::usd($data['expense']['total']) }}</div>
-            <div class="stat-label">Expenses</div>
-            @if ($hasCompare && isset($data['expense']['prior_total']) && $data['expense']['prior_total'] > 0)
-                @php $delta = ($data['expense']['total'] - $data['expense']['prior_total']) / $data['expense']['prior_total']; @endphp
-                <div class="stat-compare">
-                    {{ $delta >= 0 ? '▲' : '▼' }} {{ number_format(abs($delta) * 100, 0) }}% vs. prior
-                </div>
-            @endif
-        </div>
-        <div class="stat-card net {{ $netChange >= 0 ? 'positive' : 'negative' }}">
-            <div class="stat-value">{{ $netChange >= 0 ? '+' : '' }}{{ \App\Services\FinanceReportService::usd($netChange) }}</div>
-            <div class="stat-label">Change in Net Assets</div>
-        </div>
-    </div>
+    <table class="stats">
+        <tr>
+            <td>
+                <div class="stat-value income">{{ \App\Services\FinanceReportService::usd($data['income']['total']) }}</div>
+                <div class="stat-label">Income</div>
+                @if ($hasCompare && isset($data['income']['prior_total']) && $data['income']['prior_total'] > 0)
+                    @php $delta = ($data['income']['total'] - $data['income']['prior_total']) / $data['income']['prior_total']; @endphp
+                    <div class="stat-compare">{{ $delta >= 0 ? '▲' : '▼' }} {{ number_format(abs($delta) * 100, 0) }}% vs. prior</div>
+                @endif
+            </td>
+            <td>
+                <div class="stat-value expense">{{ \App\Services\FinanceReportService::usd($data['expense']['total']) }}</div>
+                <div class="stat-label">Expenses</div>
+                @if ($hasCompare && isset($data['expense']['prior_total']) && $data['expense']['prior_total'] > 0)
+                    @php $delta = ($data['expense']['total'] - $data['expense']['prior_total']) / $data['expense']['prior_total']; @endphp
+                    <div class="stat-compare">{{ $delta >= 0 ? '▲' : '▼' }} {{ number_format(abs($delta) * 100, 0) }}% vs. prior</div>
+                @endif
+            </td>
+            <td>
+                <div class="stat-value {{ $netChange >= 0 ? 'net-positive' : 'net-negative' }}">{{ $netChange >= 0 ? '+' : '' }}{{ \App\Services\FinanceReportService::usd($netChange) }}</div>
+                <div class="stat-label">Change in Net Assets</div>
+            </td>
+        </tr>
+    </table>
 
     {{-- Dual donut ────────────────────────────────────────────────── --}}
-    <div class="charts">
-        <div class="chart-card">
-            <h3>Income by Category</h3>
-            <p class="sub">{{ $period['label'] }}</p>
-            {!! \App\Support\SvgChart::donut($incomeSegments, [
-                'width' => 240, 'height' => 220,
-                'center_label' => \App\Services\FinanceReportService::usd($data['income']['total']),
-                'center_sub' => 'Total',
-            ]) !!}
-            @if (! empty($incomeSegments))
-                <ul class="legend">
-                    @foreach ($data['income']['categories'] as $cat)
-                        <li>
-                            <span class="swatch" style="background: {{ $cat['color'] }};"></span>
-                            <span class="name">{{ $cat['name'] }}</span>
-                            <span class="pct">{{ number_format($cat['share'] * 100, 0) }}%</span>
-                            <span class="amt">{{ \App\Services\FinanceReportService::usd($cat['amount']) }}</span>
-                        </li>
-                    @endforeach
-                </ul>
-            @endif
-        </div>
-        <div class="chart-card">
-            <h3>Expenses by Category</h3>
-            <p class="sub">{{ $period['label'] }}</p>
-            {!! \App\Support\SvgChart::donut($expenseSegments, [
-                'width' => 240, 'height' => 220,
-                'center_label' => \App\Services\FinanceReportService::usd($data['expense']['total']),
-                'center_sub' => 'Total',
-            ]) !!}
-            @if (! empty($expenseSegments))
-                <ul class="legend">
-                    @foreach ($data['expense']['categories'] as $cat)
-                        <li>
-                            <span class="swatch" style="background: {{ $cat['color'] }};"></span>
-                            <span class="name">{{ $cat['name'] }}</span>
-                            <span class="pct">{{ number_format($cat['share'] * 100, 0) }}%</span>
-                            <span class="amt">{{ \App\Services\FinanceReportService::usd($cat['amount']) }}</span>
-                        </li>
-                    @endforeach
-                </ul>
-            @endif
-        </div>
-    </div>
+    <table class="charts">
+        <tr>
+            <td>
+                <h3>Income by Category</h3>
+                <p class="sub">{{ $period['label'] }}</p>
+                <div class="chart-wrap">
+                    {!! \App\Support\SvgChart::donut($incomeSegments, [
+                        'width' => 240, 'height' => 220,
+                        'center_label' => \App\Services\FinanceReportService::usd($data['income']['total']),
+                        'center_sub' => 'Total',
+                    ]) !!}
+                </div>
+                @if (! empty($incomeSegments))
+                    <table class="legend">
+                        @foreach ($data['income']['categories'] as $cat)
+                            <tr>
+                                <td style="width:14px;"><span class="swatch" style="background: {{ $cat['color'] }};"></span></td>
+                                <td>{{ $cat['name'] }}</td>
+                                <td style="text-align:right; color:#9ca3af;">{{ number_format($cat['share'] * 100, 0) }}%</td>
+                                <td style="text-align:right; font-weight:bold;">{{ \App\Services\FinanceReportService::usd($cat['amount']) }}</td>
+                            </tr>
+                        @endforeach
+                    </table>
+                @endif
+            </td>
+            <td>
+                <h3>Expenses by Category</h3>
+                <p class="sub">{{ $period['label'] }}</p>
+                <div class="chart-wrap">
+                    {!! \App\Support\SvgChart::donut($expenseSegments, [
+                        'width' => 240, 'height' => 220,
+                        'center_label' => \App\Services\FinanceReportService::usd($data['expense']['total']),
+                        'center_sub' => 'Total',
+                    ]) !!}
+                </div>
+                @if (! empty($expenseSegments))
+                    <table class="legend">
+                        @foreach ($data['expense']['categories'] as $cat)
+                            <tr>
+                                <td style="width:14px;"><span class="swatch" style="background: {{ $cat['color'] }};"></span></td>
+                                <td>{{ $cat['name'] }}</td>
+                                <td style="text-align:right; color:#9ca3af;">{{ number_format($cat['share'] * 100, 0) }}%</td>
+                                <td style="text-align:right; font-weight:bold;">{{ \App\Services\FinanceReportService::usd($cat['amount']) }}</td>
+                            </tr>
+                        @endforeach
+                    </table>
+                @endif
+            </td>
+        </tr>
+    </table>
 
     {{-- Detail table ──────────────────────────────────────────────── --}}
     <table class="detail">
@@ -358,7 +386,7 @@
 
     {{-- Insights ──────────────────────────────────────────────────── --}}
     <div class="insights">
-        <h3>📊 Insights</h3>
+        <h3>Insights</h3>
         <ul>
             @foreach ($data['insights'] as $bullet)
                 <li>{{ $bullet }}</li>
@@ -367,8 +395,8 @@
     </div>
 
     <div class="footer">
-        <span>{{ $branding['app_name'] }} · Statement of Activities · Generated {{ now()->format('Y-m-d H:i') }}</span>
-        <span>{{ $period['label'] }}</span>
+        <span class="right">{{ now()->format('Y-m-d H:i') }}</span>
+        <span>{{ $branding['app_name'] }} · Statement of Activities · {{ $period['label'] }}</span>
     </div>
 
 </div>

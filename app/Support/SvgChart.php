@@ -50,7 +50,10 @@ class SvgChart
             return self::emptyDonut($width, $height, $cx, $cy, $rOuter, $rInner);
         }
 
-        $svg = '<svg viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img" style="max-width:' . $width . 'px;height:auto;">';
+        // Explicit width/height attributes (in addition to viewBox) so
+        // dompdf renders at the intended size — without them, dompdf
+        // can allocate full-page space per chart.
+        $svg = '<svg width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img">';
 
         $start = -M_PI_2; // start at 12 o'clock
         foreach ($segments as $seg) {
@@ -111,7 +114,7 @@ class SvgChart
         $barGap  = 8;
         $barW    = max(4, ($chartW - $barGap * ($count - 1)) / $count);
 
-        $svg = '<svg viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img" style="max-width:' . $width . 'px;height:auto;">';
+        $svg = '<svg width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img">';
 
         // Axis line
         $svg .= '<line x1="' . $padX . '" x2="' . ($width - $padX) . '" '
@@ -186,7 +189,7 @@ class SvgChart
         $palette = \App\Services\FinanceReportService::PALETTE;
         $stepX   = count($labels) > 1 ? $chartW / (count($labels) - 1) : 0;
 
-        $svg = '<svg viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img" style="max-width:' . $width . 'px;height:auto;">';
+        $svg = '<svg width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img">';
 
         // Y axis baseline + 4 horizontal gridlines
         for ($i = 0; $i <= 4; $i++) {
@@ -266,7 +269,7 @@ class SvgChart
      */
     private static function emptyDonut(int $width, int $height, float $cx, float $cy, float $rOuter, float $rInner): string
     {
-        $svg = '<svg viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img" style="max-width:' . $width . 'px;height:auto;">';
+        $svg = '<svg width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img">';
         $svg .= '<circle cx="' . $cx . '" cy="' . $cy . '" r="' . $rOuter . '" fill="#f3f4f6" stroke="#e5e7eb"/>';
         $svg .= '<circle cx="' . $cx . '" cy="' . $cy . '" r="' . $rInner . '" fill="#fff"/>';
         $svg .= '<text x="' . $cx . '" y="' . $cy . '" text-anchor="middle" '
@@ -277,7 +280,7 @@ class SvgChart
 
     private static function emptyChart(int $width, int $height): string
     {
-        return '<svg viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img" style="max-width:' . $width . 'px;height:auto;">'
+        return '<svg width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img">'
              . '<rect x="0" y="0" width="' . $width . '" height="' . $height . '" fill="#f9fafb" stroke="#e5e7eb" rx="6"/>'
              . '<text x="' . ($width / 2) . '" y="' . ($height / 2) . '" text-anchor="middle" '
              . 'font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#9ca3af" dominant-baseline="middle">No data</text>'

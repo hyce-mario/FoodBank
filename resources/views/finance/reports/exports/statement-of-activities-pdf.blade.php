@@ -4,30 +4,37 @@
     <meta charset="utf-8">
     <title>Statement of Activities — {{ $branding['app_name'] }}</title>
     <style>
-        @page { margin: 30px 24px 40px 24px; }
+        /* dompdf-tuned: no @page margins (use body padding instead so
+           dompdf doesn't allocate weird whitespace), no fixed-position
+           footers (those interact badly with the page-counter when
+           total pages are unknown), no CSS Grid (dompdf v3 only
+           partially supports it). All layout is via tables with
+           explicit widths. */
         body {
             font-family: DejaVu Sans, sans-serif;
             color: #1f2937;
             font-size: 9.5px;
             line-height: 1.4;
+            margin: 0;
+            padding: 24px;
         }
 
-        /* Header — table layout (dompdf v3 has limited flex support) */
+        /* Header */
         table.header {
             width: 100%;
             border-collapse: collapse;
             border-bottom: 2px solid #1b2b4b;
-            margin-bottom: 12px;
+            margin-bottom: 14px;
         }
         table.header td { vertical-align: top; padding: 0 0 10px 0; }
         table.header td.right { text-align: right; }
-        .org img { max-height: 48px; max-width: 200px; margin-bottom: 4px; }
-        .org h1 { margin: 0; font-size: 15px; color: #1b2b4b; font-weight: bold; }
+        .org img { max-height: 44px; max-width: 180px; margin-bottom: 4px; }
+        .org h1 { margin: 0; font-size: 14px; color: #1b2b4b; font-weight: bold; }
         .org p  { margin: 2px 0 0; color: #6b7280; font-size: 9px; }
-        .doc-title h2 { margin: 0; font-size: 16px; color: #111; letter-spacing: 0.04em; }
+        .doc-title h2 { margin: 0; font-size: 14px; color: #111; letter-spacing: 0.04em; font-weight: bold; }
         .doc-title .meta { font-size: 9px; color: #6b7280; margin-top: 3px; }
 
-        /* Stat strip — 3 cells in a row */
+        /* KPI strip — 3 cells in a row, fixed width each */
         table.stats {
             width: 100%;
             border-collapse: separate;
@@ -36,10 +43,10 @@
         }
         table.stats td {
             border: 1px solid #e5e7eb;
-            border-radius: 5px;
             background: #fafafa;
             padding: 8px 10px;
             width: 33%;
+            vertical-align: top;
         }
         .stat-value { font-size: 14px; font-weight: bold; }
         .stat-value.income { color: #047857; }
@@ -52,7 +59,7 @@
         }
         .stat-compare { font-size: 8px; color: #6b7280; margin-top: 2px; }
 
-        /* Charts — 2 cells side-by-side */
+        /* Charts — 2 cells side-by-side, fixed widths */
         table.charts {
             width: 100%;
             border-collapse: separate;
@@ -61,14 +68,14 @@
         }
         table.charts td {
             border: 1px solid #e5e7eb;
-            border-radius: 5px;
             padding: 10px;
             background: #fff;
             width: 50%;
             vertical-align: top;
         }
-        table.charts h3 { margin: 0 0 4px; font-size: 10px; color: #1b2b4b; }
+        table.charts h3 { margin: 0 0 4px; font-size: 10px; color: #1b2b4b; font-weight: bold; }
         table.charts .sub { font-size: 8px; color: #9ca3af; margin: 0 0 8px; }
+        table.charts .chart-wrap { text-align: center; }
         table.legend {
             width: 100%;
             border-collapse: collapse;
@@ -80,9 +87,10 @@
             border: none;
             background: transparent;
         }
-        table.legend .swatch {
-            display: inline-block; width: 7px; height: 7px;
-            border-radius: 2px;
+        .swatch {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
         }
 
         /* Detail table */
@@ -135,29 +143,24 @@
         .insights {
             border: 1px solid #e5e7eb;
             border-left: 3px solid #f97316;
-            border-radius: 5px;
             padding: 10px 12px;
             background: #fffbeb;
+            margin-bottom: 14px;
         }
-        .insights h3 { margin: 0 0 6px; font-size: 10px; color: #92400e; }
+        .insights h3 { margin: 0 0 6px; font-size: 10px; color: #92400e; font-weight: bold; }
         .insights ul { margin: 0; padding-left: 14px; }
         .insights li { margin: 2px 0; color: #4b5563; font-size: 9px; }
 
-        /* Page footer */
+        /* Plain-flow footer (no fixed position — avoids the dompdf
+           page-counter "Page X of 0" bug). */
         .footer {
-            position: fixed;
-            bottom: -20px;
-            left: 0;
-            right: 0;
-            font-size: 7.5px;
-            color: #9ca3af;
+            margin-top: 18px;
+            padding-top: 10px;
             border-top: 1px solid #e5e7eb;
-            padding-top: 4px;
+            font-size: 8px;
+            color: #9ca3af;
         }
-        .footer .left  { float: left; }
         .footer .right { float: right; }
-        .page-num:after { content: counter(page); }
-        .page-total:after { content: counter(pages); }
     </style>
 </head>
 <body>
@@ -226,11 +229,13 @@
         <td>
             <h3>Income by Category</h3>
             <p class="sub">{{ $period['label'] }}</p>
-            {!! \App\Support\SvgChart::donut($incomeSegments, [
-                'width' => 200, 'height' => 180,
-                'center_label' => \App\Services\FinanceReportService::usd($data['income']['total']),
-                'center_sub' => 'Total',
-            ]) !!}
+            <div class="chart-wrap">
+                {!! \App\Support\SvgChart::donut($incomeSegments, [
+                    'width' => 180, 'height' => 160,
+                    'center_label' => \App\Services\FinanceReportService::usd($data['income']['total']),
+                    'center_sub' => 'Total',
+                ]) !!}
+            </div>
             @if (! empty($incomeSegments))
                 <table class="legend">
                     @foreach ($data['income']['categories'] as $cat)
@@ -247,11 +252,13 @@
         <td>
             <h3>Expenses by Category</h3>
             <p class="sub">{{ $period['label'] }}</p>
-            {!! \App\Support\SvgChart::donut($expenseSegments, [
-                'width' => 200, 'height' => 180,
-                'center_label' => \App\Services\FinanceReportService::usd($data['expense']['total']),
-                'center_sub' => 'Total',
-            ]) !!}
+            <div class="chart-wrap">
+                {!! \App\Support\SvgChart::donut($expenseSegments, [
+                    'width' => 180, 'height' => 160,
+                    'center_label' => \App\Services\FinanceReportService::usd($data['expense']['total']),
+                    'center_sub' => 'Total',
+                ]) !!}
+            </div>
             @if (! empty($expenseSegments))
                 <table class="legend">
                     @foreach ($data['expense']['categories'] as $cat)
@@ -268,7 +275,7 @@
     </tr>
 </table>
 
-{{-- Detail ──────────────────────────────────────────────────── --}}
+{{-- Detail table ───────────────────────────────────────────────── --}}
 <table class="detail">
     <thead>
         <tr>
@@ -367,8 +374,8 @@
 </div>
 
 <div class="footer">
-    <span class="left">{{ $branding['app_name'] }} · Statement of Activities · {{ $period['label'] }}</span>
-    <span class="right">Page <span class="page-num"></span> of <span class="page-total"></span></span>
+    <span class="right">{{ now()->format('Y-m-d H:i') }}</span>
+    <span>{{ $branding['app_name'] }} · Statement of Activities · {{ $period['label'] }}</span>
 </div>
 
 </body>
