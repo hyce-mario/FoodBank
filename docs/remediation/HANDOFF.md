@@ -4,17 +4,21 @@
 
 ---
 
-## Current state — 2026-05-04 (Session 7 — **Visit-log audit + Phase 5.6 closed + 5.7 volunteer UX**)
+## Current state — 2026-05-04 (Session 7 — **Phases 5.6–5.11 closed; volunteer module + public check-in kiosk fully reworked**)
 
 ### Where we are
 
-**Audit remediation Phases 0–6 remain fully closed** (per Session 5/6 status). This session added:
+**Audit remediation Phases 0–6 remain fully closed** (per Session 5/6 status). This session added six post-audit phases:
 
-1. **Phase 5.6 — Volunteer security + correctness** (NEW, post-audit). **CLOSED with a–h done; 5.6.i explicitly dropped.** Eight sub-tasks addressing issues a user-requested audit of the volunteers module surfaced. Public check-in flow now uses phone as the identity (search by phone, signup dedups by phone, FK-level uniqueness on phone, public search no longer leaks PII). Restrict cascade-delete preserves service-history through volunteer/event deletion attempts.
-2. **Phase 5.7 — Volunteer UX polish** (NEW, same audit conversation, split out for clarity). Five user-facing improvements bundled into one commit: index group filter + per-page selector, Show-page tel:/mailto: links, Total Hours tile, "Add to group" quick-action picker (+ new endpoint), Service History truncate-to-15 with Show-all toggle.
-3. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
+1. **Phase 5.6 — Volunteer security + correctness.** CLOSED with a–h, j done; 5.6.i dropped. Public check-in flow now uses phone as the identity.
+2. **Phase 5.7 — Volunteer UX polish.** Group filter, total-hours tile, mailto/tel, history truncate, add-to-group picker.
+3. **Phase 5.8 — Atomic volunteer merge tool.** Drains legacy duplicate backlog.
+4. **Phase 5.9 — Volunteer service-history print + CSV export.**
+5. **Phase 5.10 — Volunteer-groups card kebab overflow menu.**
+6. **Phase 5.11 — Volunteer Check-In Kiosk Redesign.** User reported "navy gradient header not showing, modal not opening" on `/volunteer-checkin`. Bundle inspection revealed the old page relied on Tailwind classes absent from the prebuilt frozen bundle: `from-indigo-950 / via-indigo-900 / to-indigo-800` (none of those indigo shades compiled — bundle has 50/100/200/500/600/700/800 only); `pointer-events-auto` (entire utility missing — the New Volunteer button was wrapped in a `pointer-events-none` container that it tried to override, so the click never fired); `bg-black/50`, `bg-white/10`, `pt-safe`, `animate-pulse`, all arbitrary values. Bug fix and redesign converged into one rewrite. **Hybrid 4-screen flow** (user-chosen middle option): Welcome (idle) → Identify (phone search) → Confirm card → Success (3s auto-reset). Welcome surfaces three big buttons (Check In green / Check Out amber / View My Status white). Confirm card shows volunteer name + initials avatar + group/team badges (from `VolunteerGroup` pivot) + live status block (already-checked-in warning for re-checkin / live elapsed clock for checkout & status, recomputed every second from `checked_in_at_iso`). Success screen: big check, headline + name + time + hours (checkout) + first-timer star, 3s countdown ticker. **Sound feedback** via Web Audio (no asset payload) — two-tone success beep, sawtooth error beep; muted preference persisted in localStorage as `vol_kiosk_muted`. Accessibility: `aria-live="polite"` region announces every screen transition + result; `role="dialog"` + `aria-modal` on signup sheet; auto-focus phone input on Identify entry; `prefers-reduced-motion` slashes transitions to 0.001ms. Service `search()` extended with `groups` (id+name only — no pivot metadata leak) and `checked_in_at_iso`. Search response now also keys check-ins by latest-row (sortByDesc + keyBy) — Phase 5.6.b made multi-row legal so the previous bare keyBy could silently drop earlier rows. Existing endpoints (`/checkin`, `/checkout`, `/signup`) untouched — zero new API surface. Phase 5.6.j safety rails preserved. Phase 5.6.e PII strip preserved. **Every Tailwind class verified against `public/build/assets/app-DOAy0A20.css` before commit.**
+7. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
 
-**Suite is green at 356/356** (was 287 at session start; +69 across 10 new test files; 5.10 added no tests — purely presentational kebab UX).
+**Suite is green at 359/359** (was 287 at session start; +72 across 11 new test files; 5.10 added no tests — purely presentational kebab UX; 5.11 added 3).
 
 ### ⚠️ What's committed vs. uncommitted
 
@@ -172,21 +176,24 @@ ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
 - `app/Http/Controllers/VolunteerController.php` — 5.6.c (selectSub for events_served_count) + 5.7 (group filter, availableGroups, attachGroup endpoint) + 5.6.f (destroy pre-check)
 - `app/Http/Controllers/EventController.php` — 5.6.f (destroy pre-check on volunteerCheckIns)
 - `app/Http/Controllers/PublicVolunteerCheckInController.php` — 5.6.h (signup phone-required + email-collision check) + 5.6.e (search docblock + tightened max length)
-- `app/Services/VolunteerCheckInService.php` — 5.6.b (transaction-wrapped checkIn, distinct-event stats, totalHours) + 5.6.h (createAndCheckIn dedups by phone) + 5.6.e (search rewritten phone-only, PII stripped from response)
+- `app/Services/VolunteerCheckInService.php` — 5.6.b (transaction-wrapped checkIn, distinct-event stats, totalHours) + 5.6.h (createAndCheckIn dedups by phone) + 5.6.e (search rewritten phone-only, PII stripped from response) + 5.11 (search adds `groups` + `checked_in_at_iso`; sortByDesc keyBy fixes multi-row drop)
 - `app/Services/EventAnalyticsService.php` — Phase 1.2.c retroactive fix + visit-log audit fixes (multi-household summing, dead code removed)
 - `app/Http/Requests/StoreEventVolunteerCheckInRequest.php` — time bounds (5.6.d)
 - `app/Http/Requests/StoreVolunteerRequest.php` — Rule::unique on phone + email (5.6.g)
 - `app/Http/Requests/UpdateVolunteerRequest.php` — Rule::unique with ->ignore on phone + email (5.6.g)
 - `resources/views/volunteers/index.blade.php` — 5.6.c badge fix + 5.7 toolbar (group filter, per-page selector)
 - `resources/views/volunteers/show.blade.php` — 5.7 (tel/mailto, Total Hours tile, Add-to-group picker, history truncate)
-- `resources/views/volunteer-checkin/index.blade.php` — 5.6.e (input → tel, copy updates, PII subtext removed, openSheet pre-fill, signup phone required, is_existing toast)
+- `resources/views/volunteer-checkin/index.blade.php` — 5.6.e (input → tel, copy updates, PII subtext removed, openSheet pre-fill, signup phone required, is_existing toast) → **5.11 full rewrite**: hybrid 4-screen state machine (welcome / identify / confirm / success), bundle-safe palette (solid `bg-navy-700`, no missing gradient stops), Web Audio sound feedback + mute toggle, `aria-live` + focus management + `prefers-reduced-motion`
 - `tests/Feature/EventVolunteerCheckInTest.php` — +3 bound tests (5.6.d)
+- `tests/Feature/PublicVolunteerSearchTest.php` — +3 tests (5.11): groups shape, iso timestamp present, iso null when not checked in
 - `routes/web.php` — added `visit-log/print` (Session 7 visit-log work) + `volunteers.groups.attach` (5.7); Phase C/D household export routes still uncommitted on the working tree
-- `docs/remediation/LOG.md` — Phase 5.6 + 5.7 entries, Deviations rows
+- `docs/remediation/LOG.md` — Phase 5.6 + 5.7 + 5.8 + 5.9 + 5.10 + 5.11 entries, Deviations rows
 
 ### What's next — start here on resume
 
-**The volunteer-module audit punch list from Sessions 7 is exhausted.** All audit-derived sub-tasks are closed: 5.6 (a–h, j; i dropped) + 5.7 + 5.8 + 5.9 + 5.10. The volunteer module is now in a clean state — secure, deduped, exportable, ergonomic.
+**The volunteer-module audit punch list from Sessions 7 is exhausted.** All audit-derived sub-tasks are closed: 5.6 (a–h, j; i dropped) + 5.7 + 5.8 + 5.9 + 5.10 + 5.11. The volunteer module is now in a clean state — secure, deduped, exportable, ergonomic; the public check-in kiosk is fully rewritten on bundle-safe Tailwind.
+
+**Phase 5.11 is uncommitted at session end.** Three working-tree files (service + view + test) plus LOG.md + HANDOFF.md edits. User has not yet been asked whether to commit; await direction. Suggested commit shape: one feat commit `feat(volunteer-checkin): Phase 5.11 — hybrid 4-screen kiosk redesign + bundle-safe palette + sound feedback` (touches service, view, test) and one docs commit `docs(remediation): log Phase 5.11`.
 
 #### Path 1 — Sweep up Session 6 leftover
 
@@ -236,6 +243,22 @@ Many uncommitted Session-6 features look complete and could land in their own co
   - Total Hours tile in service summary strip
   - "Add to group" quick picker + new `POST /volunteers/{volunteer}/groups` endpoint
   - Service History truncate-to-15 with Show-all toggle
+
+### Phase 5.11 sub-task status — CLOSED (uncommitted)
+
+- ✅ **5.11** Volunteer Check-In Kiosk Redesign — full rewrite of `resources/views/volunteer-checkin/index.blade.php`:
+  - Hybrid 4-screen state machine (welcome / identify / confirm / success), 3s auto-reset on success
+  - Bundle-safe palette (solid `bg-navy-700` header, no gradient stops missing from prebuilt CSS)
+  - Sound feedback via Web Audio (success two-tone beep / sawtooth error tone) + mute toggle persisted in `localStorage['vol_kiosk_muted']`
+  - Accessibility: `aria-live="polite"` region, `role="dialog"` + `aria-modal` on signup sheet, auto-focus on screen entry via `$watch('screen', ...) + $nextTick`, `prefers-reduced-motion` cuts transitions to 0.001ms
+  - Service `search()` adds `groups` (id+name only) + `checked_in_at_iso` (drives live elapsed clock)
+  - Multi-row keyBy bug fix: `sortByDesc('checked_in_at')->keyBy('volunteer_id')` so the latest row wins after Phase 5.6.b made multi-row-per-(event, volunteer) legal
+  - **Polish (post-live-test)**: search input padding fix — `pl-11 pr-12 pl-4` aren't in the prebuilt bundle so the icon, placeholder, and X button were visually stacked. Replaced with bundle-safe `pl-9 pr-10` + `pl-3` / `pr-3`.
+  - **Polish (post-live-test)**: fuzzy phone match — new `VolunteerCheckInService::findByPhoneDigits()` strips non-digits from both sides via chained `REPLACE()` (portable MySQL/SQLite, no REGEXP_REPLACE). Used by search() + createAndCheckIn() + email-collision pre-check. Typed "(555) 0001" now matches stored "5550001" and vice versa. Bounded table = unindexed scan acceptable; note in docblock for future `phone_digits` column if scale demands it.
+  - Suite 356 → 362 (+3 for response shape, +3 for fuzzy match) in `PublicVolunteerSearchTest`
+  - **Files modified**: `app/Services/VolunteerCheckInService.php`, `app/Http/Controllers/PublicVolunteerCheckInController.php`, `resources/views/volunteer-checkin/index.blade.php`, `tests/Feature/PublicVolunteerSearchTest.php`, `docs/remediation/LOG.md`, `docs/remediation/HANDOFF.md`
+  - **New file**: `database/seeders/KioskTestDataSeeder.php` (one-shot test data: today's + tomorrow's events with auth codes, 8 volunteers with sequential test phones, 5 households, 3 pre-regs, 2 reviews on most recent past event, 1 inventory category with 3 items + allocation, 2 finance categories with 2 transactions; idempotent via firstOrCreate).
+  - **No new migrations, no new routes, no new controller surface.**
 
 ### Drive-by fixes this session
 
@@ -297,7 +320,7 @@ Many uncommitted Session-6 features look complete and could land in their own co
 - D mobile UX → **desktop-only bulk modal is fine**
 
 #### Carried forward — still open
-
+ 
 - **Existing duplicate household records** ("Linda showing twice") — Phase 6.5 prevents new dups, doesn't merge existing ones.
 - **Backfill scope** (Phase 2.1.f): historical exited visits — forward-only or backfill?
 - **Tab name for "Photos & Video"** — PDFs upload too now; "Media" or "Photos, Video & Documents"?
