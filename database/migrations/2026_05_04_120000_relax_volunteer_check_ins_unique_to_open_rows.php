@@ -34,6 +34,20 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('volunteer_check_ins', function (Blueprint $table) {
+            // The composite unique index ALSO served as the covering
+            // index for the FK on event_id (event_id was its leading
+            // column). MySQL 8 raises error 1553 if you drop the only
+            // index that backs a foreign key. Add a standalone index
+            // on event_id first so the FK keeps a covering index after
+            // the unique is dropped. (volunteer_id already has its own
+            // _foreign index from foreignId()->constrained().)
+            //
+            // SQLite ignores this nuance — it doesn't require an index
+            // for FK enforcement — so the test suite stayed green when
+            // only the dropUnique() existed; the issue surfaced only
+            // on the dev MySQL DB.
+            $table->index('event_id', 'volunteer_check_ins_event_id_index');
+
             // Laravel names composite unique keys as
             //   {table}_{col1}_{col2}_unique
             // Pass the explicit name to dropUnique() — passing an array
@@ -45,7 +59,11 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('volunteer_check_ins', function (Blueprint $table) {
+            // Re-add the composite unique FIRST so the FK on event_id
+            // has a covering index continuously, then drop the
+            // standalone event_id index. Reverse order from up().
             $table->unique(['event_id', 'volunteer_id']);
+            $table->dropIndex('volunteer_check_ins_event_id_index');
         });
     }
 };
