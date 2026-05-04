@@ -12,13 +12,23 @@ use Illuminate\Support\Facades\DB;
 class VolunteerCheckInService
 {
     /**
-     * Search volunteers by name, phone, or email for a check-in lookup.
-     * Returns a collection enriched with whether the volunteer is pre-assigned
-     * to this event and whether they have already checked in.
+     * Phase 5.6.e+ — phone-only lookup for the public check-in page.
+     *
+     * Pre-fix, this method searched volunteers by name, phone, or email
+     * and returned the matched rows including phone + email — leaking
+     * volunteer PII to anyone hitting the unauthenticated public
+     * `/volunteer-checkin/search` endpoint. After 5.6.g (phone is
+     * UNIQUE) phone is the unambiguous lookup key, and the response
+     * shape drops phone + email entirely.
+     *
+     * Returns a Collection (still, for backwards compat with the
+     * existing JsonResponse->json('results') wrapper) of at most one
+     * entry — UNIQUE on phone makes the result unambiguous.
      */
-    public function search(Event $event, string $term): Collection
+    public function search(Event $event, string $phone): Collection
     {
-        if (trim($term) === '') {
+        $phone = trim($phone);
+        if ($phone === '') {
             return collect();
         }
 
@@ -27,18 +37,17 @@ class VolunteerCheckInService
 
         $checkInsByVolunteer = $event->volunteerCheckIns->keyBy('volunteer_id');
 
-        return Volunteer::search($term)
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->limit(15)
+        return Volunteer::where('phone', $phone)
+            ->limit(1)
             ->get()
             ->map(function (Volunteer $v) use ($preAssigned, $checkedIn, $checkInsByVolunteer) {
                 $ci = $checkInsByVolunteer->get($v->id);
                 return [
                     'id'            => $v->id,
                     'full_name'     => $v->full_name,
-                    'phone'         => $v->phone,
-                    'email'         => $v->email,
+                    // Phase 5.6.e: phone + email intentionally NOT
+                    // returned. Public endpoint must not echo PII even
+                    // back to the caller who already typed the phone.
                     'is_assigned'   => $preAssigned->has($v->id),
                     'checked_in'    => $checkedIn->has($v->id),
                     'checkin_time'  => $ci?->checked_in_at?->format('g:i A'),

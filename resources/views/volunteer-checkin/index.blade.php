@@ -64,12 +64,16 @@
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                         </svg>
                     </div>
-                    <input type="text"
+                    {{-- Phase 5.6.e — phone-only lookup. type=tel + inputmode triggers
+                         the numeric keypad on mobile; autocomplete=tel surfaces saved
+                         numbers from the device. --}}
+                    <input type="tel"
                            x-model="query"
                            @input.debounce.350ms="doSearch()"
                            @keydown.escape="clearSearch()"
-                           placeholder="Search name, phone, or email…"
-                           autocomplete="off" autocorrect="off" spellcheck="false"
+                           placeholder="Enter your phone number"
+                           inputmode="tel"
+                           autocomplete="tel" autocorrect="off" spellcheck="false"
                            class="w-full pl-11 pr-10 py-3.5 text-[15px] bg-white border-0 rounded-2xl shadow-sm
                                   focus:outline-none focus:ring-2 focus:ring-indigo-400/30
                                   placeholder:text-gray-400 text-gray-900 font-medium">
@@ -113,12 +117,12 @@
                 </svg>
             </div>
             <p class="text-sm font-bold text-gray-700 mb-1">
-                No match for "<span x-text="query" class="text-indigo-600"></span>"
+                No volunteer found for that number
             </p>
             <p class="text-xs text-gray-400 leading-relaxed mb-5">
-                Not in the system yet? Sign up as a new volunteer below.
+                Not in the system yet? Sign up — we'll save your phone for next time.
             </p>
-            <button @click="sheetOpen = true"
+            <button @click="openSheet()"
                     class="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700
                            active:scale-95 text-white text-sm font-bold rounded-xl transition-all
                            shadow-lg shadow-indigo-500/25 select-none">
@@ -142,7 +146,7 @@
             </div>
             <p class="text-base font-bold text-gray-700">Welcome! Ready to help?</p>
             <p class="text-sm text-gray-400 mt-1.5 leading-relaxed">
-                Search your name above to check in,<br>
+                Enter your phone number above to check in,<br>
                 or tap <span class="font-semibold text-indigo-500">New Volunteer</span> if it's your first time.
             </p>
         </div>
@@ -188,13 +192,14 @@
                                 </span>
                             </div>
                             <div class="mt-0.5">
+                                {{-- Phase 5.6.e: phone + email subtext intentionally
+                                     dropped — public response no longer carries PII.
+                                     Only show check-in status. --}}
                                 <span x-show="vol.checked_in"
                                       class="text-xs font-semibold text-green-600"
                                       x-text="'✓ Checked in at ' + (vol.checkin_time || '')"></span>
-                                <span x-show="!vol.checked_in && vol.phone"
-                                      class="text-xs text-gray-400" x-text="vol.phone"></span>
-                                <span x-show="!vol.checked_in && !vol.phone && vol.email"
-                                      class="text-xs text-gray-400 truncate block" x-text="vol.email"></span>
+                                <span x-show="!vol.checked_in"
+                                      class="text-xs text-gray-400">Tap Check In to confirm</span>
                             </div>
                         </div>
 
@@ -249,7 +254,7 @@
 
     {{-- ── Floating "New Volunteer" button ────────────────────────────── --}}
     <div class="fixed bottom-6 inset-x-0 flex justify-center z-20 pointer-events-none">
-        <button @click="sheetOpen = true"
+        <button @click="openSheet()"
                 class="pointer-events-auto inline-flex items-center gap-2.5 px-7 py-4
                        bg-indigo-600 hover:bg-indigo-700 active:scale-95
                        text-white text-sm font-bold rounded-full
@@ -359,9 +364,11 @@
 
                     <div>
                         <label class="block text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">
-                            Phone
+                            Phone <span class="text-red-500">*</span>
                         </label>
+                        {{-- Phone is the dedup key (Phase 5.6.h) — required. --}}
                         <input type="tel" name="phone" autocomplete="tel"
+                               required inputmode="tel"
                                class="w-full px-3.5 py-3.5 text-[15px] border border-gray-200 rounded-xl bg-gray-50
                                       focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 focus:bg-white
                                       transition-all font-medium">
@@ -502,6 +509,18 @@ function volunteerCheckIn() {
             this.searched = false;
         },
 
+        // ── Open sign-up sheet with the typed phone pre-filled ───────────
+        openSheet() {
+            this.sheetOpen = true;
+            // Wait for the sheet to render before reaching for the input.
+            this.$nextTick(() => {
+                const phoneInput = document.querySelector('#newVolForm input[name="phone"]');
+                if (phoneInput && this.query.trim()) {
+                    phoneInput.value = this.query.trim();
+                }
+            });
+        },
+
         // ── Check-in existing volunteer ───────────────────────────────────
         async checkIn(volunteerId) {
             const vol = this.results.find(v => v.id === volunteerId);
@@ -589,7 +608,14 @@ function volunteerCheckIn() {
                     this.checkedInCount = data.checked_in_count;
                     this.sheetOpen = false;
                     form.reset();
-                    this.toast(true, `Welcome ${data.full_name}! 🌟 Checked in at ${data.time}.`);
+                    // Phase 5.6.h: differentiate the welcome message — a
+                    // returning volunteer (phone matched an existing
+                    // record) gets "Welcome back", a true newcomer gets
+                    // the first-timer star.
+                    const greeting = data.is_existing
+                        ? `Welcome back, ${data.full_name}! Checked in at ${data.time}.`
+                        : `Welcome ${data.full_name}! 🌟 Checked in at ${data.time}.`;
+                    this.toast(true, greeting);
                 } else {
                     const errs = data.errors
                         ? Object.values(data.errors).flat().join(' ')

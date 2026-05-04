@@ -46,6 +46,13 @@ class PublicVolunteerCheckInController extends Controller
 
     // ─── AJAX search ─────────────────────────────────────────────────────────
 
+    /**
+     * Phase 5.6.e — phone-only lookup. The query is the phone number the
+     * user typed; service does an exact match against volunteers.phone
+     * (UNIQUE per 5.6.g) and the response strips PII (no phone or email
+     * echoed back). Empty result for empty / no-match queries — same
+     * shape as before so the frontend doesn't need a special case.
+     */
     public function search(Request $request): JsonResponse
     {
         $event = $this->activeEvent();
@@ -55,7 +62,11 @@ class PublicVolunteerCheckInController extends Controller
         }
 
         $request->validate([
-            'q' => ['nullable', 'string', 'max:100'],
+            // Tightened from the old name/phone/email max:100 — phone-shaped
+            // input only. Permissive character set so users can type
+            // formatted numbers ("(555) 123-4567") if they want, even
+            // though the lookup is by exact stored value.
+            'q' => ['nullable', 'string', 'max:30'],
         ]);
 
         $event->loadMissing('assignedVolunteers', 'volunteerCheckIns');
