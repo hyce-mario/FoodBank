@@ -104,17 +104,52 @@ class VolunteerCheckInService
     }
 
     /**
-     * Create a brand-new volunteer record and immediately check them in.
-     * Always marked as 'new_volunteer' source and 'first_timer' since they
-     * have no prior service history.
+     * Public-facing signup: dedup by phone, then check in.
+     *
+     * If the submitted phone matches an existing volunteer, that volunteer
+     * is checked in (no new row created — preserves their accumulated
+     * service history + identity). Otherwise a brand-new volunteer is
+     * created and checked in as 'new_volunteer'.
+     *
+     * Phone is the dedup key per Phase 5.6.h. The submitted name and
+     * email are IGNORED on phone-match — public form input cannot be
+     * trusted to update an existing record without admin auth (audit
+     * concern). Admin can still edit the volunteer via the admin UI.
+     *
+     * Returns:
+     *   [
+     *     'volunteer'   => Volunteer,
+     *     'checkIn'     => VolunteerCheckIn,
+     *     'is_existing' => bool,   // true when phone matched an existing row
+     *   ]
      */
     public function createAndCheckIn(Event $event, array $data): array
     {
+        $phone = trim((string) ($data['phone'] ?? ''));
+        $existing = $phone !== ''
+            ? Volunteer::where('phone', $phone)->first()
+            : null;
+
+        if ($existing) {
+            // checkIn() is idempotent: if the volunteer already has an
+            // open row for this event, it's returned as-is (no double
+            // check-in). Source flips from 'new_volunteer' (the public
+            // signup default) to 'walk_in' or 'pre_assigned' depending
+            // on whether they were on the assignment list.
+            $checkIn = $this->checkIn($event, $existing);
+
+            return [
+                'volunteer'   => $existing,
+                'checkIn'     => $checkIn,
+                'is_existing' => true,
+            ];
+        }
+
         $volunteer = Volunteer::create([
             'first_name' => $data['first_name'],
             'last_name'  => $data['last_name'],
-            'phone'      => $data['phone'] ?? null,
-            'email'      => $data['email'] ?? null,
+            'phone'      => $phone !== '' ? $phone : null,
+            'email'      => ! empty($data['email']) ? $data['email'] : null,
             'role'       => 'Other',
         ]);
 
@@ -127,7 +162,11 @@ class VolunteerCheckInService
             'checked_in_at' => Carbon::now(),
         ]);
 
-        return compact('volunteer', 'checkIn');
+        return [
+            'volunteer'   => $volunteer,
+            'checkIn'     => $checkIn,
+            'is_existing' => false,
+        ];
     }
 
     /**
