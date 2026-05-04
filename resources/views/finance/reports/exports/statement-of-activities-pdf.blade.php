@@ -223,18 +223,22 @@
     </tr>
 </table>
 
-{{-- Dual donut ────────────────────────────────────────────────── --}}
+{{-- Charts ──────────────────────────────────────────────────────
+     PDF uses horizontal stacked bars (built from `<rect>` elements)
+     instead of the donut SVG path arcs the screen + print views use.
+     dompdf v3's path-arc support is unreliable — the stacked bar is
+     the same data rendered with primitives dompdf renders faithfully. --}}
 <table class="charts">
     <tr>
         <td>
             <h3>Income by Category</h3>
-            <p class="sub">{{ $period['label'] }}</p>
+            <p class="sub">{{ $period['label'] }} · Total: {{ \App\Services\FinanceReportService::usd($data['income']['total']) }}</p>
             <div class="chart-wrap">
-                {!! \App\Support\SvgChart::donut($incomeSegments, [
-                    'width' => 180, 'height' => 160,
-                    'center_label' => \App\Services\FinanceReportService::usd($data['income']['total']),
-                    'center_sub' => 'Total',
-                ]) !!}
+                @if (! empty($incomeSegments))
+                    {!! \App\Support\SvgChart::horizontalStackedBar($incomeSegments, ['width' => 240, 'height' => 26]) !!}
+                @else
+                    <div style="height:26px; background:#f3f4f6; border-radius:4px; text-align:center; color:#9ca3af; font-size:8px; line-height:26px;">No data</div>
+                @endif
             </div>
             @if (! empty($incomeSegments))
                 <table class="legend">
@@ -251,13 +255,13 @@
         </td>
         <td>
             <h3>Expenses by Category</h3>
-            <p class="sub">{{ $period['label'] }}</p>
+            <p class="sub">{{ $period['label'] }} · Total: {{ \App\Services\FinanceReportService::usd($data['expense']['total']) }}</p>
             <div class="chart-wrap">
-                {!! \App\Support\SvgChart::donut($expenseSegments, [
-                    'width' => 180, 'height' => 160,
-                    'center_label' => \App\Services\FinanceReportService::usd($data['expense']['total']),
-                    'center_sub' => 'Total',
-                ]) !!}
+                @if (! empty($expenseSegments))
+                    {!! \App\Support\SvgChart::horizontalStackedBar($expenseSegments, ['width' => 240, 'height' => 26]) !!}
+                @else
+                    <div style="height:26px; background:#f3f4f6; border-radius:4px; text-align:center; color:#9ca3af; font-size:8px; line-height:26px;">No data</div>
+                @endif
             </div>
             @if (! empty($expenseSegments))
                 <table class="legend">

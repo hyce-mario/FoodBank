@@ -26,6 +26,49 @@ namespace App\Support;
 class SvgChart
 {
     /**
+     * Horizontal stacked bar — proportions of a single dataset rendered
+     * as a single horizontal bar split into segments. Used in PDF
+     * exports where dompdf's path-arc support is unreliable; the bar
+     * is built entirely from `<rect>` elements which dompdf renders
+     * faithfully.
+     *
+     * @param array<int, array{label:string, value:float, color:string}> $segments
+     * @param array{
+     *   width?:int, height?:int,
+     *   total_label?:string,
+     * } $opts
+     */
+    public static function horizontalStackedBar(array $segments, array $opts = []): string
+    {
+        $width  = $opts['width']  ?? 540;
+        $height = $opts['height'] ?? 36;
+
+        $total = array_sum(array_column($segments, 'value'));
+        if ($total <= 0) {
+            return self::emptyChart($width, $height);
+        }
+
+        $svg = '<svg width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img">';
+
+        // Background track — light grey rectangle the bar sits inside.
+        $svg .= '<rect x="0" y="0" width="' . $width . '" height="' . $height . '" fill="#f3f4f6" rx="4"/>';
+
+        $x = 0;
+        foreach ($segments as $seg) {
+            $value = (float) $seg['value'];
+            if ($value <= 0) continue;
+            $segWidth = ($value / $total) * $width;
+            $svg .= '<rect x="' . round($x, 2) . '" y="0" '
+                  . 'width="' . round($segWidth, 2) . '" height="' . $height . '" '
+                  . 'fill="' . $seg['color'] . '"/>';
+            $x += $segWidth;
+        }
+
+        $svg .= '</svg>';
+        return $svg;
+    }
+
+    /**
      * Donut chart — slice proportions of a single dataset.
      *
      * @param array<int, array{label:string, value:float, color:string}> $segments

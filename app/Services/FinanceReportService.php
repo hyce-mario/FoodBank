@@ -221,27 +221,51 @@ class FinanceReportService
     }
 
     /**
-     * Phase 7.1+ — Brand-only palette. Per user direction (post-7.1
-     * review), the chart palette was reduced from a wide 8-color set
-     * to the navy/orange brand family + two supporting neutrals so
-     * board reports have a tight, on-brand visual identity rather
-     * than rainbow donuts.
+     * Phase 7.1+ — Brand-only PALETTE that alternates navy and orange
+     * shades. Both income and expense donuts draw from this same
+     * palette, sequentially per donut, so:
      *
-     * Same colour rule still applies — `colorFor(name)` hashes the
-     * category name so "Donations" always renders the same colour
-     * across every report, just within a tighter palette.
+     *   • Two slices in the same donut never share a colour (up to
+     *     palette size).
+     *   • Each donut visually mixes navy + orange — the brand
+     *     identity reads strongly even on small charts.
+     *   • Largest-first sequential assignment gives the biggest
+     *     slice the boldest brand colour (navy 700) and steps down
+     *     in alternating navy/orange shades from there.
+     *
+     * Order matters: navy → orange → navy → orange → ... so adjacent
+     * slices on the donut get visually distinct hues, not just
+     * shades of the same colour.
      */
     public const PALETTE = [
         '#1b2b4b', // navy 700 — primary brand
-        '#f97316', // brand orange 500
-        '#1e3a8a', // deeper navy variant
-        '#c2410c', // deeper orange variant
-        '#6b7280', // gray 500 — neutral / "Other"
+        '#f97316', // brand orange 500 — primary accent
+        '#1e3a8a', // navy 800 — deeper navy
+        '#c2410c', // orange 700 — deeper orange
+        '#3b5998', // navy 500 — mid navy
+        '#fb923c', // orange 400 — mid orange
+        '#5b7bb6', // navy 400 — lighter navy
+        '#fdba74', // orange 300 — lighter orange
     ];
 
     /**
-     * Stable palette assignment by category name — hash the name and
-     * pick a palette slot. Same input always returns the same colour.
+     * Sequential colour picker for donut slices. Returns the i-th
+     * colour from PALETTE so two categories in the same donut never
+     * share a colour (up to palette size = 8). Both income and
+     * expense donuts use this same picker; the palette alternates
+     * navy and orange so each donut mixes both brand colours.
+     */
+    public static function colorForSlice(int $index): string
+    {
+        return self::PALETTE[$index % count(self::PALETTE)];
+    }
+
+    /**
+     * Hash-stable colour picker — kept for reports that want the same
+     * category name to always render the same colour across pages
+     * (e.g. Donor Analysis where a single donor might appear in
+     * multiple reports). NOT used by Statement of Activities donuts;
+     * those use sequential type-aware assignment via colorForSlice().
      */
     public static function colorFor(string $key): string
     {
@@ -332,14 +356,22 @@ class FinanceReportService
         $total = array_sum($byCat);
         arsort($byCat); // largest first
 
+        // Sequential colour assignment from the shared PALETTE so no
+        // two slices in the same donut share a colour. The palette
+        // alternates navy and orange shades, so each donut visually
+        // mixes both brand colours — the largest slice (sorted first)
+        // gets navy 700, the next gets brand orange, then navy 800,
+        // then orange 700, etc.
         $categories = [];
+        $i = 0;
         foreach ($byCat as $name => $amount) {
             $categories[] = [
                 'name'   => $name,
                 'amount' => (float) $amount,
-                'color'  => self::colorFor($name),
+                'color'  => self::colorForSlice($i),
                 'share'  => $total > 0 ? ($amount / $total) : 0.0,
             ];
+            $i++;
         }
 
         return ['categories' => $categories, 'total' => (float) $total];

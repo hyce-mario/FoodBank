@@ -196,10 +196,50 @@ class FinanceReportPeriodTest extends TestCase
 
         // Same input → same output every time
         $this->assertSame($a1, $a2);
-        // Different inputs CAN collide (palette is 8 colors) but the
+        // Different inputs CAN collide (palette is small) but the
         // assertion that matters is determinism — checked above.
         $this->assertContains($a1, FinanceReportService::PALETTE);
         $this->assertContains($b,  FinanceReportService::PALETTE);
+    }
+
+    public function test_color_for_slice_returns_palette_color(): void
+    {
+        // Every index returns a colour from the shared PALETTE.
+        for ($i = 0; $i < 8; $i++) {
+            $this->assertContains(
+                FinanceReportService::colorForSlice($i),
+                FinanceReportService::PALETTE,
+                "slice {$i} should be in PALETTE",
+            );
+        }
+    }
+
+    public function test_color_for_slice_returns_unique_colors_within_a_donut(): void
+    {
+        // Up to palette size (8) consecutive indices must all return
+        // different colours so a single donut never has two slices in
+        // the same colour.
+        $colors = [];
+        for ($i = 0; $i < 8; $i++) {
+            $colors[] = FinanceReportService::colorForSlice($i);
+        }
+        $this->assertCount(8, array_unique($colors), 'palette must yield 8 distinct colours');
+    }
+
+    public function test_palette_alternates_navy_and_orange(): void
+    {
+        // Navy = #1[a-f]…2b4b family / blue-ish hex codes; orange =
+        // #f97316 / #c2410c / #fb923c / #fdba74. The visual story is
+        // "each donut mixes both brand colours" — verify the palette
+        // is interleaved rather than navy-then-orange-block.
+        $palette = FinanceReportService::PALETTE;
+        // Slot 0 should be navy 700 (the brand primary)
+        $this->assertSame('#1b2b4b', $palette[0]);
+        // Slot 1 should be brand orange (so adjacent slices contrast)
+        $this->assertSame('#f97316', $palette[1]);
+        // Subsequent slots also alternate families
+        $this->assertSame('#1e3a8a', $palette[2]); // navy 800
+        $this->assertSame('#c2410c', $palette[3]); // orange 700
     }
 
     public function test_compare_flag_via_boolean_request_input_is_recognized(): void

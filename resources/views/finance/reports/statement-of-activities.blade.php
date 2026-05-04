@@ -30,8 +30,9 @@
 
 @include('finance.reports._shell', compact('reportTitle', 'period', 'exportRoutes'))
 
-{{-- ── KPI strip ──────────────────────────────────────────────────────── --}}
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+{{-- ── KPI strip — always 3-up so Income / Expenses / Change in Net
+     Assets stay on a single row at every screen width ──────────── --}}
+<div class="grid grid-cols-3 gap-4 mb-5">
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
         <p class="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">Income</p>
         <p class="text-2xl font-bold text-green-700 tabular-nums">{{ \App\Services\FinanceReportService::usd($data['income']['total']) }}</p>
@@ -78,8 +79,9 @@
     </div>
 </div>
 
-{{-- ── Charts: dual donut ────────────────────────────────────────────── --}}
-<div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+{{-- ── Charts: dual donut — always 2-up so Income by Category and
+     Expenses by Category sit side-by-side at every screen width --}}
+<div class="grid grid-cols-2 gap-5 mb-5">
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <h3 class="text-sm font-bold text-gray-800 mb-1">Income by Category</h3>
         <p class="text-xs text-gray-400 mb-4">{{ $period['label'] }}</p>
