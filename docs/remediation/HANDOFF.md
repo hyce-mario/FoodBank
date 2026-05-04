@@ -18,14 +18,20 @@
 6. **Phase 5.11 — Volunteer Check-In Kiosk Redesign.** User reported "navy gradient header not showing, modal not opening" on `/volunteer-checkin`. Bundle inspection revealed the old page relied on Tailwind classes absent from the prebuilt frozen bundle: `from-indigo-950 / via-indigo-900 / to-indigo-800` (none of those indigo shades compiled — bundle has 50/100/200/500/600/700/800 only); `pointer-events-auto` (entire utility missing — the New Volunteer button was wrapped in a `pointer-events-none` container that it tried to override, so the click never fired); `bg-black/50`, `bg-white/10`, `pt-safe`, `animate-pulse`, all arbitrary values. Bug fix and redesign converged into one rewrite. **Hybrid 4-screen flow** (user-chosen middle option): Welcome (idle) → Identify (phone search) → Confirm card → Success (3s auto-reset). Welcome surfaces three big buttons (Check In green / Check Out amber / View My Status white). Confirm card shows volunteer name + initials avatar + group/team badges (from `VolunteerGroup` pivot) + live status block (already-checked-in warning for re-checkin / live elapsed clock for checkout & status, recomputed every second from `checked_in_at_iso`). Success screen: big check, headline + name + time + hours (checkout) + first-timer star, 3s countdown ticker. **Sound feedback** via Web Audio (no asset payload) — two-tone success beep, sawtooth error beep; muted preference persisted in localStorage as `vol_kiosk_muted`. Accessibility: `aria-live="polite"` region announces every screen transition + result; `role="dialog"` + `aria-modal` on signup sheet; auto-focus phone input on Identify entry; `prefers-reduced-motion` slashes transitions to 0.001ms. Service `search()` extended with `groups` (id+name only — no pivot metadata leak) and `checked_in_at_iso`. Search response now also keys check-ins by latest-row (sortByDesc + keyBy) — Phase 5.6.b made multi-row legal so the previous bare keyBy could silently drop earlier rows. Existing endpoints (`/checkin`, `/checkout`, `/signup`) untouched — zero new API surface. Phase 5.6.j safety rails preserved. Phase 5.6.e PII strip preserved. **Every Tailwind class verified against `public/build/assets/app-DOAy0A20.css` before commit.**
 7. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
 
-**Suite is green at 359/359** (was 287 at session start; +72 across 11 new test files; 5.10 added no tests — purely presentational kebab UX; 5.11 added 3).
+**Suite is green at 362/362** (was 287 at session start; +75 across 11 new test files; 5.10 added no tests — purely presentational kebab UX; 5.11 added 6).
 
-### ⚠️ What's committed vs. uncommitted
+### ⚠️ What's committed and pushed
 
-**Committed this session (Session 7):**
+**Working tree is CLEAN at session end.** `main` and `origin/main` are in sync. All 21 commits this session reached origin via two pushes.
+
+**Phase commits (Session 7):**
 
 | Commit | Subject |
 |---|---|
+| `f55585b` | docs(remediation): log Phase 5.11 — kiosk redesign + fuzzy phone match |
+| `c3eb659` | chore(seeder): KioskTestDataSeeder for live-testing Phase 5.11 |
+| `15bfe3b` | feat(volunteer-checkin): Phase 5.11 — hybrid 4-screen kiosk redesign + fuzzy phone match |
+| `217cb62` | docs(remediation): log Phase 5.10 + drive-by Merge button color fix |
 | `cb4331f` | feat(volunteer-groups): Phase 5.10 — kebab overflow menu on group cards |
 | `f073d97` | fix(volunteers): merge button color — bg-amber-600 was rendering white |
 | `972c017` | docs(remediation): log Phase 5.9 — service-history print + CSV export |
@@ -40,7 +46,6 @@
 | `e3c450d` | fix(volunteers): Phase 5.6.g — UNIQUE on volunteers.phone + email |
 | `64377b9` | docs(remediation): log Phase 5.7 — Volunteer UX polish |
 | `dff8b1c` | feat(volunteers): UX polish — group filter, total hours, mailto/tel, history toggle, add-to-group |
-| `4e3ed48` | docs(remediation): refresh HANDOFF for Session 7 — visit-log + Phase 5.6 |
 | `f38e1d5` | docs(remediation): log Phase 5.6 — Volunteer security + correctness |
 | `dcb2a1c` | fix(volunteers): add event_id index before dropping composite unique (MySQL FK) |
 | `6c65448` | fix(volunteers): enforce admin check-in time bounds the validator already claimed |
@@ -49,20 +54,32 @@
 | `6e90342` | fix(volunteers): authorize VolunteerGroup actions behind volunteers.* perms |
 | `59914dc` | feat(visit-log): pagination + print export + audit fixes |
 
-The 8 commits between `59914dc` and `76ed22f` predate this session — they were pre-existing user work from the post-Session-6 product arc (events Phase C/D, settings logo upload, etc.). They reached `main` during Session 6/early-Session-7 housekeeping.
+**Session 6 leftover triage (Session 7 close, 18 commits, all on origin):**
 
-**Still uncommitted (144 working-tree entries, mostly Session 6 leftover):**
+| Commit | Subject |
+|---|---|
+| `ac3bd0c` | feat(models): foundation models — EventMedia, EventPreRegistration, VolunteerGroup, VolunteerGroupMembership |
+| `e8d6691` | chore(gitignore): exclude .claude/ and public/event-media/ |
+| `8f88081` | feat(households-exports): wire export routes + add dompdf + phpspreadsheet packages |
+| `e899f70` | chore(seeders): SettingsSeeder + VolunteerSeeder |
+| `f6a7b9d` | docs: project reference set — 10 reference docs (overview / schema / models / controllers / routes / middleware / views / seeders / rbac / prompt) |
+| `8c292e6` | feat(infra): SyncEventStatuses console command + MaintenanceMode middleware |
+| `1bdc17d` | feat(public): public-facing event index + registration + reviews surfaces |
+| `4ad654e` | feat(layouts): event-day + public layouts; small tweaks to app.blade.php |
+| `af69e5a` | feat(settings): admin settings sections — organization, security, notifications, system, households, reviews |
+| `2e15471` | feat(households): print + PDF exports for household roster + per-household event report |
+| `62b677b` | feat(admin): roles + profile + reviews + users admin surface |
+| `46a5889` | feat(volunteers): create + edit views |
+| `482f431` | feat(volunteer-groups): views + service |
+| `9c82ec2` | feat(reports): reports module — controller + 12 views |
+| `b358c24` | feat(allocation-rulesets): controller + views + seeder |
+| `0f8a3b0` | feat(inventory): inventory module — categories, items, movements, allocation requests |
+| `6934244` | feat(finance): finance module — categories, transactions, dashboard, event-linked tab |
+| `72518ef` | feat(schema): foundational migrations for events / volunteers / inventory / finance / allocation / visits |
 
-The Session 6 "untracked legacy" set never made it to `main`. Snapshot of categories still on the working tree:
+**Tags pushed this session (5):** `phase-5.7-complete`, `phase-5.8-complete`, `phase-5.9-complete`, `phase-5.10-complete`, `phase-5.11-complete`. `phase-5.6-complete` was already on origin from earlier in the session.
 
-- 11 modified tracked files (`HouseholdController`, `Household` model, `SettingService`, composer.{json,lock}, household + branding blades, `routes/web.php`, layouts, `HANDOFF.md` itself)
-- ~80 untracked files spanning controllers, models, requests, migrations, services, blades from across the post-remediation product work — Finance module, Inventory module, Allocation Rulesets, Volunteer Groups, Roles, Profiles, Reviews, Reports, Reports views, Volunteer views
-- ~40 untracked migrations (the original Phase 1–6 migration files were never tracked)
-- Several test files (HouseholdEventReportExportTest, HouseholdExportTest, HouseholdShowEventReportTest)
-
-The Phase 5.6 commits **explicitly avoided bundling** any of this leftover work — staged paths only, never `git add .`. `routes/web.php` for example carries 6 unrelated household-export routes that I temporarily reverted-then-restored to keep the 5.6.a/d commits clean. `Volunteer.php` and `VolunteerGroup.php` were untracked legacy and ended up tracked when 5.6.b/a needed to modify them — same pattern as `SettingService.php` in 1.3.a per the established phase-organic-pull-in convention.
-
-**Recommendation for next agent**: ask the user before sweeping any of the leftover into a commit. Several pieces look complete (Finance module, Inventory module, Volunteer Groups views) and could land independently with their tests. Others may be in-flight or experimental.
+**Triage outcome**: 17 groups walked, 1 cancelled-then-reversed (foundation models — origin would have had dangling-class build holes without them), 0 dropped. `.claude/` and `public/event-media/` added to `.gitignore`. Pre-this-triage, a fresh clone of the repo could NOT `php artisan migrate` to a working schema because the original Phase 1–6 create-table migrations had never been tracked. That hole is now closed.
 
 ### What changed this session
 
@@ -186,29 +203,36 @@ ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
 - `resources/views/volunteer-checkin/index.blade.php` — 5.6.e (input → tel, copy updates, PII subtext removed, openSheet pre-fill, signup phone required, is_existing toast) → **5.11 full rewrite**: hybrid 4-screen state machine (welcome / identify / confirm / success), bundle-safe palette (solid `bg-navy-700`, no missing gradient stops), Web Audio sound feedback + mute toggle, `aria-live` + focus management + `prefers-reduced-motion`
 - `tests/Feature/EventVolunteerCheckInTest.php` — +3 bound tests (5.6.d)
 - `tests/Feature/PublicVolunteerSearchTest.php` — +3 tests (5.11): groups shape, iso timestamp present, iso null when not checked in
-- `routes/web.php` — added `visit-log/print` (Session 7 visit-log work) + `volunteers.groups.attach` (5.7); Phase C/D household export routes still uncommitted on the working tree
+- `routes/web.php` — added `visit-log/print` (Session 7 visit-log work) + `volunteers.groups.attach` (5.7) + Phase C/D household export routes (Session 7 leftover triage final commit)
 - `docs/remediation/LOG.md` — Phase 5.6 + 5.7 + 5.8 + 5.9 + 5.10 + 5.11 entries, Deviations rows
 
 ### What's next — start here on resume
 
-**The volunteer-module audit punch list from Sessions 7 is exhausted.** All audit-derived sub-tasks are closed: 5.6 (a–h, j; i dropped) + 5.7 + 5.8 + 5.9 + 5.10 + 5.11. The volunteer module is now in a clean state — secure, deduped, exportable, ergonomic; the public check-in kiosk is fully rewritten on bundle-safe Tailwind.
+**Sessions 7 closed cleanly.** Volunteer module fully closed (5.6–5.11 all green and tagged). Session 6 leftover triage shipped as 18 cohesive commits. Origin/main is in sync; suite 362/362.
 
-**Phase 5.11 is uncommitted at session end.** Three working-tree files (service + view + test) plus LOG.md + HANDOFF.md edits. User has not yet been asked whether to commit; await direction. Suggested commit shape: one feat commit `feat(volunteer-checkin): Phase 5.11 — hybrid 4-screen kiosk redesign + bundle-safe palette + sound feedback` (touches service, view, test) and one docs commit `docs(remediation): log Phase 5.11`.
+**Three open items remain from Session 7's "what's next" agenda:**
 
-#### Path 1 — Sweep up Session 6 leftover
+#### Open item A — Phase 6.5 household merge tool
 
-The 144-entry uncommitted Session-6 working tree is unchanged. Several pieces look complete (Finance module, Inventory module, Volunteer Groups views, Roles/Profile, Reports views, Reviews) and could land independently. Ask the user before staging anything — some pieces may still be experimental.
+Phase 6.5 prevents new duplicate households ("Linda showing twice" never re-occurs), but doesn't merge LEGACY duplicates that pre-date the dedup. The Phase 5.8 volunteer-merge service (`VolunteerMergeService` + `VolunteerMergeConflictException` + the merge button on Volunteer Show) is the proven shape — port that pattern to households. Likely scope:
 
-#### Path 2 — Tag + push outstanding phase markers
+- New `App\Services\HouseholdMergeService::merge(keeper, duplicate)` wrapped in DB::transaction + lockForUpdate
+- Conflict refusal: open visits on both sides for the same event → throw, admin must close one first
+- Move visit_households pivot rows, regenerate household_number if needed, transfer representative-chain pointers
+- New `App\Exceptions\HouseholdMergeConflictException`
+- Merge button on Household Show page (orange, behind `households.delete` AND `households.update`)
+- Modal with "all other households" picker + heads-up about open-visit conflict
+- 10-15 tests in `HouseholdMergeTest`
 
-`phase-5.6-complete` was tagged at `1e66ed7` and pushed earlier this session. Not yet tagged: `phase-5.7-complete` (UX polish), `phase-5.8-complete` (merge tool), `phase-5.9-complete` (service-history exports), `phase-5.10-complete` (group cards UX). Could be added at the corresponding doc-close commits if the user wants release markers, then pushed in one go.
+User confirmation needed before scope finalization — the Linda-showing-twice case is real but admin may want different conflict semantics than the volunteer flow.
 
-#### Path 3 — Look beyond the volunteer module
+#### Open item B — Backfill scope decision (Phase 2.1.f)
 
-Other modules surfaced findings in earlier audits this session that haven't been addressed:
-- visit-log Phase 1.2.c retroactive (already done in `59914dc`)
-- household merge tool — Phase 6.5 prevents new dups but doesn't merge legacy ones (carry-forward question from Session 5)
-- Backfill scope (Phase 2.1.f) — historical exited visits forward-only or backfill (carry-forward)
+Historical exited visits — should `DistributionPostingService::postForVisit()` be retroactively run against visits that exited BEFORE Phase 2.1 was deployed? Forward-only is safer (no historical inventory adjustments), but loses the "what did we actually distribute" reporting fidelity for the pre-2.1 period. Open since Session 5; no decision yet.
+
+#### Open item C — "Photos & Video" tab name
+
+Now that PDFs upload too (post-Session-6 multi-select-rewrite), the tab name is inaccurate. Trivial cosmetic decision — "Media" is one option, "Photos, Video & Documents" is another. User hasn't picked.
 
 Ask the user before opening any of these.
 
