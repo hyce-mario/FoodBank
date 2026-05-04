@@ -29,17 +29,10 @@ class FinanceController extends Controller
         return view('finance.dashboard', compact('kpis', 'trend', 'recent', 'defaultDateRange'));
     }
 
-    // ─── Reports ──────────────────────────────────────────────────────────────
-
-    public function reports(): View
-    {
-        $monthlyTrend      = $this->service->monthlyTrend(12);
-        $expenseByCategory = $this->service->expenseByCategory();
-        $incomeBySource    = $this->service->incomeBySource();
-        $eventSummary      = $this->service->eventFinanceSummary();
-
-        return view('finance.reports', compact(
-            'monthlyTrend', 'expenseByCategory', 'incomeBySource', 'eventSummary'
-        ));
-    }
+    // Phase 7.1 — the old reports() method that rendered a single
+    // four-chart Chart.js page has been replaced by FinanceReportController.
+    // Its data sources (monthlyTrend / expenseByCategory / incomeBySource /
+    // eventFinanceSummary) remain on FinanceService for the live dashboard;
+    // the standalone "all-charts-on-one-page" view was retired in favor of
+    // the per-report board-grade shell at /finance/reports.
 }

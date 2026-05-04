@@ -5,6 +5,7 @@ use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\FinanceCategoryController;
 use App\Http\Controllers\FinanceController;
+use App\Http\Controllers\FinanceReportController;
 use App\Http\Controllers\FinanceTransactionController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\InventoryCategoryController;
@@ -265,7 +266,18 @@ Route::middleware('auth')->group(function () {
     // Finance Module
     Route::prefix('finance')->name('finance.')->group(function () {
         Route::get('/',        [FinanceController::class, 'dashboard'])->name('dashboard');
-        Route::get('/reports', [FinanceController::class, 'reports'])  ->name('reports');
+
+        // Phase 7.1 — Reports module. Hub + per-report endpoints. Each
+        // report has print/pdf/csv siblings registered alongside the
+        // screen render so the export trio is co-located.
+        Route::get('/reports', [FinanceReportController::class, 'hub'])->name('reports');
+
+        Route::prefix('reports/statement-of-activities')->name('reports.statement-of-activities')->group(function () {
+            Route::get('/',       [FinanceReportController::class, 'statementOfActivities']);
+            Route::get('/print', [FinanceReportController::class, 'statementOfActivitiesPrint'])->name('.print');
+            Route::get('/pdf',   [FinanceReportController::class, 'statementOfActivitiesPdf'])  ->name('.pdf');
+            Route::get('/csv',   [FinanceReportController::class, 'statementOfActivitiesCsv'])  ->name('.csv');
+        });
 
         Route::resource('categories', FinanceCategoryController::class)
              ->except(['show', 'create', 'edit']);
