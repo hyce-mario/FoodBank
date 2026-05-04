@@ -7,6 +7,7 @@ use App\Models\Volunteer;
 use App\Models\VolunteerCheckIn;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class VolunteerCheckInService
 {
@@ -55,25 +56,51 @@ class VolunteerCheckInService
      * Check in an existing volunteer to an event.
      * Determines source (pre_assigned vs walk_in) automatically.
      * Detects first-timer status from actual service history.
+     *
+     * A volunteer who already has an OPEN check-in for this event will
+     * have that existing row returned (idempotent re-check-in). A volunteer
+     * who has only CLOSED rows (i.e. checked out earlier) gets a brand-new
+     * row — the prior session's hours_served is preserved.
+     *
+     * Wrapped in a transaction with lockForUpdate so two concurrent admins
+     * clicking "Check In" for the same volunteer can't both insert a fresh
+     * row and break the at-most-one-open invariant.
      */
     public function checkIn(Event $event, Volunteer $volunteer, ?string $role = null): VolunteerCheckIn
     {
-        // Determine source
-        $isAssigned = $event->assignedVolunteers()->where('volunteer_id', $volunteer->id)->exists();
-        $source     = $isAssigned ? 'pre_assigned' : 'walk_in';
+        return DB::transaction(function () use ($event, $volunteer, $role) {
+            // Lock any existing rows for this (event, volunteer) so a
+            // concurrent admin click can't observe "no open row" while we
+            // are about to insert one. The lock is released on commit.
+            $existingOpen = VolunteerCheckIn::where('event_id', $event->id)
+                ->where('volunteer_id', $volunteer->id)
+                ->whereNull('checked_out_at')
+                ->lockForUpdate()
+                ->first();
 
-        // First-timer = no prior check-ins on any event (before this one is created)
-        $isFirstTimer = $volunteer->checkIns()->count() === 0;
+            if ($existingOpen) {
+                return $existingOpen;
+            }
 
-        return VolunteerCheckIn::updateOrCreate(
-            ['event_id' => $event->id, 'volunteer_id' => $volunteer->id],
-            [
-                'role'          => $role ?? $volunteer->role,
-                'source'        => $source,
-                'is_first_timer'=> $isFirstTimer,
-                'checked_in_at' => Carbon::now(),
-            ]
-        );
+            $isAssigned = $event->assignedVolunteers()
+                ->where('volunteer_id', $volunteer->id)
+                ->exists();
+            $source = $isAssigned ? 'pre_assigned' : 'walk_in';
+
+            // First-timer is computed once, at the moment of FIRST check-in,
+            // and snapshotted on the row. Recomputing later would make the
+            // flag drift as the volunteer accrues service history.
+            $isFirstTimer = $volunteer->checkIns()->count() === 0;
+
+            return VolunteerCheckIn::create([
+                'event_id'       => $event->id,
+                'volunteer_id'   => $volunteer->id,
+                'role'           => $role ?? $volunteer->role,
+                'source'         => $source,
+                'is_first_timer' => $isFirstTimer,
+                'checked_in_at'  => Carbon::now(),
+            ]);
+        });
     }
 
     /**
@@ -127,6 +154,12 @@ class VolunteerCheckInService
 
     /**
      * Return service statistics for a volunteer.
+     *
+     * totalEvents counts DISTINCT events, not check-in rows — a volunteer
+     * with two sessions on a single event day (check in, lunch, check
+     * back in) has served one event, not two. The check-ins collection
+     * is still returned per-row so the Show page's Service History table
+     * can render each session.
      */
     public function stats(Volunteer $volunteer): array
     {
@@ -135,11 +168,26 @@ class VolunteerCheckInService
             ->orderBy('checked_in_at', 'desc')
             ->get();
 
-        $totalEvents  = $checkIns->count();
-        $firstService = $checkIns->last()?->event?->date;
-        $lastService  = $checkIns->first()?->event?->date;
-        $isFirstTimer = $totalEvents <= 1;
+        $distinctEventIds = $checkIns->pluck('event_id')->unique();
+        $totalEvents      = $distinctEventIds->count();
 
-        return compact('checkIns', 'totalEvents', 'firstService', 'lastService', 'isFirstTimer');
+        $eventsByDate = $checkIns
+            ->filter(fn ($ci) => $ci->event !== null)
+            ->sortBy(fn ($ci) => $ci->event->date)
+            ->values();
+
+        $firstService = $eventsByDate->first()?->event?->date;
+        $lastService  = $eventsByDate->last()?->event?->date;
+        $isFirstTimer = $totalEvents <= 1;
+        $totalHours   = (float) $checkIns->sum(fn ($ci) => (float) ($ci->hours_served ?? 0));
+
+        return compact(
+            'checkIns',
+            'totalEvents',
+            'firstService',
+            'lastService',
+            'isFirstTimer',
+            'totalHours',
+        );
     }
 }
