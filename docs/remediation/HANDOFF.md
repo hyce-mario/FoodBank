@@ -14,7 +14,7 @@
 2. **Phase 5.7 — Volunteer UX polish** (NEW, same audit conversation, split out for clarity). Five user-facing improvements bundled into one commit: index group filter + per-page selector, Show-page tel:/mailto: links, Total Hours tile, "Add to group" quick-action picker (+ new endpoint), Service History truncate-to-15 with Show-all toggle.
 3. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
 
-**Suite is green at 328/328** (was 287 at session start; +41 across 7 new test files).
+**Suite is green at 337/337** (was 287 at session start; +50 across 8 new test files).
 
 ### ⚠️ What's committed vs. uncommitted
 
@@ -22,6 +22,7 @@
 
 | Commit | Subject |
 |---|---|
+| `6ed0dee` | fix(volunteers): Phase 5.6.j — multi-check-in safety rails |
 | `93aad36` | fix(volunteers): Phase 5.6.f — restrict cascade-delete on volunteer_check_ins |
 | `e0e2962` | fix(volunteers): Phase 5.6.e — phone-only public check-in (PII strip) |
 | `d49e7bc` | fix(volunteers): Phase 5.6.h — public signup dedups by phone |
@@ -149,8 +150,10 @@ ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
 - `tests/Feature/PublicVolunteerSignUpDedupTest.php` (6 tests, 5.6.h)
 - `tests/Feature/PublicVolunteerSearchTest.php` (5 tests, 5.6.e)
 - `tests/Feature/VolunteerCheckInsRestrictDeleteTest.php` (4 tests, 5.6.f)
+- `tests/Feature/VolunteerMultiCheckInRailsTest.php` (9 tests, 5.6.j)
 - `database/migrations/2026_05_04_180000_add_unique_constraints_to_volunteers.php` (5.6.g)
 - `database/migrations/2026_05_04_190000_restrict_volunteer_check_ins_fk_on_delete.php` (5.6.f)
+- `app/Exceptions/VolunteerCheckedInRecentlyException.php` (5.6.j)
 
 ### Files this session modified (already-tracked)
 
@@ -210,6 +213,7 @@ Many uncommitted Session-6 features look complete and could land in their own co
 - ✅ **5.6.g** UNIQUE on volunteers.phone + email (`e3c450d`)
 - ✅ **5.6.h** Public signup dedups by phone match (`d49e7bc`)
 - ⚪ **5.6.i** Identity verification on public check-in — **DROPPED per user direction**: phone is treated as the identity. Friction via "know the volunteer's phone number" is sufficient for the threat model. See LOG.md Deviations.
+- ✅ **5.6.j** Multi-check-in safety rails (`6ed0dee`) — stale-open auto-close at configurable cap (default 12h) + min session gap (default 5min). Admin path bypasses both. Two new settings under `event_queue`. New `VolunteerCheckedInRecentlyException` for the min-gap refusal path.
 
 ### Phase 5.7 sub-task status
 
