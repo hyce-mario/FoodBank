@@ -8,6 +8,7 @@ use App\Models\RolePermission;
 use App\Models\User;
 use App\Models\Volunteer;
 use App\Models\VolunteerCheckIn;
+use App\Models\VolunteerGroup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -135,5 +136,137 @@ class PublicVolunteerSearchTest extends TestCase
         $this->assertTrue($row['checked_in']);
         $this->assertNotNull($row['checkin_time']);
         $this->assertFalse($row['checked_out']);
+    }
+
+    /**
+     * Phase 5.11 — search response surfaces groups so the redesigned
+     * Confirm card can render team badges. id+name only — no membership
+     * metadata leaked.
+     */
+    public function test_match_includes_volunteer_groups_array(): void
+    {
+        $vol = Volunteer::create([
+            'first_name' => 'Grouped',
+            'last_name'  => 'Vol',
+            'phone'      => '5553333',
+        ]);
+
+        $packing = VolunteerGroup::create(['name' => 'Packing']);
+        $intake  = VolunteerGroup::create(['name' => 'Intake']);
+        $vol->groups()->attach([$packing->id, $intake->id]);
+
+        $row = $this->getJson(route('volunteer-checkin.search') . '?q=5553333')
+                    ->json('results.0');
+
+        $this->assertIsArray($row['groups']);
+        $this->assertCount(2, $row['groups']);
+        $names = collect($row['groups'])->pluck('name')->all();
+        $this->assertContains('Packing', $names);
+        $this->assertContains('Intake', $names);
+
+        // id + name only — pivot metadata (joined_at, timestamps) must
+        // not leak through the public endpoint.
+        $this->assertSame(['id', 'name'], array_keys($row['groups'][0]));
+    }
+
+    /**
+     * Phase 5.11 — ISO timestamp powers the live elapsed clock on the
+     * Confirm card for Check-Out and View Status flows. Should be
+     * present whenever there's an active check-in row, null otherwise.
+     */
+    public function test_match_includes_iso_check_in_timestamp(): void
+    {
+        $vol = Volunteer::create([
+            'first_name' => 'Elapsed',
+            'last_name'  => 'Clock',
+            'phone'      => '5554444',
+        ]);
+        VolunteerCheckIn::create([
+            'event_id'       => $this->event->id,
+            'volunteer_id'   => $vol->id,
+            'role'           => 'Other',
+            'source'         => 'walk_in',
+            'is_first_timer' => false,
+            'checked_in_at'  => now()->subMinutes(30),
+        ]);
+
+        $row = $this->getJson(route('volunteer-checkin.search') . '?q=5554444')
+                    ->json('results.0');
+
+        $this->assertNotNull($row['checked_in_at_iso']);
+        // ISO 8601 format with offset, e.g. 2026-05-04T13:30:00+00:00
+        $this->assertMatchesRegularExpression(
+            '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+\-]\d{2}:\d{2}$/',
+            $row['checked_in_at_iso']
+        );
+    }
+
+    public function test_iso_timestamp_is_null_when_not_checked_in(): void
+    {
+        Volunteer::create([
+            'first_name' => 'Never',
+            'last_name'  => 'In',
+            'phone'      => '5555555',
+        ]);
+
+        $row = $this->getJson(route('volunteer-checkin.search') . '?q=5555555')
+                    ->json('results.0');
+
+        $this->assertNull($row['checked_in_at_iso']);
+        $this->assertSame([], $row['groups']);
+    }
+
+    /**
+     * Phase 5.11 — fuzzy phone match. Stripping non-digits from both
+     * sides means typed punctuation no longer prevents a hit on a
+     * stored bare-digit phone.
+     */
+    public function test_search_matches_when_typed_phone_has_punctuation(): void
+    {
+        $vol = Volunteer::create([
+            'first_name' => 'Punctuated',
+            'last_name'  => 'Search',
+            'phone'      => '5556661',
+        ]);
+
+        foreach (['(555) 6661', '555-6661', '+555 6661', '555.6661', '555/6661'] as $typed) {
+            $row = $this->getJson(route('volunteer-checkin.search') . '?q=' . urlencode($typed))
+                        ->json('results.0');
+            $this->assertSame($vol->id, $row['id'], "expected match for typed value: $typed");
+        }
+    }
+
+    /**
+     * Reverse direction — stored phone has formatting, typed phone is
+     * bare digits. Same digits-only comparison applies on both sides.
+     */
+    public function test_search_matches_when_stored_phone_has_punctuation(): void
+    {
+        $vol = Volunteer::create([
+            'first_name' => 'Stored',
+            'last_name'  => 'Formatted',
+            'phone'      => '(555) 777-2222',
+        ]);
+
+        $row = $this->getJson(route('volunteer-checkin.search') . '?q=5557772222')
+                    ->json('results.0');
+
+        $this->assertSame($vol->id, $row['id']);
+    }
+
+    /**
+     * Empty-after-strip queries (e.g. "()" or "+-") must NOT match
+     * volunteers with NULL phone — that would surface every row.
+     */
+    public function test_search_does_not_match_when_typed_value_strips_to_empty(): void
+    {
+        Volunteer::create([
+            'first_name' => 'Null',
+            'last_name'  => 'Phone',
+            'phone'      => null,
+        ]);
+
+        $this->getJson(route('volunteer-checkin.search') . '?q=()-+')
+             ->assertOk()->assertJson(['results' => []]);
     }
 }

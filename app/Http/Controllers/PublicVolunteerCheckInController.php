@@ -188,8 +188,11 @@ class PublicVolunteerCheckInController extends Controller
 
         // Email-collision pre-check: only relevant when the phone does
         // NOT match an existing row (that path uses the existing record's
-        // email regardless of what was submitted).
-        $phoneMatch = \App\Models\Volunteer::where('phone', trim($data['phone']))->exists();
+        // email regardless of what was submitted). Phase 5.11: phone
+        // match uses digits-only comparison via the service helper so
+        // "(555) 0001" and "5550001" stop being treated as different
+        // people for the purposes of dedup.
+        $phoneMatch = $this->service->findByPhoneDigits($data['phone']) !== null;
         if (! $phoneMatch && ! empty($data['email'])) {
             $emailTaken = \App\Models\Volunteer::where('email', $data['email'])->exists();
             if ($emailTaken) {

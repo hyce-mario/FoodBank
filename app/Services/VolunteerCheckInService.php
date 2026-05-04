@@ -15,6 +15,41 @@ use Illuminate\Support\Facades\Log;
 class VolunteerCheckInService
 {
     /**
+     * Phase 5.11+ — fuzzy phone match. Strips every non-digit from the
+     * input AND from the stored value before comparing, so users can
+     * type "(555) 555-1234", "555-555-1234", "+1 555 555 1234", or
+     * "5555551234" and hit the same volunteer regardless of how the
+     * record was stored.
+     *
+     * Implementation choice: chained REPLACE() instead of REGEXP_REPLACE.
+     * REGEXP_REPLACE is MySQL 8+ only and absent from SQLite (test DB),
+     * which would silently break the test suite. The chain covers every
+     * separator a human would type into a phone field — space, dash,
+     * paren, plus, dot, slash. Performance is a full table scan; the
+     * volunteer table is bounded (well under 10k rows in any realistic
+     * deployment) so the unindexed scan is acceptable. If the table
+     * grows, switch to a generated `phone_digits` column with an index.
+     *
+     * `whereNotNull('phone')` guards against an empty-stored-phone
+     * volunteer matching a typed empty-after-strip query (which would
+     * otherwise return every NULL-phone row).
+     */
+    public function findByPhoneDigits(string $phone): ?Volunteer
+    {
+        $digits = preg_replace('/\D/', '', $phone) ?? '';
+        if ($digits === '') {
+            return null;
+        }
+
+        return Volunteer::whereNotNull('phone')
+            ->whereRaw(
+                "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', ''), '/', '') = ?",
+                [$digits],
+            )
+            ->first();
+    }
+
+    /**
      * Phase 5.6.e+ — phone-only lookup for the public check-in page.
      *
      * Pre-fix, this method searched volunteers by name, phone, or email
@@ -24,9 +59,14 @@ class VolunteerCheckInService
      * UNIQUE) phone is the unambiguous lookup key, and the response
      * shape drops phone + email entirely.
      *
+     * Phase 5.11: the lookup is now FUZZY — punctuation in the typed
+     * input or the stored value no longer prevents a match. See
+     * `findByPhoneDigits()` for the comparison logic.
+     *
      * Returns a Collection (still, for backwards compat with the
      * existing JsonResponse->json('results') wrapper) of at most one
-     * entry — UNIQUE on phone makes the result unambiguous.
+     * entry — phone digits remain effectively unique even though the
+     * Phase 5.6.g UNIQUE constraint is on the literal `phone` column.
      */
     public function search(Event $event, string $phone): Collection
     {
@@ -38,9 +78,24 @@ class VolunteerCheckInService
         $preAssigned = $event->assignedVolunteers->pluck('id')->flip();
         $checkedIn   = $event->volunteerCheckIns->pluck('volunteer_id')->flip();
 
-        $checkInsByVolunteer = $event->volunteerCheckIns->keyBy('volunteer_id');
+        // Phase 5.6.b made multiple rows-per-(event, volunteer) legal, so
+        // keyBy('volunteer_id') would silently drop earlier rows when
+        // there are two. The new UI cares about the *latest* row (open
+        // session if one exists, otherwise the last closed one) so the
+        // status banner reflects "where they are right now".
+        $checkInsByVolunteer = $event->volunteerCheckIns
+            ->sortByDesc('checked_in_at')
+            ->keyBy('volunteer_id');
 
-        return Volunteer::where('phone', $phone)
+        // Phase 5.11: fuzzy phone match — typed punctuation no longer
+        // blocks a hit on stored bare digits, and vice versa.
+        $match = $this->findByPhoneDigits($phone);
+        if (! $match) {
+            return collect();
+        }
+
+        return Volunteer::where('id', $match->id)
+            ->with('groups:id,name')
             ->limit(1)
             ->get()
             ->map(function (Volunteer $v) use ($preAssigned, $checkedIn, $checkInsByVolunteer) {
@@ -54,12 +109,24 @@ class VolunteerCheckInService
                     'is_assigned'   => $preAssigned->has($v->id),
                     'checked_in'    => $checkedIn->has($v->id),
                     'checkin_time'  => $ci?->checked_in_at?->format('g:i A'),
+                    // Phase 5.11: ISO timestamp powers the live elapsed
+                    // clock on the View My Status flow. Safe to expose —
+                    // it's the same moment the formatted time above is
+                    // already showing, just machine-readable.
+                    'checked_in_at_iso' => $ci?->checked_in_at?->toIso8601String(),
                     'is_first_timer'=> $ci?->is_first_timer ?? false,
                     'checked_out'   => $ci?->checked_out_at !== null,
                     'checkout_time' => $ci?->checked_out_at?->format('g:i A'),
                     'hours_served'  => $ci?->hours_served !== null
                         ? number_format((float) $ci->hours_served, 1)
                         : null,
+                    // Phase 5.11: group memberships render as team
+                    // badges on the Confirm card. id + name only —
+                    // no membership metadata leaked.
+                    'groups'        => $v->groups->map(fn ($g) => [
+                        'id'   => $g->id,
+                        'name' => $g->name,
+                    ])->values(),
                 ];
             });
     }
@@ -204,8 +271,11 @@ class VolunteerCheckInService
     public function createAndCheckIn(Event $event, array $data): array
     {
         $phone = trim((string) ($data['phone'] ?? ''));
+        // Phase 5.11: dedup uses fuzzy phone match. A submitted "555-0001"
+        // matches an existing "5550001" so we don't create a second row
+        // for the same person under different formatting.
         $existing = $phone !== ''
-            ? Volunteer::where('phone', $phone)->first()
+            ? $this->findByPhoneDigits($phone)
             : null;
 
         if ($existing) {
