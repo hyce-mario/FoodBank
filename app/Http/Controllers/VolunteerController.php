@@ -12,8 +12,10 @@ use App\Services\VolunteerMergeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class VolunteerController extends Controller
 {
@@ -264,5 +266,76 @@ class VolunteerController extends Controller
                 . ", {$groups} group" . ($groups === 1 ? '' : 's')
                 . ", and {$events} event assignment" . ($events === 1 ? '' : 's') . '.',
             );
+    }
+
+    // ─── Service-history exports (Phase 5.9) ─────────────────────────────────
+
+    /**
+     * Branded standalone print sheet for one volunteer's service history.
+     * Auto-fires window.print() after a paint tick — same pattern as the
+     * events/attendees and visit-log print sheets. Use case: hand a
+     * volunteer their service record for grant / payroll / employer
+     * documentation.
+     */
+    public function serviceHistoryPrint(Volunteer $volunteer): View
+    {
+        $this->authorize('view', $volunteer);
+
+        $stats = $this->checkInService->stats($volunteer);
+
+        return view('volunteers.exports.service-history-print', compact('volunteer', 'stats'));
+    }
+
+    /**
+     * Streamed CSV download of a volunteer's service history. UTF-8 BOM
+     * prepended so Excel opens it with proper encoding (matches the
+     * shape established in EventController::attendeesCsv).
+     */
+    public function serviceHistoryCsv(Volunteer $volunteer): StreamedResponse
+    {
+        $this->authorize('view', $volunteer);
+
+        $filename = sprintf(
+            'service-history-%s-%s.csv',
+            Str::slug($volunteer->full_name) ?: 'volunteer',
+            now()->format('Ymd'),
+        );
+
+        return response()->streamDownload(function () use ($volunteer) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM — Excel opens the file with proper encoding.
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, [
+                'Event', 'Event Date', 'Role', 'Source',
+                'Check-In Time', 'Check-Out Time', 'Hours Served',
+                'First Timer',
+            ]);
+
+            // Eager-load event so the CSV doesn't N+1 over hundreds of
+            // sessions. Order by date descending — newest first matches
+            // the Show page ordering.
+            $volunteer->checkIns()
+                ->with('event:id,name,date')
+                ->orderByDesc('checked_in_at')
+                ->lazy(500)
+                ->each(function ($ci) use ($out) {
+                    fputcsv($out, [
+                        $ci->event?->name ?? '(event removed)',
+                        $ci->event?->date?->format('Y-m-d'),
+                        $ci->role,
+                        $ci->sourceLabel(),
+                        $ci->checked_in_at?->format('Y-m-d H:i'),
+                        $ci->checked_out_at?->format('Y-m-d H:i'),
+                        $ci->hours_served !== null
+                            ? number_format((float) $ci->hours_served, 2, '.', '')
+                            : '',
+                        $ci->is_first_timer ? 'Yes' : 'No',
+                    ]);
+                });
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 }

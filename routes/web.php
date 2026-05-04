@@ -173,6 +173,10 @@ Route::middleware('auth')->group(function () {
         ->name('volunteers.groups.attach');
     Route::post('volunteers/{volunteer}/merge', [VolunteerController::class, 'merge'])
         ->name('volunteers.merge');
+    Route::get('volunteers/{volunteer}/service-history/print', [VolunteerController::class, 'serviceHistoryPrint'])
+        ->name('volunteers.service-history.print');
+    Route::get('volunteers/{volunteer}/service-history/export.csv', [VolunteerController::class, 'serviceHistoryCsv'])
+        ->name('volunteers.service-history.csv');
 
     // Inventory — Categories
     Route::resource('inventory/categories', InventoryCategoryController::class)
