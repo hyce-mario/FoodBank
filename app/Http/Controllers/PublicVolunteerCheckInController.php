@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\VolunteerCheckedInRecentlyException;
 use App\Models\Event;
 use App\Models\Volunteer;
 use App\Services\VolunteerCheckInService;
@@ -93,15 +94,31 @@ class PublicVolunteerCheckInController extends Controller
         $event->loadMissing('assignedVolunteers', 'volunteerCheckIns');
 
         $volunteer = Volunteer::findOrFail($request->volunteer_id);
+
+        // Phase 5.6.b made multiple rows-per-(event, volunteer) legal (one
+        // per session), so this pre-check must filter to OPEN rows only —
+        // a CLOSED row from an earlier session is a legitimate
+        // re-check-in candidate, not a duplicate.
         $alreadyIn = $event->volunteerCheckIns
             ->where('volunteer_id', $volunteer->id)
+            ->whereNull('checked_out_at')
             ->isNotEmpty();
 
         if ($alreadyIn) {
             return response()->json(['ok' => false, 'message' => "{$volunteer->full_name} is already checked in."], 422);
         }
 
-        $checkIn = $this->service->checkIn($event, $volunteer);
+        try {
+            $checkIn = $this->service->checkIn($event, $volunteer);
+        } catch (VolunteerCheckedInRecentlyException $e) {
+            // Phase 5.6.j Mode B — staff-language details stay in the
+            // exception; controller writes its own public-facing copy.
+            $minutes = (int) ceil($e->secondsRemaining / 60);
+            return response()->json([
+                'ok'      => false,
+                'message' => "You just checked out — please wait about {$minutes} minute" . ($minutes === 1 ? '' : 's') . ' before checking back in.',
+            ], 422);
+        }
 
         return response()->json([
             'ok'            => true,
@@ -183,11 +200,21 @@ class PublicVolunteerCheckInController extends Controller
             }
         }
 
-        [
-            'volunteer'   => $volunteer,
-            'checkIn'     => $checkIn,
-            'is_existing' => $isExisting,
-        ] = $this->service->createAndCheckIn($event, $data);
+        try {
+            [
+                'volunteer'   => $volunteer,
+                'checkIn'     => $checkIn,
+                'is_existing' => $isExisting,
+            ] = $this->service->createAndCheckIn($event, $data);
+        } catch (VolunteerCheckedInRecentlyException $e) {
+            // Existing-phone path went through service->checkIn() and
+            // hit the min-gap rail (Phase 5.6.j Mode B).
+            $minutes = (int) ceil($e->secondsRemaining / 60);
+            return response()->json([
+                'ok'      => false,
+                'message' => "This phone just checked out — please wait about {$minutes} minute" . ($minutes === 1 ? '' : 's') . ' before checking back in.',
+            ], 422);
+        }
 
         return response()->json([
             'ok'               => true,

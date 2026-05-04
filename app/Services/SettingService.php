@@ -117,6 +117,39 @@ class SettingService
         static::$cache = null;
     }
 
+    /**
+     * Return a branding asset (logo or favicon) as a self-contained data URI,
+     * or null if not configured / the file is missing. Reading the file off
+     * the public disk and inlining as base64 sidesteps every URL-routing
+     * concern (APP_URL mismatch, missing public/storage symlink, vhost
+     * rewrites) so the same code path works in dev XAMPP, staging, and prod.
+     */
+    public static function brandingLogoDataUri(): ?string
+    {
+        return static::brandingAssetDataUri('branding.logo_path');
+    }
+
+    public static function brandingFaviconDataUri(): ?string
+    {
+        return static::brandingAssetDataUri('branding.favicon_path');
+    }
+
+    private static function brandingAssetDataUri(string $settingKey): ?string
+    {
+        $path = (string) static::get($settingKey, '');
+        if ($path === '') {
+            return null;
+        }
+
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (! $disk->exists($path)) {
+            return null;
+        }
+
+        $mime = $disk->mimeType($path) ?: 'image/png';
+        return 'data:' . $mime . ';base64,' . base64_encode($disk->get($path));
+    }
+
     /** Return the ordered list of settings groups as slug => label. */
     public static function groups(): array
     {
@@ -479,6 +512,24 @@ class SettingService
                     'type'        => 'float',
                     'default'     => 1.0,
                     'description' => 'Used when no allocation ruleset is active.',
+                ],
+
+                // Phase 5.6.j — Multi-check-in safety rails for the public
+                // volunteer check-in page. Both apply on the public path
+                // (PublicVolunteerCheckInController → VolunteerCheckInService::checkIn);
+                // admin manual check-ins via EventVolunteerCheckInController bypass
+                // both knobs (admin can always override).
+                'volunteer_stale_open_hours_cap' => [
+                    'label'       => 'Volunteer Stale-Open Auto-Close (hours)',
+                    'type'        => 'integer',
+                    'default'     => 12,
+                    'description' => 'When a volunteer re-checks-in and their previous open row is older than this many hours, the stale row is auto-closed at checked_in_at + cap and a fresh row is started. Prevents day-old "forgot to check out" rows from inflating hours_served.',
+                ],
+                'volunteer_min_session_gap_minutes' => [
+                    'label'       => 'Volunteer Min Session Gap (minutes)',
+                    'type'        => 'integer',
+                    'default'     => 5,
+                    'description' => 'A volunteer who just checked out can\'t immediately check back in for the same event. Prevents accidental rapid double-tap and trivial gaming. Set to 0 to disable.',
                 ],
             ],
 

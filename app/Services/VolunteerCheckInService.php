@@ -2,12 +2,15 @@
 
 namespace App\Services;
 
+use App\Exceptions\VolunteerCheckedInRecentlyException;
 use App\Models\Event;
 use App\Models\Volunteer;
 use App\Models\VolunteerCheckIn;
+use App\Services\SettingService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class VolunteerCheckInService
 {
@@ -66,20 +69,41 @@ class VolunteerCheckInService
      * Determines source (pre_assigned vs walk_in) automatically.
      * Detects first-timer status from actual service history.
      *
-     * A volunteer who already has an OPEN check-in for this event will
-     * have that existing row returned (idempotent re-check-in). A volunteer
-     * who has only CLOSED rows (i.e. checked out earlier) gets a brand-new
-     * row — the prior session's hours_served is preserved.
+     * Behavior:
+     *   - OPEN row exists for this (event, volunteer):
+     *     - If checked_in_at is fresh (< stale_cap hours old): return it
+     *       as-is (idempotent — same as 5.6.b's contract).
+     *     - If stale (>= stale_cap hours old, default 12h): auto-close it
+     *       at checked_in_at + cap (so hours_served reflects the original
+     *       session bounded to the cap, not days of accumulated drift),
+     *       then proceed to create a new row for the current session.
+     *       Phase 5.6.j Mode A — "forgot to check out yesterday".
+     *   - No OPEN row exists:
+     *     - If the most-recent CLOSED row's checked_out_at is within
+     *       min_gap minutes (default 5): throw
+     *       VolunteerCheckedInRecentlyException so the controller
+     *       returns a friendly 422. Phase 5.6.j Mode B — accidental
+     *       rapid double-tap / trivial gaming.
+     *     - Otherwise: insert a fresh row.
      *
-     * Wrapped in a transaction with lockForUpdate so two concurrent admins
-     * clicking "Check In" for the same volunteer can't both insert a fresh
-     * row and break the at-most-one-open invariant.
+     * Both rails apply to the public-facing path. Admin manual check-ins
+     * via EventVolunteerCheckInController go through their own DB writes
+     * and bypass these rails — admin can always override.
+     *
+     * Wrapped in a transaction with lockForUpdate so two concurrent
+     * callers can't both insert and break the at-most-one-open invariant.
      */
     public function checkIn(Event $event, Volunteer $volunteer, ?string $role = null): VolunteerCheckIn
     {
         return DB::transaction(function () use ($event, $volunteer, $role) {
+            // Resolve the rails policy. Settings are integers; clamp to
+            // sane lower bounds so a misconfigured 0 / negative doesn't
+            // produce nonsense behavior. min_gap of 0 disables that rail.
+            $staleCapHours = max(1, (int) SettingService::get('event_queue.volunteer_stale_open_hours_cap', 12));
+            $minGapMinutes = max(0, (int) SettingService::get('event_queue.volunteer_min_session_gap_minutes', 5));
+
             // Lock any existing rows for this (event, volunteer) so a
-            // concurrent admin click can't observe "no open row" while we
+            // concurrent caller can't observe "no open row" while we
             // are about to insert one. The lock is released on commit.
             $existingOpen = VolunteerCheckIn::where('event_id', $event->id)
                 ->where('volunteer_id', $volunteer->id)
@@ -88,7 +112,52 @@ class VolunteerCheckInService
                 ->first();
 
             if ($existingOpen) {
-                return $existingOpen;
+                $ageHours = $existingOpen->checked_in_at
+                    ? $existingOpen->checked_in_at->diffInMinutes(Carbon::now()) / 60
+                    : 0.0;
+
+                // Fresh open row — return as-is (idempotent re-call).
+                if ($ageHours < $staleCapHours) {
+                    return $existingOpen;
+                }
+
+                // Stale — auto-close at checked_in_at + cap. Cap applied
+                // to hours_served so a multi-day-old open row contributes
+                // exactly stale_cap hours, not the literal time since
+                // check-in. Logged so admins can spot patterns of
+                // missed checkouts in the audit trail.
+                $autoCloseAt = $existingOpen->checked_in_at->copy()->addHours($staleCapHours);
+                $existingOpen->update([
+                    'checked_out_at' => $autoCloseAt,
+                    'hours_served'   => round((float) $staleCapHours, 2),
+                ]);
+                Log::info('volunteer.checkin.stale_open_auto_closed', [
+                    'volunteer_id'   => $volunteer->id,
+                    'event_id'       => $event->id,
+                    'check_in_id'    => $existingOpen->id,
+                    'age_hours'      => round($ageHours, 1),
+                    'capped_at_hours'=> $staleCapHours,
+                ]);
+                // Fall through to insert a fresh row for the current session.
+            } elseif ($minGapMinutes > 0) {
+                // Mode B — refuse if the previous CLOSED session ended too recently.
+                $latestClosed = VolunteerCheckIn::where('event_id', $event->id)
+                    ->where('volunteer_id', $volunteer->id)
+                    ->whereNotNull('checked_out_at')
+                    ->orderByDesc('checked_out_at')
+                    ->first();
+
+                if ($latestClosed && $latestClosed->checked_out_at) {
+                    $secondsSinceCheckout = $latestClosed->checked_out_at->diffInSeconds(Carbon::now());
+                    $gapSeconds = $minGapMinutes * 60;
+                    if ($secondsSinceCheckout < $gapSeconds) {
+                        throw new VolunteerCheckedInRecentlyException(
+                            secondsRemaining: $gapSeconds - (int) $secondsSinceCheckout,
+                            eventId:          $event->id,
+                            volunteerId:      $volunteer->id,
+                        );
+                    }
+                }
             }
 
             $isAssigned = $event->assignedVolunteers()
