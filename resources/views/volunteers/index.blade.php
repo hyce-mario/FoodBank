@@ -44,10 +44,10 @@
 
     {{-- Toolbar --}}
     <form method="GET" action="{{ route('volunteers.index') }}"
-          class="flex flex-col sm:flex-row gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50/50">
+          class="flex flex-col sm:flex-row sm:flex-wrap gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50/50">
         <input type="text" name="search" value="{{ request('search') }}"
                placeholder="Search name, email, phone..."
-               class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white
+               class="flex-1 min-w-[180px] px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white
                       focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400
                       placeholder:text-gray-400">
         <select name="role"
@@ -59,11 +59,30 @@
                 <option value="{{ $value }}" @selected(request('role') === $value)>{{ $label }}</option>
             @endforeach
         </select>
+        <select name="group"
+                class="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white
+                       focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400
+                       text-gray-700">
+            <option value="">All groups</option>
+            @foreach ($groups as $g)
+                <option value="{{ $g->id }}" @selected((string) request('group') === (string) $g->id)>
+                    {{ $g->name }}
+                </option>
+            @endforeach
+        </select>
+        <select name="per_page"
+                class="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white
+                       focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400
+                       text-gray-700">
+            @foreach ([15, 25, 50] as $opt)
+                <option value="{{ $opt }}" @selected((int) request('per_page', 15) === $opt)>{{ $opt }} / page</option>
+            @endforeach
+        </select>
         <button type="submit"
                 class="px-4 py-2 text-sm font-semibold bg-navy-700 hover:bg-navy-800 text-white rounded-lg transition-colors">
             Search
         </button>
-        @if (request('search') || request('role'))
+        @if (request('search') || request('role') || request('group'))
             <a href="{{ route('volunteers.index') }}"
                class="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-center">
                 Clear

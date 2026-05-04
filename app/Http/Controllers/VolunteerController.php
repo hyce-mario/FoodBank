@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreVolunteerRequest;
 use App\Http\Requests\UpdateVolunteerRequest;
 use App\Models\Volunteer;
+use App\Models\VolunteerGroup;
 use App\Services\VolunteerCheckInService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class VolunteerController extends Controller
@@ -48,6 +50,11 @@ class VolunteerController extends Controller
             $query->where('role', $role);
         }
 
+        // Group filter — only volunteers attached to this group_id.
+        if ($groupId = $request->get('group')) {
+            $query->whereHas('groups', fn ($q) => $q->where('volunteer_groups.id', $groupId));
+        }
+
         $sort      = in_array($request->get('sort'), ['first_name', 'last_name', 'role', 'created_at'])
             ? $request->get('sort') : 'created_at';
         $direction = $request->get('direction') === 'asc' ? 'asc' : 'desc';
@@ -59,9 +66,11 @@ class VolunteerController extends Controller
                             ->paginate($perPage)
                             ->withQueryString();
 
-        $roles = Volunteer::ROLES;
+        $roles  = Volunteer::ROLES;
+        // Light-weight list for the toolbar filter — name + id only.
+        $groups = VolunteerGroup::orderBy('name')->get(['id', 'name']);
 
-        return view('volunteers.index', compact('volunteers', 'roles'));
+        return view('volunteers.index', compact('volunteers', 'roles', 'groups'));
     }
 
     // ─── Create ───────────────────────────────────────────────────────────────
@@ -93,7 +102,15 @@ class VolunteerController extends Controller
         $volunteer->loadMissing('groups');
         $stats = $this->checkInService->stats($volunteer);
 
-        return view('volunteers.show', compact('volunteer', 'stats'));
+        // Groups the volunteer is NOT yet a member of — feeds the
+        // "Add to group" quick-action picker on the Show page. Done as
+        // a whereNotIn so the picker doesn't list groups they're
+        // already in.
+        $availableGroups = VolunteerGroup::whereNotIn('id', $volunteer->groups->pluck('id'))
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return view('volunteers.show', compact('volunteer', 'stats', 'availableGroups'));
     }
 
     // ─── Edit ─────────────────────────────────────────────────────────────────
@@ -128,5 +145,38 @@ class VolunteerController extends Controller
         return redirect()
             ->route('volunteers.index')
             ->with('success', "{$name} has been removed.");
+    }
+
+    // ─── Attach to group (quick-add from Volunteer Show page) ────────────────
+
+    /**
+     * Attach this volunteer to a single group from the Show page picker.
+     * Saves a navigation: previously had to leave the profile, open the
+     * group, click Manage Members, find the volunteer, save.
+     *
+     * Authorized via VolunteerGroupPolicy::manageMembers (the same ability
+     * gating the bulk member-sync UI), so any user with volunteers.edit
+     * can attach.
+     */
+    public function attachGroup(Request $request, Volunteer $volunteer): RedirectResponse
+    {
+        $data = $request->validate([
+            'group_id' => ['required', 'integer', Rule::exists('volunteer_groups', 'id')],
+        ]);
+
+        $group = VolunteerGroup::findOrFail($data['group_id']);
+        $this->authorize('manageMembers', $group);
+
+        // syncWithoutDetaching is idempotent — re-submitting the same
+        // group_id (e.g. via stale form back-button) does not duplicate
+        // the membership row. The pivot's UNIQUE(volunteer_id, group_id)
+        // constraint backs this up at the DB level.
+        $volunteer->groups()->syncWithoutDetaching([
+            $group->id => ['joined_at' => now()],
+        ]);
+
+        return redirect()
+            ->route('volunteers.show', $volunteer)
+            ->with('success', "Added to group \"{$group->name}\".");
     }
 }

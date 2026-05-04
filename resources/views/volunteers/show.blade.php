@@ -2,7 +2,7 @@
 @section('title', $volunteer->full_name)
 
 @section('content')
-<div x-data="{ deleteOpen: false }">
+<div x-data="{ deleteOpen: false, showAllHistory: false }">
 
 {{-- Header --}}
 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
@@ -82,16 +82,18 @@
         </div>
         <div class="p-5 space-y-3.5">
             @if ($volunteer->phone)
-                <div class="flex items-center gap-3 text-sm text-gray-700">
+                <a href="tel:{{ preg_replace('/[^0-9+]/', '', $volunteer->phone) }}"
+                   class="flex items-center gap-3 text-sm text-gray-700 hover:text-brand-600 transition-colors">
                     <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z"/></svg>
                     {{ $volunteer->phone }}
-                </div>
+                </a>
             @endif
             @if ($volunteer->email)
-                <div class="flex items-center gap-3 text-sm text-gray-700">
+                <a href="mailto:{{ $volunteer->email }}"
+                   class="flex items-center gap-3 text-sm text-gray-700 hover:text-brand-600 transition-colors break-all">
                     <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
                     {{ $volunteer->email }}
-                </div>
+                </a>
             @endif
             @if (! $volunteer->phone && ! $volunteer->email)
                 <p class="text-sm text-gray-400 italic">No contact information on file.</p>
@@ -120,9 +122,9 @@
         </div>
         <div class="p-5">
             @if ($volunteer->groups->isEmpty())
-                <p class="text-sm text-gray-400 italic">Not assigned to any groups yet.</p>
+                <p class="text-sm text-gray-400 italic mb-3">Not assigned to any groups yet.</p>
             @else
-                <div class="space-y-2">
+                <div class="space-y-2 mb-3">
                     @foreach ($volunteer->groups as $group)
                         <a href="{{ route('volunteer-groups.show', $group) }}"
                            class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 hover:border-brand-300 hover:bg-brand-50/30 transition-colors">
@@ -134,6 +136,28 @@
                     @endforeach
                 </div>
             @endif
+
+            {{-- Quick-add picker — only shows when there's at least one group
+                 the volunteer is NOT yet in. Skipped on empty system to avoid
+                 a dead dropdown. --}}
+            @if ($availableGroups->isNotEmpty())
+                <form method="POST" action="{{ route('volunteers.groups.attach', $volunteer) }}"
+                      class="flex items-center gap-2 pt-3 border-t border-gray-100">
+                    @csrf
+                    <select name="group_id" required
+                            class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white
+                                   focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400">
+                        <option value="">Add to a group…</option>
+                        @foreach ($availableGroups as $g)
+                            <option value="{{ $g->id }}">{{ $g->name }}</option>
+                        @endforeach
+                    </select>
+                    <button type="submit"
+                            class="px-4 py-2 text-sm font-semibold bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors">
+                        Add
+                    </button>
+                </form>
+            @endif
         </div>
     </div>
 
@@ -141,7 +165,7 @@
 
 {{-- Service Summary Strip --}}
 @if ($stats['totalEvents'] > 0)
-<div class="grid grid-cols-3 gap-3 mb-4">
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">First Service</p>
         <p class="text-sm font-bold text-gray-900">
@@ -157,6 +181,12 @@
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Total Events</p>
         <p class="text-sm font-bold text-gray-900">{{ $stats['totalEvents'] }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Total Hours</p>
+        <p class="text-sm font-bold text-gray-900 tabular-nums">
+            {{ number_format($stats['totalHours'] ?? 0, 1) }}h
+        </p>
     </div>
 </div>
 @endif
@@ -176,6 +206,13 @@
             <p class="text-sm text-gray-400">No event service history yet.</p>
         </div>
     @else
+        @php
+            // Truncate to the most-recent 15 by default; toggle reveals the rest.
+            // checkIns is already ordered by checked_in_at desc in stats().
+            $historyLimit = 15;
+            $historyTotal = $stats['checkIns']->count();
+            $historyOverflow = $historyTotal > $historyLimit;
+        @endphp
         {{-- Desktop table --}}
         <div class="hidden sm:block overflow-x-auto">
             <table class="w-full text-sm">
@@ -192,7 +229,8 @@
                 </thead>
                 <tbody class="divide-y divide-gray-50">
                     @foreach ($stats['checkIns'] as $ci)
-                    <tr class="hover:bg-gray-50/50 transition-colors">
+                    <tr class="hover:bg-gray-50/50 transition-colors"
+                        @if ($historyOverflow && $loop->index >= $historyLimit) x-show="showAllHistory" x-cloak @endif>
                         <td class="px-5 py-3">
                             <div class="flex items-center gap-2 flex-wrap">
                                 @if ($ci->event)
@@ -242,7 +280,8 @@
         {{-- Mobile cards --}}
         <div class="sm:hidden divide-y divide-gray-100">
             @foreach ($stats['checkIns'] as $ci)
-            <div class="px-4 py-3.5">
+            <div class="px-4 py-3.5"
+                 @if ($historyOverflow && $loop->index >= $historyLimit) x-show="showAllHistory" x-cloak @endif>
                 <div class="flex items-start justify-between gap-2 mb-1">
                     <div>
                         @if ($ci->event)
@@ -274,6 +313,21 @@
             </div>
             @endforeach
         </div>
+
+        {{-- Show all / Show fewer toggle (only when there's overflow) --}}
+        @if ($historyOverflow)
+            <div class="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-center">
+                <button type="button" @click="showAllHistory = !showAllHistory"
+                        class="text-xs font-semibold text-brand-600 hover:text-brand-700 transition-colors">
+                    <span x-show="!showAllHistory">
+                        Show all {{ $historyTotal }} sessions
+                    </span>
+                    <span x-show="showAllHistory" x-cloak>
+                        Show fewer
+                    </span>
+                </button>
+            </div>
+        @endif
     @endif
 </div>
 
