@@ -24,7 +24,7 @@
         </a>
         @if ($mergeCandidates->isNotEmpty())
             <button type="button" @click="mergeOpen = true"
-                    class="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition-colors"
+                    class="flex items-center gap-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition-colors"
                     title="Merge this duplicate into another volunteer record">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
                 Merge
@@ -417,7 +417,7 @@
                 </button>
                 <button type="submit"
                         :disabled="!mergeKeeperId"
-                        class="flex-1 py-2.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors">
+                        class="flex-1 py-2.5 text-sm font-semibold bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors">
                     Merge
                 </button>
             </div>
