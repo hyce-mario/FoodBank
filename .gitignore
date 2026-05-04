@@ -1,6 +1,8 @@
 /.phpunit.cache
+/.claude
 /node_modules
 /public/build
+/public/event-media
 /public/hot
 /public/storage
 /storage/*.key
