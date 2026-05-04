@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\VolunteerMergeConflictException;
 use App\Http\Requests\StoreVolunteerRequest;
 use App\Http\Requests\UpdateVolunteerRequest;
 use App\Models\Volunteer;
 use App\Models\VolunteerGroup;
 use App\Services\VolunteerCheckInService;
+use App\Services\VolunteerMergeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +19,7 @@ class VolunteerController extends Controller
 {
     public function __construct(
         protected VolunteerCheckInService $checkInService,
+        protected VolunteerMergeService $mergeService,
     ) {}
 
     // ─── Index ────────────────────────────────────────────────────────────────
@@ -110,7 +113,15 @@ class VolunteerController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        return view('volunteers.show', compact('volunteer', 'stats', 'availableGroups'));
+        // Phase 5.8 — candidate keepers for the Merge picker. Excludes
+        // the current volunteer themselves; ordered by name for the
+        // dropdown UX. Light-weight payload (id + names + phone).
+        $mergeCandidates = Volunteer::where('id', '!=', $volunteer->id)
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name', 'phone']);
+
+        return view('volunteers.show', compact('volunteer', 'stats', 'availableGroups', 'mergeCandidates'));
     }
 
     // ─── Edit ─────────────────────────────────────────────────────────────────
@@ -191,5 +202,67 @@ class VolunteerController extends Controller
         return redirect()
             ->route('volunteers.show', $volunteer)
             ->with('success', "Added to group \"{$group->name}\".");
+    }
+
+    // ─── Merge into another volunteer (Phase 5.8) ────────────────────────────
+
+    /**
+     * Merge this volunteer (the "duplicate") into a chosen "keeper".
+     *
+     * Authorization: requires `volunteers.delete` (the duplicate row will
+     * be deleted) AND `volunteers.edit` (the keeper row will be modified
+     * via attached check-ins / memberships). Mirroring both ensures the
+     * caller can perform every part of the merge.
+     *
+     * The atomic transfer is in VolunteerMergeService; this method is the
+     * HTTP shim — it validates the keeper id, runs the service, and
+     * surfaces VolunteerMergeConflictException as a friendly error
+     * (same pattern as the HouseholdAlreadyServedException flow).
+     */
+    public function merge(Request $request, Volunteer $volunteer): RedirectResponse
+    {
+        $this->authorize('delete', $volunteer);
+
+        $data = $request->validate([
+            'keeper_id' => ['required', 'integer', 'exists:volunteers,id'],
+        ]);
+
+        // Laravel's `different:` rule references INPUT FIELDS, not route
+        // bindings, so we can't express "different from the URL volunteer"
+        // declaratively. Compare here so the validator surfaces the
+        // session error in the same shape any other field rule would.
+        if ((int) $data['keeper_id'] === $volunteer->id) {
+            return back()
+                ->withErrors(['keeper_id' => 'Cannot merge a volunteer with themselves.'])
+                ->withInput();
+        }
+
+        $keeper = Volunteer::findOrFail($data['keeper_id']);
+        $this->authorize('update', $keeper);
+
+        try {
+            $result = $this->mergeService->merge($keeper, $volunteer);
+        } catch (VolunteerMergeConflictException $e) {
+            $count = count($e->conflictingEventIds);
+            return back()->with(
+                'error',
+                "Can't merge — both volunteers have open check-ins for {$count} event" . ($count === 1 ? '' : 's')
+                . '. Please check them out first.',
+            );
+        }
+
+        $checkIns = $result['check_ins_transferred'];
+        $groups   = $result['groups_transferred'];
+        $events   = $result['events_transferred'];
+
+        return redirect()
+            ->route('volunteers.show', $keeper)
+            ->with(
+                'success',
+                "Merged \"{$result['merged_volunteer_name']}\" into \"{$keeper->full_name}\". "
+                . "Transferred {$checkIns} check-in" . ($checkIns === 1 ? '' : 's')
+                . ", {$groups} group" . ($groups === 1 ? '' : 's')
+                . ", and {$events} event assignment" . ($events === 1 ? '' : 's') . '.',
+            );
     }
 }

@@ -2,7 +2,7 @@
 @section('title', $volunteer->full_name)
 
 @section('content')
-<div x-data="{ deleteOpen: false, showAllHistory: false }">
+<div x-data="{ deleteOpen: false, mergeOpen: false, mergeKeeperId: '', showAllHistory: false }">
 
 {{-- Header --}}
 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
@@ -22,6 +22,14 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125"/></svg>
             Edit
         </a>
+        @if ($mergeCandidates->isNotEmpty())
+            <button type="button" @click="mergeOpen = true"
+                    class="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition-colors"
+                    title="Merge this duplicate into another volunteer record">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+                Merge
+            </button>
+        @endif
         <button type="button" @click="deleteOpen = true"
                 class="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-xl px-4 py-2.5 transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>
@@ -29,6 +37,13 @@
         </button>
     </div>
 </div>
+
+@if (session('error'))
+<div class="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+    {{ session('error') }}
+</div>
+@endif
 
 @if (session('success'))
 <div class="mb-4 flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3 text-sm">
@@ -330,6 +345,68 @@
         @endif
     @endif
 </div>
+
+{{-- Merge Modal --}}
+@if ($mergeCandidates->isNotEmpty())
+<div x-show="mergeOpen"
+     x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+     class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+     @click.self="mergeOpen = false" style="display:none;">
+    <div x-show="mergeOpen"
+         x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+         class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+            </div>
+            <h2 class="text-base font-bold text-gray-900">Merge Volunteer Record</h2>
+        </div>
+
+        <p class="text-sm text-gray-600 leading-relaxed mb-4">
+            Pick the volunteer record to merge <strong>{{ $volunteer->full_name }}</strong> into.
+            All their check-ins, group memberships, and event assignments will move to the chosen record,
+            and <strong>{{ $volunteer->full_name }}</strong> will be deleted. This cannot be undone.
+        </p>
+
+        <form method="POST" action="{{ route('volunteers.merge', $volunteer) }}">
+            @csrf
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1.5">
+                Keeper (the record to keep) <span class="text-red-500">*</span>
+            </label>
+            <select name="keeper_id" required x-model="mergeKeeperId"
+                    class="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-xl bg-white
+                           focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400">
+                <option value="">Select a volunteer…</option>
+                @foreach ($mergeCandidates as $cand)
+                    <option value="{{ $cand->id }}">
+                        {{ trim($cand->first_name . ' ' . $cand->last_name) }}@if ($cand->phone) — {{ $cand->phone }}@endif
+                    </option>
+                @endforeach
+            </select>
+
+            <div class="bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800 mt-3 leading-relaxed">
+                <strong>Heads up:</strong> if both volunteers have an open check-in for the same event, the merge
+                will be refused — please check one of them out first.
+            </div>
+
+            <div class="flex items-center gap-3 mt-5">
+                <button type="button" @click="mergeOpen = false"
+                        class="flex-1 py-2.5 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors">
+                    Cancel
+                </button>
+                <button type="submit"
+                        :disabled="!mergeKeeperId"
+                        class="flex-1 py-2.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors">
+                    Merge
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+@endif
 
 {{-- Delete Modal --}}
 <div x-show="deleteOpen"

@@ -171,6 +171,8 @@ Route::middleware('auth')->group(function () {
     Route::resource('volunteers', VolunteerController::class);
     Route::post('volunteers/{volunteer}/groups', [VolunteerController::class, 'attachGroup'])
         ->name('volunteers.groups.attach');
+    Route::post('volunteers/{volunteer}/merge', [VolunteerController::class, 'merge'])
+        ->name('volunteers.merge');
 
     // Inventory — Categories
     Route::resource('inventory/categories', InventoryCategoryController::class)
