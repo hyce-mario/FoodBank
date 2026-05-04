@@ -4,16 +4,17 @@
 
 ---
 
-## Current state — 2026-05-04 (Session 7 — **Visit-log audit + Phase 5.6 volunteer security/correctness**)
+## Current state — 2026-05-04 (Session 7 — **Visit-log audit + Phase 5.6 + 5.7 volunteer security & UX**)
 
 ### Where we are
 
 **Audit remediation Phases 0–6 remain fully closed** (per Session 5/6 status). This session added:
 
-1. **Phase 5.6 — Volunteer security + correctness** (NEW, post-audit). Four sub-tasks (5.6.a–d) addressing issues a user-requested audit of the volunteers module surfaced. The fixes pattern-match findings in AUDIT_REPORT.md (FormRequest `authorize: true`, live-vs-snapshot drift, validator doc-comment lying, UNIQUE + updateOrCreate silently overwriting history) but the volunteers module wasn't in the original audit scope. See LOG.md "Phase 5 — Workflow & UX quality" + Deviations table for the full reasoning.
-2. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
+1. **Phase 5.6 — Volunteer security + correctness** (NEW, post-audit). Four sub-tasks (5.6.a–d) addressing issues a user-requested audit of the volunteers module surfaced. Fixes pattern-match findings in AUDIT_REPORT.md (FormRequest `authorize: true`, live-vs-snapshot drift, validator doc-comment lying, UNIQUE + updateOrCreate silently overwriting history). 5.6.e–g are reserved for the deferred security items still on the audit punch-list (PII strip on public search, cascade-delete decisions, partial-unique on `volunteers.email`/`phone`).
+2. **Phase 5.7 — Volunteer UX polish** (NEW, same audit conversation, split out for clarity). Five user-facing improvements bundled into one commit: index group filter + per-page selector, Show-page tel:/mailto: links, Total Hours tile, "Add to group" quick-action picker (+ new endpoint), Service History truncate-to-15 with Show-all toggle.
+3. **Visit-log audit + feature work** (drive-by, not phase-tracked). Audit + fixes for the existing `/visit-log` page — pagination at 15, print export, CSV column-count fix, multi-household visit reconciliation, dead-code removal, filtered exports.
 
-**Suite is green at 302/302** (was 287 at session start; +15 across 3 new test files).
+**Suite is green at 307/307** (was 287 at session start; +20 across 4 new test files).
 
 ### ⚠️ What's committed vs. uncommitted
 
@@ -21,6 +22,8 @@
 
 | Commit | Subject |
 |---|---|
+| `dff8b1c` | feat(volunteers): UX polish — group filter, total hours, mailto/tel, history toggle, add-to-group |
+| `4e3ed48` | docs(remediation): refresh HANDOFF for Session 7 — visit-log + Phase 5.6 |
 | `f38e1d5` | docs(remediation): log Phase 5.6 — Volunteer security + correctness |
 | `dcb2a1c` | fix(volunteers): add event_id index before dropping composite unique (MySQL FK) |
 | `6c65448` | fix(volunteers): enforce admin check-in time bounds the validator already claimed |
@@ -136,41 +139,39 @@ ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
 - `resources/views/volunteers/index.blade.php` (untracked legacy, pulled in via 5.6.c)
 - `tests/Feature/VolunteerGroupAuthorizationTest.php` (7 tests)
 - `tests/Feature/VolunteerReCheckInTest.php` (5 tests)
+- `tests/Feature/VolunteerAttachGroupTest.php` (5 tests, Phase 5.7)
 
 ### Files this session modified (already-tracked)
 
-- `app/Http/Controllers/VolunteerController.php` — selectSub for events_served_count, removed obsolete `withCount('checkIns')`
+- `app/Http/Controllers/VolunteerController.php` — 5.6.c (selectSub for events_served_count) + 5.7 (group filter, availableGroups, attachGroup endpoint)
 - `app/Services/VolunteerCheckInService.php` — transaction-wrapped checkIn with lockForUpdate, distinct-event stats, totalHours
 - `app/Services/EventAnalyticsService.php` — Phase 1.2.c retroactive fix + visit-log audit fixes (multi-household summing, dead code removed)
 - `app/Http/Requests/StoreEventVolunteerCheckInRequest.php` — time bounds (5.6.d)
+- `resources/views/volunteers/index.blade.php` — 5.6.c badge fix + 5.7 toolbar (group filter, per-page selector)
+- `resources/views/volunteers/show.blade.php` — 5.7 (tel/mailto, Total Hours tile, Add-to-group picker, history truncate)
 - `tests/Feature/EventVolunteerCheckInTest.php` — +3 bound tests (5.6.d)
-- `routes/web.php` — added `visit-log/print` route only (Phase C/D household export routes still uncommitted on the working tree)
-- `docs/remediation/LOG.md` — Phase 5.6 entries + Deviations rows
+- `routes/web.php` — added `visit-log/print` (Session 7 visit-log work) + `volunteers.groups.attach` (5.7); Phase C/D household export routes still uncommitted on the working tree
+- `docs/remediation/LOG.md` — Phase 5.6 + 5.7 entries, Deviations rows
 
 ### What's next — start here on resume
 
 Two natural next-up paths; **ask the user which they want**:
 
-#### Path 1 — Continue volunteer remediation (open Phase 5.7?)
+#### Path 1 — Phase 5.6 deferred security items (most important remaining audit finds)
 
-The audit surfaced security/data findings that 5.6 didn't cover. In rough priority:
+5.6.a–d shipped; 5.6.e–g were deferred. In rough priority:
 
-1. **PII leak on `/volunteer-checkin/search`** — make search response strip phone/email; return only first-name + last-initial. Public-facing endpoint, unauthenticated, indexable.
-2. **Cascade-delete decisions** — `volunteer_check_ins.event_id` and `.volunteer_id` both cascade on delete. Decide: `softDeletes` on `volunteers`, or `restrictOnDelete` on the FKs, or accept the destructive cascade.
-3. **DB-level unique on `volunteers.email` / `.phone`** — partial uniques (where not null) to prevent duplicates from any source.
-4. **Public sign-up dedup** — match existing volunteer by name + phone + email before creating a new row in `signUp()`.
-5. **Identity verification on public check-in** — at minimum require last-name + last-4-of-phone in addition to volunteer_id.
+1. **5.6.e — PII leak on `/volunteer-checkin/search`** — public-facing unauthenticated endpoint currently returns volunteer phone + email in the JSON. Strip to first-name + last-initial only; staff use the admin search for full contact info.
+2. **5.6.f — Cascade-delete decisions** — `volunteer_check_ins.event_id` and `.volunteer_id` both cascade on delete. Decide: `softDeletes` on `volunteers`, or `restrictOnDelete` on the FKs, or accept the destructive cascade. Compliance concern if `hours_served` becomes a payroll/grant input.
+3. **5.6.g — DB-level partial unique on `volunteers.email` / `phone`** — prevents duplicates from any source. MySQL 8 needs the generated-column trick; sqlite supports partial uniques natively.
+4. **(potential 5.6.h) Public sign-up dedup** — match existing volunteer by name + phone + email before creating a new row in `signUp()`. Pairs naturally with 5.6.g.
+5. **(potential 5.6.i) Identity verification on public check-in** — at minimum require last-name + last-4-of-phone in addition to volunteer_id.
 
-#### Path 2 — Volunteers module UX improvements
+#### Path 2 — Bigger volunteer features (would be Phase 5.8+)
 
-Audit findings #18–28. Lower-stakes than Path 1:
-
-- Filter volunteers index by group (currently only role + name search)
-- "Total Hours Served" stat card on Show page (groundwork already laid via `stats()['totalHours']`)
-- Paginated Service History on Show page (currently dumps every check-in)
-- `tel:` / `mailto:` links on phone + email
-- Volunteer merge tool (with the dedup gap, duplicates are inevitable)
-- "Add to group" quick-action on Volunteer Show page
+- **Volunteer merge tool** — pick two volunteers, transfer check-ins + group memberships, delete dupe. Service + UI + tests. Becomes more important once 5.6.h/i ship and dedup gaps are closed at the source.
+- **Service-history CSV / print export** on the Show page (audit finding #22).
+- **Group cards 4-button row on index** — overflow-menu pattern instead of inline divided buttons (audit finding #24).
 
 #### Path 3 — Sweep up Session 6 leftover
 
@@ -188,9 +189,18 @@ Many uncommitted Session-6 features look complete and could land in their own co
 - ✅ **5.6.b** Re-check-in preserves prior session (`3622c11` + `dcb2a1c` MySQL FK fix)
 - ✅ **5.6.c** Index "New / First Timer / Returner" badge (`1732c18`)
 - ✅ **5.6.d** Admin check-in time validator bounds (`6c65448`)
-- ⬜ **5.6.e** (potential next, not yet started) Public-search PII strip
-- ⬜ **5.6.f** Cascade-delete decisions on `volunteer_check_ins`
-- ⬜ **5.6.g** DB-level unique on volunteers.email + phone (partial)
+- ⬜ **5.6.e** (deferred) Public-search PII strip — `/volunteer-checkin/search` returns phone/email
+- ⬜ **5.6.f** (deferred) Cascade-delete decisions on `volunteer_check_ins`
+- ⬜ **5.6.g** (deferred) DB-level partial unique on `volunteers.email` + `phone`
+
+### Phase 5.7 sub-task status
+
+- ✅ **5.7** Volunteer UX polish — single bundled commit (`dff8b1c`):
+  - Index group filter + per-page selector
+  - Show-page tel:/mailto: links
+  - Total Hours tile in service summary strip
+  - "Add to group" quick picker + new `POST /volunteers/{volunteer}/groups` endpoint
+  - Service History truncate-to-15 with Show-all toggle
 
 ### Drive-by fixes this session
 
@@ -230,7 +240,7 @@ Many uncommitted Session-6 features look complete and could land in their own co
 
 - PHP 8.2.12 via XAMPP, `c:\xampp\htdocs\Foodbank`.
 - MySQL dev DB. **All Phase 1–6 migrations applied + Session 6 add-document-to-event-media-type-enum applied + Session 7 relax-volunteer-check-ins-unique-to-open-rows applied.** mysqldump backups for each schema-changing remediation phase live in `backups/` (gitignored). **No backup taken for the 5.6.b migration** — reversible via working `down()`, and the failed first attempt never committed any DDL. Flagged in LOG.md Deviations.
-- Tests use sqlite `:memory:`. **302 tests passing** (was 287 pre-session, +15 across `VolunteerGroupAuthorizationTest`, `VolunteerReCheckInTest`, and 3 added tests in `EventVolunteerCheckInTest`).
+- Tests use sqlite `:memory:`. **307 tests passing** (was 287 pre-session, +20 across `VolunteerGroupAuthorizationTest` (7), `VolunteerReCheckInTest` (5), `VolunteerAttachGroupTest` (5), and 3 added tests in `EventVolunteerCheckInTest`).
 - Node/npm not installed — prebuilt CSS constraint applies.
 - Windows scheduled task `FoodBank Schedule Runner` runs `php artisan schedule:run` every minute (LogonType=S4U, hidden).
 - Git identity: `-c user.name="Tobby" -c user.email="digienergy0@gmail.com"` (the global git config has no user; pass `-c` on every commit).
