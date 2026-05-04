@@ -180,6 +180,12 @@ Route::middleware('auth')->group(function () {
     Route::patch('/checkin/{visit}/done',   [CheckInController::class, 'done'])     ->name('checkin.done');
 
     // Volunteers
+    // List exports — registered BEFORE the resource route so /volunteers/export/*
+    // doesn't get parsed as Route::resource's show action with {volunteer}=export.
+    Route::get('volunteers/export/print', [VolunteerController::class, 'exportPrint'])->name('volunteers.export.print');
+    Route::get('volunteers/export/pdf',   [VolunteerController::class, 'exportPdf'])  ->name('volunteers.export.pdf');
+    Route::get('volunteers/export/csv',   [VolunteerController::class, 'exportCsv'])  ->name('volunteers.export.csv');
+
     Route::resource('volunteers', VolunteerController::class);
     Route::post('volunteers/{volunteer}/groups', [VolunteerController::class, 'attachGroup'])
         ->name('volunteers.groups.attach');

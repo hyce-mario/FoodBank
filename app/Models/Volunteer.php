@@ -82,14 +82,37 @@ class Volunteer extends Model
 
     // ─── Scopes ───────────────────────────────────────────────────────────────
 
+    /**
+     * Search across first/last name + email + phone, plus a portable
+     * "full name" match for queries containing whitespace (e.g. typing
+     * "Mary Johnson" hits the row where first_name=Mary AND
+     * last_name=Johnson).
+     *
+     * Uses parts-split rather than `CONCAT(first_name, ' ', last_name)`
+     * because CONCAT is MySQL-only — the sqlite test DB doesn't have
+     * it, so a CONCAT-based whereRaw silently failed on every search-
+     * exercising test that tried to run against sqlite. (Drive-by fix
+     * caught while writing the volunteer-list CSV export tests.)
+     */
     public function scopeSearch(Builder $query, string $term): Builder
     {
         return $query->where(function (Builder $q) use ($term) {
             $q->where('first_name', 'like', "%{$term}%")
               ->orWhere('last_name', 'like', "%{$term}%")
-              ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", ["%{$term}%"])
-              ->orWhere('email', 'like', "%{$term}%")
-              ->orWhere('phone', 'like', "%{$term}%");
+              ->orWhere('email',     'like', "%{$term}%")
+              ->orWhere('phone',     'like', "%{$term}%");
+
+            // "Full name" path — split on whitespace and match the
+            // first part against first_name AND second part against
+            // last_name. Only runs for two-word queries; single-word
+            // queries are already covered by the orWhere chain above.
+            $parts = preg_split('/\s+/', trim($term));
+            if (is_array($parts) && count($parts) === 2) {
+                $q->orWhere(function ($q2) use ($parts) {
+                    $q2->where('first_name', 'like', "%{$parts[0]}%")
+                       ->where('last_name',  'like', "%{$parts[1]}%");
+                });
+            }
         });
     }
 }
