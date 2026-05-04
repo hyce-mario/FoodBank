@@ -79,6 +79,63 @@ class EventVolunteerCheckInTest extends TestCase
         ])->assertRedirect('/login');
     }
 
+    // ─── Time bounds (StoreEventVolunteerCheckInRequest) ─────────────────────
+
+    public function test_check_in_rejects_time_more_than_24h_before_event(): void
+    {
+        $vol = $this->makeVolunteer('Bounds', 'Test');
+        // Three days before the event date — far outside the 24h window.
+        $tooEarly = $this->event->date->copy()->subDays(3)->setTime(9, 0);
+
+        $this->actingAs($this->admin)
+             ->from(route('events.show', $this->event))
+             ->post(route('events.volunteer-checkins.store', $this->event), [
+                 'volunteer_id'  => $vol->id,
+                 'checked_in_at' => $tooEarly->format('Y-m-d\TH:i'),
+             ])
+             ->assertSessionHasErrors('checked_in_at');
+
+        $this->assertDatabaseMissing('volunteer_check_ins', [
+            'volunteer_id' => $vol->id,
+        ]);
+    }
+
+    public function test_check_in_rejects_time_more_than_one_hour_in_future(): void
+    {
+        $vol = $this->makeVolunteer('Future', 'Test');
+        $tooLate = now()->addHours(3);
+
+        $this->actingAs($this->admin)
+             ->from(route('events.show', $this->event))
+             ->post(route('events.volunteer-checkins.store', $this->event), [
+                 'volunteer_id'  => $vol->id,
+                 'checked_in_at' => $tooLate->format('Y-m-d\TH:i'),
+             ])
+             ->assertSessionHasErrors('checked_in_at');
+
+        $this->assertDatabaseMissing('volunteer_check_ins', [
+            'volunteer_id' => $vol->id,
+        ]);
+    }
+
+    public function test_check_in_accepts_time_within_clock_skew_window(): void
+    {
+        $vol = $this->makeVolunteer('Skew', 'Test');
+        // 30 minutes in the future — inside the 1h tolerance.
+        $within = now()->addMinutes(30);
+
+        $this->actingAs($this->admin)
+             ->post(route('events.volunteer-checkins.store', $this->event), [
+                 'volunteer_id'  => $vol->id,
+                 'checked_in_at' => $within->format('Y-m-d\TH:i'),
+             ])
+             ->assertRedirect();
+
+        $this->assertDatabaseHas('volunteer_check_ins', [
+            'volunteer_id' => $vol->id,
+        ]);
+    }
+
     public function test_admin_can_check_in_single_volunteer_with_explicit_time(): void
     {
         $vol = $this->makeVolunteer('Alice', 'A');
