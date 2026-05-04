@@ -139,6 +139,19 @@ class VolunteerController extends Controller
     public function destroy(Volunteer $volunteer): RedirectResponse
     {
         $this->authorize('delete', $volunteer);
+
+        // Phase 5.6.f: volunteer_check_ins FK is restrictOnDelete now,
+        // so deleting a volunteer with service history would blow up
+        // with a SQLSTATE 23000 integrity violation. Pre-check and
+        // surface a clear message instead — the count is informative,
+        // and the admin can decide whether to clean up the rows first
+        // or leave the volunteer record in place.
+        $checkInCount = $volunteer->checkIns()->count();
+        if ($checkInCount > 0) {
+            return back()
+                ->with('error', "{$volunteer->full_name} can't be removed — they have {$checkInCount} event check-in" . ($checkInCount === 1 ? '' : 's') . " on record. Archive instead, or contact an admin to clear the history.");
+        }
+
         $name = $volunteer->full_name;
         $volunteer->delete();
 

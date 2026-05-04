@@ -504,6 +504,18 @@ class EventController extends Controller
     public function destroy(Event $event): RedirectResponse
     {
         $this->authorize('delete', $event);
+
+        // Phase 5.6.f: volunteer_check_ins.event_id is restrictOnDelete
+        // now. An event with volunteer-service history has compliance
+        // value (hours_served can feed payroll / grant reports) — refuse
+        // to silently wipe it. Admin can delete the check-ins explicitly
+        // if a hard delete is really wanted.
+        $checkInCount = $event->volunteerCheckIns()->count();
+        if ($checkInCount > 0) {
+            return back()
+                ->with('error', "\"{$event->name}\" can't be deleted — it has {$checkInCount} volunteer check-in" . ($checkInCount === 1 ? '' : 's') . " on record. Cancel the event instead, or remove the check-in history first.");
+        }
+
         $name = $event->name;
         $event->delete();
 
