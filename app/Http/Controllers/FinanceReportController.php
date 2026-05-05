@@ -84,7 +84,9 @@ class FinanceReportController extends Controller
                 'title'       => 'Expense Detail Report',
                 'description' => 'Every expense in the period, grouped by category. Filterable by payee + status.',
                 'category'    => 'Detail',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.expense-detail',
+                'icon'        => 'document',
             ],
             [
                 'id'          => 'general_ledger',
@@ -363,6 +365,87 @@ class FinanceReportController extends Controller
 
         $filename = 'income-detail-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
         return $this->detailCsv($filename, 'Income Detail Report', 'Source / Donor', $period, $data);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.2.b — Expense Detail Report
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function expenseDetail(Request $request): View
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->detailFilters($request);
+        $data    = $this->service->expenseDetail($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+
+        $categories = FinanceCategory::active()->where('type', 'expense')->orderBy('name')->get(['id', 'name']);
+        $events     = Event::orderByDesc('date')->limit(50)->get(['id', 'name', 'date']);
+
+        return view('finance.reports.expense-detail', compact(
+            'period', 'data', 'filters', 'categories', 'events',
+        ));
+    }
+
+    public function expenseDetailPrint(Request $request): View
+    {
+        $period   = $this->service->resolvePeriod($request);
+        $filters  = $this->detailFilters($request);
+        $data     = $this->service->expenseDetail($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+        $branding  = $this->exportBranding();
+        $autoPrint = true;
+
+        return view('finance.reports.exports.detail-print', [
+            'period'      => $period,
+            'data'        => $data,
+            'branding'    => $branding,
+            'autoPrint'   => $autoPrint,
+            'reportTitle' => 'Expense Detail Report',
+            'rowLabel'    => 'Expense',
+            'sourceLabel' => 'Payee',
+            'totalLabel'  => 'Total Expenses',
+            'colorClass'  => 'expense',
+        ]);
+    }
+
+    public function expenseDetailPdf(Request $request): Response
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->detailFilters($request);
+        $data    = $this->service->expenseDetail($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+        $branding = $this->exportBranding();
+
+        $filename = 'expense-detail-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.pdf';
+        $payload = [
+            'period'      => $period,
+            'data'        => $data,
+            'branding'    => $branding,
+            'reportTitle' => 'Expense Detail Report',
+            'rowLabel'    => 'Expense',
+            'sourceLabel' => 'Payee',
+            'totalLabel'  => 'Total Expenses',
+            'colorClass'  => 'expense',
+        ];
+
+        try {
+            return Pdf::loadView('finance.reports.exports.detail-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-expense-detail-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.detail-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        }
+    }
+
+    public function expenseDetailCsv(Request $request): StreamedResponse
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->detailFilters($request);
+        $data    = $this->service->expenseDetail($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+
+        $filename = 'expense-detail-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
+        return $this->detailCsv($filename, 'Expense Detail Report', 'Payee', $period, $data);
     }
 
     /**

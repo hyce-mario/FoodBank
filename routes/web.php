@@ -286,6 +286,13 @@ Route::middleware('auth')->group(function () {
             Route::get('/csv',   [FinanceReportController::class, 'incomeDetailCsv'])  ->name('.csv');
         });
 
+        Route::prefix('reports/expense-detail')->name('reports.expense-detail')->group(function () {
+            Route::get('/',      [FinanceReportController::class, 'expenseDetail']);
+            Route::get('/print', [FinanceReportController::class, 'expenseDetailPrint'])->name('.print');
+            Route::get('/pdf',   [FinanceReportController::class, 'expenseDetailPdf'])  ->name('.pdf');
+            Route::get('/csv',   [FinanceReportController::class, 'expenseDetailCsv'])  ->name('.csv');
+        });
+
         Route::resource('categories', FinanceCategoryController::class)
              ->except(['show', 'create', 'edit']);
 
