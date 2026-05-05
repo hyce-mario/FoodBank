@@ -144,7 +144,19 @@ Run `php artisan schedule:list` to see all registered tasks and their next-run t
 php artisan test
 ```
 
-The suite uses SQLite in-memory and does not require any production data. **Note:** some MySQL-only SQL in `ReportAnalyticsService` (`TIMESTAMPDIFF`, `DATE_FORMAT`, `YEARWEEK`) is not exercised by the SQLite suite — verify those report endpoints manually against a MySQL dev database before tagging a release.
+The suite uses SQLite `:memory:` and does not require any production data.
+
+### ⚠️ Coverage gap — MySQL-only SQL
+
+A handful of queries use MySQL-specific functions (`TIMESTAMPDIFF`, `DATE_FORMAT`, `YEARWEEK`, `DAYOFWEEK`, `HOUR`, `CONCAT(...)`) that don't exist in SQLite. The test runner skips past those code paths entirely, so **a regression in those queries will pass CI but break in production**. This already bit us once (Phase 5.6.b — MySQL FK-index error 1553).
+
+Affected hotspots:
+
+- [`ReportAnalyticsService`](app/Services/ReportAnalyticsService.php) — `overview()`, `overviewTrend()`, `trends()`, `lanePerformance()`, `queueFlow()`, `exportVisits()`, `exportHouseholds()`, `exportFirstTimers()`
+- [`EventCheckInService`](app/Services/EventCheckInService.php) — household search uses `CONCAT(first_name, ' ', last_name)`
+- [`FinanceService`](app/Services/FinanceService.php) — finance dashboard chart uses `DATE_FORMAT(transaction_date, '%Y-%m')`
+
+Before tagging a release, walk through [docs/release-checklist.md](docs/release-checklist.md) which lists the exact endpoints to verify against a MySQL dev database.
 
 ## Documentation
 
