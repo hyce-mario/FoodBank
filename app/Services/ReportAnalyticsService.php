@@ -953,6 +953,64 @@ class ReportAnalyticsService
         ];
     }
 
+    /**
+     * Households whose FIRST event falls within the date range. Mirrors the
+     * three-subquery pattern in ReportsController::firstTimers so the CSV
+     * agrees row-for-row with the on-screen list.
+     */
+    public function exportFirstTimers(Carbon $from, Carbon $to): array
+    {
+        $fromStr = $from->format('Y-m-d');
+        $toStr   = $to->format('Y-m-d');
+
+        $firstDateSql = '(SELECT MIN(e2.date) FROM visit_households vh2
+                           JOIN visits v2 ON vh2.visit_id = v2.id
+                           JOIN events e2 ON v2.event_id = e2.id
+                           WHERE vh2.household_id = households.id)';
+
+        $rows = DB::table('households')
+            ->select('households.household_number',
+                     'households.first_name',
+                     'households.last_name',
+                     'households.phone',
+                     'households.email',
+                     'households.city',
+                     'households.zip',
+                     'households.representative_household_id')
+            ->selectRaw("{$firstDateSql} AS first_event_date")
+            ->selectRaw('(SELECT e2.name FROM events e2
+                          JOIN visits v2 ON v2.event_id = e2.id
+                          JOIN visit_households vh2 ON vh2.visit_id = v2.id
+                          WHERE vh2.household_id = households.id
+                          ORDER BY e2.date ASC LIMIT 1) AS first_event_name')
+            ->selectRaw('(SELECT COUNT(DISTINCT v2.event_id) FROM visit_households vh2
+                          JOIN visits v2 ON vh2.visit_id = v2.id
+                          WHERE vh2.household_id = households.id) AS total_events_attended')
+            ->whereRaw("{$firstDateSql} BETWEEN ? AND ?", [$fromStr, $toStr])
+            ->orderByRaw("{$firstDateSql} ASC")
+            ->get();
+
+        return [
+            'headers' => [
+                'Household #', 'First Name', 'Last Name', 'Phone', 'Email',
+                'City', 'ZIP', 'First Event Date', 'First Event', 'Events Attended', 'Represented',
+            ],
+            'rows' => $rows->map(fn ($r) => [
+                $r->household_number,
+                $r->first_name,
+                $r->last_name,
+                $r->phone,
+                $r->email,
+                $r->city,
+                $r->zip,
+                $r->first_event_date,
+                $r->first_event_name,
+                (int) $r->total_events_attended,
+                $r->representative_household_id ? 'Yes' : 'No',
+            ])->all(),
+        ];
+    }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private function groupingExpressions(Carbon $from, Carbon $to, string $col): array

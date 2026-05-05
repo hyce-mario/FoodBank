@@ -10,13 +10,16 @@
         <h1 class="text-lg font-bold text-gray-900">Reports</h1>
         <p class="text-xs text-gray-400 mt-0.5">Analytics &amp; reporting center</p>
     </div>
-    <a href="{{ route('reports.export', request()->only(['preset','date_from','date_to'])) }}"
-       class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl px-3 py-2 bg-white hover:bg-gray-50 transition-colors">
+    @can('reports.export')
+    <a href="{{ route('reports.download', array_merge(request()->only(['preset','date_from','date_to']), ['type' => 'first-timers'])) }}"
+       class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl px-3 py-2 bg-white hover:bg-gray-50 transition-colors"
+       title="Download first-timers list for this period">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
         </svg>
-        Export Data
+        Export CSV
     </a>
+    @endcan
 </div>
 
 {{-- Sub-nav --}}

@@ -9,14 +9,27 @@
         <h1 class="text-lg font-bold text-gray-900">Reports</h1>
         <p class="text-xs text-gray-400 mt-0.5">Inventory usage, distribution, and waste tracking</p>
     </div>
-    <a href="{{ route('inventory.items.index') }}"
-       class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 border border-gray-200
-              rounded-xl px-3 py-2 bg-white hover:bg-gray-50 transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
-        </svg>
-        View Inventory
-    </a>
+    <div class="flex items-center gap-2">
+        @can('reports.export')
+        <a href="{{ route('reports.download', array_merge(request()->only(['preset','date_from','date_to']), ['type' => 'inventory'])) }}"
+           class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 border border-gray-200
+                  rounded-xl px-3 py-2 bg-white hover:bg-gray-50 transition-colors"
+           title="Download per-event item usage as CSV">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+            </svg>
+            Export CSV
+        </a>
+        @endcan
+        <a href="{{ route('inventory.items.index') }}"
+           class="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-600 border border-gray-200
+                  rounded-xl px-3 py-2 bg-white hover:bg-gray-50 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
+            </svg>
+            View Inventory
+        </a>
+    </div>
 </div>
 
 {{-- Sub-nav --}}

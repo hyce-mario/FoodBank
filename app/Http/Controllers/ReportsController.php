@@ -307,13 +307,15 @@ class ReportsController extends Controller
         $type   = $request->get('type', 'events');
 
         [$data, $filename] = match ($type) {
-            'events'       => [$this->analytics->exportEvents($from, $to),    "events-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
-            'visits'       => [$this->analytics->exportVisits($from, $to),    "visits-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
-            'households'   => [$this->analytics->exportHouseholds($from, $to),"households-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
-            'reviews'      => [$this->analytics->exportReviews($from, $to),   "reviews-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
-            'demographics' => [$this->analytics->exportDemographics($from, $to), "demographics-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
-            'volunteers'   => [$this->analytics->exportVolunteers($from, $to),"volunteers-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
-            default        => [['headers' => [], 'rows' => []], 'export.csv'],
+            'events'        => [$this->analytics->exportEvents($from, $to),       "events-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
+            'visits'        => [$this->analytics->exportVisits($from, $to),       "visits-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
+            'households'    => [$this->analytics->exportHouseholds($from, $to),   "households-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
+            'reviews'       => [$this->analytics->exportReviews($from, $to),      "reviews-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
+            'demographics'  => [$this->analytics->exportDemographics($from, $to), "demographics-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
+            'volunteers'    => [$this->analytics->exportVolunteers($from, $to),   "volunteers-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
+            'inventory'     => [$this->inventoryReport->exportInventoryUsage($from, $to), "inventory-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
+            'first-timers'  => [$this->analytics->exportFirstTimers($from, $to),  "first-timers-{$from->format('Y-m-d')}-{$to->format('Y-m-d')}.csv"],
+            default         => [['headers' => [], 'rows' => []], 'export.csv'],
         };
 
         return response()->streamDownload(function () use ($data) {

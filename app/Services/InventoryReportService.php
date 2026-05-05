@@ -208,4 +208,54 @@ class InventoryReportService
             'returned'    => $topItems->pluck('total_returned')->map(fn($v) => (int) $v)->all(),
         ];
     }
+
+    // ─── CSV Export ───────────────────────────────────────────────────────────
+
+    /**
+     * Per-event item-level inventory usage for the date range, in the shape
+     * the controller's `streamDownload` expects: ['headers' => [], 'rows' => []].
+     * One row per (event × item) so the export reconciles to both the per-event
+     * and per-item breakdowns the on-screen report shows.
+     */
+    public function exportInventoryUsage(Carbon $from, Carbon $to): array
+    {
+        $rows = DB::table('event_inventory_allocations as eia')
+            ->join('events as e',                    'e.id',  '=', 'eia.event_id')
+            ->join('inventory_items as ii',          'ii.id', '=', 'eia.inventory_item_id')
+            ->leftJoin('inventory_categories as ic', 'ic.id', '=', 'ii.category_id')
+            ->whereBetween('e.date', [$from->toDateString(), $to->toDateString()])
+            ->select(
+                'e.date         as event_date',
+                'e.name         as event_name',
+                'e.status       as event_status',
+                'ic.name        as category_name',
+                'ii.name        as item_name',
+                'ii.unit_type',
+                'eia.allocated_quantity',
+                'eia.distributed_quantity',
+                'eia.returned_quantity',
+            )
+            ->orderBy('e.date', 'desc')
+            ->orderBy('ii.name')
+            ->get();
+
+        return [
+            'headers' => [
+                'Event Date', 'Event', 'Event Status', 'Category', 'Item', 'Unit',
+                'Allocated', 'Distributed', 'Returned', 'Remaining',
+            ],
+            'rows' => $rows->map(fn ($r) => [
+                $r->event_date,
+                $r->event_name,
+                $r->event_status,
+                $r->category_name ?? '',
+                $r->item_name,
+                $r->unit_type,
+                (int) $r->allocated_quantity,
+                (int) $r->distributed_quantity,
+                (int) $r->returned_quantity,
+                (int) ($r->allocated_quantity - $r->distributed_quantity - $r->returned_quantity),
+            ])->all(),
+        ];
+    }
 }
