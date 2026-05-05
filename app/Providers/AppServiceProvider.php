@@ -40,6 +40,24 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(EventReview::class, EventReviewPolicy::class);
         Gate::policy(AuditLog::class,    AuditLogPolicy::class);
 
+        // Bridge dot-notation permission strings ('reports.view', 'settings.update',
+        // etc.) so @can() in Blade and Gate::check() use the same lookup as the
+        // permission: route middleware (CheckPermission). Without this, @can()
+        // silently returns false for every dot-notation ability and gated UI
+        // disappears even for ADMIN users with the '*' wildcard.
+        //
+        // Only intercepts string-ability calls with no policy arguments so
+        // Policy lookups (e.g., @can('viewAny', AuditLog::class)) keep
+        // resolving to their Policy methods unchanged.
+        Gate::before(function ($user, string $ability, array $arguments = []) {
+            if (! empty($arguments) || ! str_contains($ability, '.')) {
+                return null;
+            }
+            return method_exists($user, 'hasPermission') && $user->hasPermission($ability)
+                ? true
+                : null;
+        });
+
         // Phase 6.7: keep households.events_attended_count in sync on Visit delete.
         Visit::observe(VisitObserver::class);
 
