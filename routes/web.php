@@ -201,6 +201,13 @@ Route::middleware('auth')->group(function () {
          ->parameters(['categories' => 'inventoryCategory'])
          ->only(['index', 'store', 'update', 'destroy']);
 
+    // Inventory — Items: print + CSV export (registered BEFORE resource so the
+    // wildcard {inventory_item} show route doesn't swallow these literals).
+    Route::get('inventory/items/print',      [InventoryItemController::class, 'print'])
+         ->name('inventory.items.print');
+    Route::get('inventory/items/export.csv', [InventoryItemController::class, 'export'])
+         ->name('inventory.items.export');
+
     // Inventory — Items
     Route::resource('inventory/items', InventoryItemController::class)
          ->names('inventory.items')

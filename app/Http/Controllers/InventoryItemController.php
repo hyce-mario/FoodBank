@@ -8,10 +8,12 @@ use App\Models\InventoryCategory;
 use App\Models\InventoryItem;
 use App\Models\InventoryMovement;
 use App\Services\SettingService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InventoryItemController extends Controller
 {
@@ -19,28 +21,7 @@ class InventoryItemController extends Controller
 
     public function index(Request $request): View
     {
-        $query = InventoryItem::query()->with('category');
-
-        if ($search = $request->get('search')) {
-            $query->search($search);
-        }
-
-        if ($categoryId = $request->get('category')) {
-            $query->where('category_id', $categoryId);
-        }
-
-        // Respect show_inactive_items setting for the default (no status filter) view
-        $showInactiveByDefault = (bool) SettingService::get('inventory.show_inactive_items', false);
-
-        $status = $request->get('status');
-        match ($status) {
-            'low'           => $query->active()->lowStock(),
-            'out'           => $query->active()->outOfStock(),
-            'expiring_soon' => $query->active()->expiringSoon(),
-            'expired'       => $query->active()->expired(),
-            'inactive'      => $query->where('is_active', false),
-            default         => $showInactiveByDefault ? $query : $query->active(),
-        };
+        $query = $this->filteredQuery($request);
 
         $perPage    = (int) SettingService::get('general.records_per_page', 25);
         $items      = $query->orderBy('name')->paginate($perPage)->withQueryString();
@@ -53,11 +34,141 @@ class InventoryItemController extends Controller
         $expiringSoon   = InventoryItem::active()->expiringSoon()->count();
         $expiredCount   = InventoryItem::active()->expired()->count();
 
+        $status = $request->get('status');
+
         return view('inventory.items.index', compact(
             'items', 'categories', 'status',
             'totalActive', 'lowStockCount', 'outOfStock',
             'expiringSoon', 'expiredCount'
         ));
+    }
+
+    // ─── Print ────────────────────────────────────────────────────────────────
+    //
+    // Branded standalone HTML sheet that mirrors whatever search/category/status
+    // filters the user has active on the index. Auto-fires window.print() on
+    // load. Same shape as visit-log.print and volunteer service-history print.
+
+    public function print(Request $request): View
+    {
+        $items   = $this->filteredQuery($request)->orderBy('name')->get();
+        $filters = $this->activeFilters($request);
+
+        // Summary across the FILTERED set (not the global counts) so the
+        // printed sheet reconciles with its own table.
+        $summary = [
+            'total'         => $items->count(),
+            'total_qty'     => $items->sum('quantity_on_hand'),
+            'low_stock'     => $items->filter(fn ($i) => $i->stockStatus() === 'low')->count(),
+            'out_of_stock'  => $items->filter(fn ($i) => $i->stockStatus() === 'out')->count(),
+            'expiring_soon' => $items->filter(fn ($i) => $i->expiryStatus() === 'expiring_soon')->count(),
+            'expired'       => $items->filter(fn ($i) => $i->expiryStatus() === 'expired')->count(),
+        ];
+
+        return view('inventory.items.print', compact('items', 'summary', 'filters'));
+    }
+
+    // ─── Export (CSV) ─────────────────────────────────────────────────────────
+    //
+    // Streams the filtered set as CSV. Filename is date-stamped so repeat
+    // exports don't overwrite each other in the user's downloads folder.
+
+    public function export(Request $request): StreamedResponse
+    {
+        $items    = $this->filteredQuery($request)->orderBy('name')->get();
+        $filename = 'inventory-' . now()->format('Y-m-d') . '.csv';
+
+        $headers = [
+            'Content-Type'        => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ];
+
+        return response()->streamDownload(function () use ($items) {
+            $out = fopen('php://output', 'w');
+
+            fputcsv($out, [
+                'Name', 'SKU', 'Category', 'Unit',
+                'Quantity', 'Reorder Level', 'Stock Status',
+                'Manufacturing Date', 'Expiry Date', 'Expiry Status',
+                'Active',
+            ]);
+
+            foreach ($items as $item) {
+                fputcsv($out, [
+                    $item->name,
+                    $item->sku,
+                    $item->category?->name,
+                    $item->unit_type,
+                    $item->quantity_on_hand,
+                    $item->reorder_level,
+                    $item->stockLabel(),
+                    $item->manufacturing_date?->format('Y-m-d'),
+                    $item->expiry_date?->format('Y-m-d'),
+                    $item->expiryLabel() ?? '',
+                    $item->is_active ? 'Yes' : 'No',
+                ]);
+            }
+
+            fclose($out);
+        }, $filename, $headers);
+    }
+
+    /**
+     * Apply the same search/category/status narrowing the index page uses, so
+     * Print + CSV download mirror exactly what the user is looking at. Single
+     * source of truth — index() now also calls this.
+     */
+    private function filteredQuery(Request $request): Builder
+    {
+        $query = InventoryItem::query()->with('category');
+
+        if ($search = $request->get('search')) {
+            $query->search($search);
+        }
+
+        if ($categoryId = $request->get('category')) {
+            $query->where('category_id', $categoryId);
+        }
+
+        $showInactiveByDefault = (bool) SettingService::get('inventory.show_inactive_items', false);
+
+        match ($request->get('status')) {
+            'low'           => $query->active()->lowStock(),
+            'out'           => $query->active()->outOfStock(),
+            'expiring_soon' => $query->active()->expiringSoon(),
+            'expired'       => $query->active()->expired(),
+            'inactive'      => $query->where('is_active', false),
+            default         => $showInactiveByDefault ? $query : $query->active(),
+        };
+
+        return $query;
+    }
+
+    /**
+     * Human-readable summary of the active filter set for the print-sheet
+     * header. Returns null when nothing is filtered so the template can hide
+     * the "Filtered by" line entirely.
+     */
+    private function activeFilters(Request $request): ?string
+    {
+        $parts = [];
+
+        if ($categoryId = $request->get('category')) {
+            $name = InventoryCategory::find($categoryId)?->name;
+            if ($name) {
+                $parts[] = 'Category: ' . $name;
+            }
+        }
+
+        if ($status = $request->get('status')) {
+            $parts[] = 'Status: ' . ucwords(str_replace('_', ' ', $status));
+        }
+
+        if ($search = trim((string) $request->get('search', ''))) {
+            $parts[] = 'matching "' . $search . '"';
+        }
+
+        return $parts ? implode(' · ', $parts) : null;
     }
 
     // ─── Create ───────────────────────────────────────────────────────────────
