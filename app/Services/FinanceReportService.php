@@ -662,6 +662,145 @@ class FinanceReportService
         return $bullets;
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.2.c — General Ledger
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * General Ledger — chronological list of every transaction in the
+     * period (both income AND expense). The auditor's landing page.
+     *
+     * Shape:
+     *   • Rows ordered by date ASC then id ASC so the earliest entry
+     *     comes first — auditors read top-to-bottom chronologically.
+     *   • Running balance column accumulates +income / −expense per
+     *     row. Starting balance is zero (this is a period ledger, not
+     *     a balance-sheet position; for a true period-opening balance
+     *     we'd need a Statement of Financial Position which Phase 7
+     *     intentionally doesn't model — see ADR-001 in HANDOFF).
+     *   • By default includes every status; auditors want to see
+     *     pending + cancelled rows too. Filter `?status=completed`
+     *     narrows to GAAP-defensible numbers.
+     *
+     * Filters: type (income/expense/all), category_id, status,
+     * source_or_payee (LIKE), event_id.
+     */
+    public function generalLedger(Carbon $from, Carbon $to, array $filters = []): array
+    {
+        $query = FinanceTransaction::query()
+            ->whereBetween('transaction_date', [$from->toDateString(), $to->toDateString()]);
+
+        if (! empty($filters['type']) && in_array($filters['type'], ['income', 'expense'], true)) {
+            $query->where('transaction_type', $filters['type']);
+        }
+        if (! empty($filters['category_id'])) {
+            $query->where('category_id', $filters['category_id']);
+        }
+        if (! empty($filters['status']) && $filters['status'] !== 'all') {
+            $query->where('status', $filters['status']);
+        }
+        if (! empty($filters['source'])) {
+            $query->where('source_or_payee', 'like', '%' . $filters['source'] . '%');
+        }
+        if (! empty($filters['event_id'])) {
+            $query->where('event_id', $filters['event_id']);
+        }
+
+        $rows = $query->with(['category:id,name', 'event:id,name'])
+            ->orderBy('transaction_date', 'asc')
+            ->orderBy('id', 'asc')
+            ->get([
+                'id', 'transaction_date', 'title', 'source_or_payee',
+                'category_id', 'amount', 'transaction_type', 'status',
+                'event_id', 'reference_number',
+            ]);
+
+        // Walk the rows accumulating a running balance. Pending +
+        // cancelled rows are still listed so the auditor sees them, but
+        // they don't affect the running balance.
+        $running = 0.0;
+        $totalIn  = 0.0;
+        $totalOut = 0.0;
+        $payload = [];
+        foreach ($rows as $tx) {
+            $amt = (float) $tx->amount;
+            $isCounted = $tx->status === 'completed';
+            if ($isCounted) {
+                if ($tx->transaction_type === 'income') {
+                    $running  += $amt;
+                    $totalIn  += $amt;
+                } else {
+                    $running  -= $amt;
+                    $totalOut += $amt;
+                }
+            }
+
+            $payload[] = [
+                'id'        => $tx->id,
+                'date'      => $tx->transaction_date?->format('Y-m-d'),
+                'type'      => $tx->transaction_type,
+                'title'     => $tx->title,
+                'source'    => $tx->source_or_payee ?? '',
+                'category'  => $tx->category?->name ?? '(Uncategorised)',
+                'amount'    => $amt,
+                'status'    => $tx->status,
+                'reference' => $tx->reference_number ?? '',
+                'event'     => $tx->event?->name ?? '',
+                'running_balance' => $isCounted ? $running : null,
+                'counted'   => $isCounted,
+            ];
+        }
+
+        $netChange = $totalIn - $totalOut;
+        $countedRows = count(array_filter($payload, fn ($r) => $r['counted']));
+
+        return [
+            'period'      => ['label' => $this->labelFor($from, $to), 'from' => $from, 'to' => $to],
+            'rows'        => $payload,
+            'count'       => count($payload),
+            'counted'     => $countedRows,
+            'total_in'    => $totalIn,
+            'total_out'   => $totalOut,
+            'net_change'  => $netChange,
+            'closing_balance' => $running,
+            'filters'     => $filters,
+            'insights'    => $this->buildLedgerInsights($payload, $totalIn, $totalOut, $netChange),
+        ];
+    }
+
+    private function buildLedgerInsights(array $rows, float $totalIn, float $totalOut, float $netChange): array
+    {
+        $bullets = [];
+        if (empty($rows)) {
+            return ['No transactions were recorded for this period.'];
+        }
+
+        $bullets[] = sprintf('%d transactions recorded (%d completed).',
+            count($rows),
+            count(array_filter($rows, fn ($r) => $r['counted'])),
+        );
+        $bullets[] = sprintf('Total inflow: %s · Total outflow: %s', self::usd($totalIn), self::usd($totalOut));
+
+        if ($netChange >= 0) {
+            $bullets[] = sprintf('Net change for the period: +%s.', self::usd($netChange));
+        } else {
+            $bullets[] = sprintf('Net change for the period: %s (outflow exceeded inflow).', self::usd($netChange));
+        }
+
+        // Pending watch
+        $pending = array_filter($rows, fn ($r) => $r['status'] === 'pending');
+        if (! empty($pending)) {
+            $pendingTotal = array_sum(array_column($pending, 'amount'));
+            $bullets[] = sprintf('%d pending transaction%s totalling %s — not included in the running balance.',
+                count($pending),
+                count($pending) === 1 ? '' : 's',
+                self::usd($pendingTotal),
+            );
+        }
+
+        return $bullets;
+    }
+
     /**
      * Auto-generate 3-5 plain-English insight bullets at the bottom of
      * the report. The "board-pitch" differentiator — every report ends

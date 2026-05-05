@@ -293,6 +293,13 @@ Route::middleware('auth')->group(function () {
             Route::get('/csv',   [FinanceReportController::class, 'expenseDetailCsv'])  ->name('.csv');
         });
 
+        Route::prefix('reports/general-ledger')->name('reports.general-ledger')->group(function () {
+            Route::get('/',      [FinanceReportController::class, 'generalLedger']);
+            Route::get('/print', [FinanceReportController::class, 'generalLedgerPrint'])->name('.print');
+            Route::get('/pdf',   [FinanceReportController::class, 'generalLedgerPdf'])  ->name('.pdf');
+            Route::get('/csv',   [FinanceReportController::class, 'generalLedgerCsv'])  ->name('.csv');
+        });
+
         Route::resource('categories', FinanceCategoryController::class)
              ->except(['show', 'create', 'edit']);
 

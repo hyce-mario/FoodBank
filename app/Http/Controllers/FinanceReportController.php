@@ -93,7 +93,9 @@ class FinanceReportController extends Controller
                 'title'       => 'General Ledger',
                 'description' => 'Chronological list of every transaction. The auditor\'s landing page.',
                 'category'    => 'Detail',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.general-ledger',
+                'icon'        => 'document',
             ],
             // ── Phase 7.3 ────────────────────────────────────────────
             [
@@ -446,6 +448,116 @@ class FinanceReportController extends Controller
 
         $filename = 'expense-detail-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
         return $this->detailCsv($filename, 'Expense Detail Report', 'Payee', $period, $data);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.2.c — General Ledger
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function generalLedger(Request $request): View
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->ledgerFilters($request);
+        $data    = $this->service->generalLedger($period['from'], $period['to'], $filters);
+
+        $categories = FinanceCategory::active()->orderBy('type')->orderBy('name')->get(['id', 'name', 'type']);
+        $events     = Event::orderByDesc('date')->limit(50)->get(['id', 'name', 'date']);
+
+        return view('finance.reports.general-ledger', compact(
+            'period', 'data', 'filters', 'categories', 'events',
+        ));
+    }
+
+    public function generalLedgerPrint(Request $request): View
+    {
+        $period   = $this->service->resolvePeriod($request);
+        $filters  = $this->ledgerFilters($request);
+        $data     = $this->service->generalLedger($period['from'], $period['to'], $filters);
+        $branding  = $this->exportBranding();
+        $autoPrint = true;
+
+        return view('finance.reports.exports.general-ledger-print', compact(
+            'period', 'data', 'branding', 'autoPrint',
+        ));
+    }
+
+    public function generalLedgerPdf(Request $request): Response
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->ledgerFilters($request);
+        $data    = $this->service->generalLedger($period['from'], $period['to'], $filters);
+        $branding = $this->exportBranding();
+
+        $filename = 'general-ledger-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.pdf';
+        $payload  = compact('period', 'data', 'branding');
+
+        try {
+            return Pdf::loadView('finance.reports.exports.general-ledger-pdf', $payload)
+                ->setPaper('a4', 'landscape')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-general-ledger-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.general-ledger-pdf', $payload)
+                ->setPaper('a4', 'landscape')
+                ->download($filename);
+        }
+    }
+
+    public function generalLedgerCsv(Request $request): StreamedResponse
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->ledgerFilters($request);
+        $data    = $this->service->generalLedger($period['from'], $period['to'], $filters);
+
+        $filename = 'general-ledger-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
+
+        return response()->streamDownload(function () use ($period, $data) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM
+
+            fputcsv($out, ['General Ledger']);
+            fputcsv($out, ['Period', $period['label']]);
+            fputcsv($out, ['Total Inflow',  number_format($data['total_in'],  2, '.', '')]);
+            fputcsv($out, ['Total Outflow', number_format($data['total_out'], 2, '.', '')]);
+            fputcsv($out, ['Net Change',    number_format($data['net_change'], 2, '.', '')]);
+            fputcsv($out, []);
+
+            fputcsv($out, [
+                'Date', 'Type', 'Title', 'Source / Payee', 'Category',
+                'Reference', 'Event', 'Status', 'Amount', 'Running Balance',
+            ]);
+            foreach ($data['rows'] as $r) {
+                fputcsv($out, [
+                    $r['date'],
+                    ucfirst($r['type']),
+                    $r['title'],
+                    $r['source'],
+                    $r['category'],
+                    $r['reference'],
+                    $r['event'],
+                    ucfirst((string) $r['status']),
+                    // Income positive, expense negative — auditor-friendly
+                    ($r['type'] === 'expense' ? '-' : '') . number_format($r['amount'], 2, '.', ''),
+                    $r['running_balance'] !== null ? number_format($r['running_balance'], 2, '.', '') : '',
+                ]);
+            }
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    private function ledgerFilters(Request $request): array
+    {
+        $f = [];
+        if ($v = $request->get('type'))        $f['type']        = $v;
+        if ($v = $request->get('category_id')) $f['category_id'] = (int) $v;
+        if ($v = $request->get('event_id'))    $f['event_id']    = (int) $v;
+        if ($v = $request->get('source'))      $f['source']      = trim((string) $v);
+        if ($v = $request->get('status'))      $f['status']      = $v;
+        return $f;
     }
 
     /**
