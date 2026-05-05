@@ -296,69 +296,91 @@ Route::middleware('auth')->group(function () {
              ->middleware('permission:finance.view')
              ->name('dashboard');
 
-        // Phase 7.1 — Reports module. Hub + per-report endpoints. Each
-        // report has print/pdf/csv siblings registered alongside the
-        // screen render so the export trio is co-located.
-        Route::get('/reports', [FinanceReportController::class, 'hub'])->name('reports');
+        // Phase 7.1+ — Finance Reports module. Tier 2 — gated independently
+        // from the rest of /finance so a Reports analyst role doesn't
+        // transitively require finance.view (and vice versa). Read endpoints
+        // get finance_reports.view; print/pdf/csv siblings additionally
+        // require finance_reports.export so a viewer can browse the data on
+        // screen without being able to bulk-export it (matches the
+        // /reports/* + /reports/download split established in Phase 5.13).
+        Route::middleware('permission:finance_reports.view')->group(function () {
+            Route::get('/reports', [FinanceReportController::class, 'hub'])->name('reports');
 
-        Route::prefix('reports/statement-of-activities')->name('reports.statement-of-activities')->group(function () {
-            Route::get('/',       [FinanceReportController::class, 'statementOfActivities']);
-            Route::get('/print', [FinanceReportController::class, 'statementOfActivitiesPrint'])->name('.print');
-            Route::get('/pdf',   [FinanceReportController::class, 'statementOfActivitiesPdf'])  ->name('.pdf');
-            Route::get('/csv',   [FinanceReportController::class, 'statementOfActivitiesCsv'])  ->name('.csv');
-        });
+            Route::prefix('reports/statement-of-activities')->name('reports.statement-of-activities')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'statementOfActivities']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'statementOfActivitiesPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'statementOfActivitiesPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'statementOfActivitiesCsv'])  ->name('.csv');
+                });
+            });
 
-        Route::prefix('reports/income-detail')->name('reports.income-detail')->group(function () {
-            Route::get('/',      [FinanceReportController::class, 'incomeDetail']);
-            Route::get('/print', [FinanceReportController::class, 'incomeDetailPrint'])->name('.print');
-            Route::get('/pdf',   [FinanceReportController::class, 'incomeDetailPdf'])  ->name('.pdf');
-            Route::get('/csv',   [FinanceReportController::class, 'incomeDetailCsv'])  ->name('.csv');
-        });
+            Route::prefix('reports/income-detail')->name('reports.income-detail')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'incomeDetail']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'incomeDetailPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'incomeDetailPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'incomeDetailCsv'])  ->name('.csv');
+                });
+            });
 
-        Route::prefix('reports/expense-detail')->name('reports.expense-detail')->group(function () {
-            Route::get('/',      [FinanceReportController::class, 'expenseDetail']);
-            Route::get('/print', [FinanceReportController::class, 'expenseDetailPrint'])->name('.print');
-            Route::get('/pdf',   [FinanceReportController::class, 'expenseDetailPdf'])  ->name('.pdf');
-            Route::get('/csv',   [FinanceReportController::class, 'expenseDetailCsv'])  ->name('.csv');
-        });
+            Route::prefix('reports/expense-detail')->name('reports.expense-detail')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'expenseDetail']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'expenseDetailPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'expenseDetailPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'expenseDetailCsv'])  ->name('.csv');
+                });
+            });
 
-        Route::prefix('reports/general-ledger')->name('reports.general-ledger')->group(function () {
-            Route::get('/',      [FinanceReportController::class, 'generalLedger']);
-            Route::get('/print', [FinanceReportController::class, 'generalLedgerPrint'])->name('.print');
-            Route::get('/pdf',   [FinanceReportController::class, 'generalLedgerPdf'])  ->name('.pdf');
-            Route::get('/csv',   [FinanceReportController::class, 'generalLedgerCsv'])  ->name('.csv');
-        });
+            Route::prefix('reports/general-ledger')->name('reports.general-ledger')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'generalLedger']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'generalLedgerPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'generalLedgerPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'generalLedgerCsv'])  ->name('.csv');
+                });
+            });
 
-        // Phase 7.3.a — Donor / Source Analysis
-        Route::prefix('reports/donor-analysis')->name('reports.donor-analysis')->group(function () {
-            Route::get('/',      [FinanceReportController::class, 'donorAnalysis']);
-            Route::get('/print', [FinanceReportController::class, 'donorAnalysisPrint'])->name('.print');
-            Route::get('/pdf',   [FinanceReportController::class, 'donorAnalysisPdf'])  ->name('.pdf');
-            Route::get('/csv',   [FinanceReportController::class, 'donorAnalysisCsv'])  ->name('.csv');
-        });
+            // Phase 7.3.a — Donor / Source Analysis
+            Route::prefix('reports/donor-analysis')->name('reports.donor-analysis')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'donorAnalysis']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'donorAnalysisPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'donorAnalysisPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'donorAnalysisCsv'])  ->name('.csv');
+                });
+            });
 
-        // Phase 7.3.b — Vendor / Payee Analysis
-        Route::prefix('reports/vendor-analysis')->name('reports.vendor-analysis')->group(function () {
-            Route::get('/',      [FinanceReportController::class, 'vendorAnalysis']);
-            Route::get('/print', [FinanceReportController::class, 'vendorAnalysisPrint'])->name('.print');
-            Route::get('/pdf',   [FinanceReportController::class, 'vendorAnalysisPdf'])  ->name('.pdf');
-            Route::get('/csv',   [FinanceReportController::class, 'vendorAnalysisCsv'])  ->name('.csv');
-        });
+            // Phase 7.3.b — Vendor / Payee Analysis
+            Route::prefix('reports/vendor-analysis')->name('reports.vendor-analysis')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'vendorAnalysis']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'vendorAnalysisPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'vendorAnalysisPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'vendorAnalysisCsv'])  ->name('.csv');
+                });
+            });
 
-        // Phase 7.3.c — Per-Event P&L
-        Route::prefix('reports/per-event-pnl')->name('reports.per-event-pnl')->group(function () {
-            Route::get('/',      [FinanceReportController::class, 'perEventPnl']);
-            Route::get('/print', [FinanceReportController::class, 'perEventPnlPrint'])->name('.print');
-            Route::get('/pdf',   [FinanceReportController::class, 'perEventPnlPdf'])  ->name('.pdf');
-            Route::get('/csv',   [FinanceReportController::class, 'perEventPnlCsv'])  ->name('.csv');
-        });
+            // Phase 7.3.c — Per-Event P&L
+            Route::prefix('reports/per-event-pnl')->name('reports.per-event-pnl')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'perEventPnl']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'perEventPnlPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'perEventPnlPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'perEventPnlCsv'])  ->name('.csv');
+                });
+            });
 
-        // Phase 7.3.d — Category Trend Report
-        Route::prefix('reports/category-trend')->name('reports.category-trend')->group(function () {
-            Route::get('/',      [FinanceReportController::class, 'categoryTrend']);
-            Route::get('/print', [FinanceReportController::class, 'categoryTrendPrint'])->name('.print');
-            Route::get('/pdf',   [FinanceReportController::class, 'categoryTrendPdf'])  ->name('.pdf');
-            Route::get('/csv',   [FinanceReportController::class, 'categoryTrendCsv'])  ->name('.csv');
+            // Phase 7.3.d — Category Trend Report
+            Route::prefix('reports/category-trend')->name('reports.category-trend')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'categoryTrend']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'categoryTrendPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'categoryTrendPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'categoryTrendCsv'])  ->name('.csv');
+                });
+            });
         });
 
         // Categories — finance.view baseline; Store/Update FormRequests gate
