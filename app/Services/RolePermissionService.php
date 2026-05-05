@@ -11,19 +11,55 @@ class RolePermissionService
     /**
      * All known permission strings grouped by resource.
      * Dot-notation: resource.action
+     *
+     * Tier 1 audit (2026-05-05) — catalog now reflects every module the
+     * application actually ships, plus the permissions that policies +
+     * middleware already check. Adding entries here makes them grantable
+     * via the role editor; the wildcard '*' continues to grant
+     * everything regardless. Removing an entry only stops it from
+     * appearing in the editor — existing role assignments keep their
+     * exact permission strings in the DB unchanged.
+     *
+     * What changed in this revision:
+     *   • Added `reviews.{view,moderate}` — already enforced by
+     *     EventReviewPolicy; previously only the '*' wildcard could grant.
+     *   • Added `finance.{view,create,edit,delete}` — the entire finance
+     *     module ships unguarded; catalog now exposes the perm strings
+     *     so a Tier 2 wiring pass can attach them to routes/policies
+     *     without re-editing this file.
+     *   • Added `finance_reports.{view,export}` — separate from the
+     *     operational `reports` module so a finance-only role can be
+     *     constructed without granting access to /reports/*.
+     *   • Added `audit_logs.view` — replaces the AuditLogPolicy hard-coded
+     *     isAdmin() check with a grantable permission so a compliance
+     *     role can read audits without full admin.
+     *   • Added `users.{view,create,edit,delete}` — replaces the StoreUserRequest /
+     *     UpdateUserRequest hard-coded isAdmin() checks.
+     *   • Added `purchase_orders.{view,create,edit,receive,cancel}` — the
+     *     PO module has finer-grained operations than CRUD (receive +
+     *     cancel are workflow transitions worth gating separately).
+     *   • Removed `distributions.{view,create}` — group was never
+     *     referenced by any policy, controller, middleware, or @can
+     *     directive. Phase 2's distribution-posting flow runs through
+     *     the loader's event-day auth code, not these permissions.
      */
     public static function permissionGroups(): array
     {
         return [
-            'households'  => ['view', 'create', 'edit', 'delete'],
-            'checkin'     => ['view', 'scan'],
-            'events'      => ['view', 'create', 'edit', 'delete'],
-            'volunteers'  => ['view', 'create', 'edit', 'delete'],
-            'distributions' => ['view', 'create'],
-            'inventory'   => ['view', 'edit'],
-            'reports'     => ['view', 'export'],
-            'roles'       => ['view', 'create', 'edit', 'delete'],
-            'settings'    => ['view', 'update'],
+            'households'      => ['view', 'create', 'edit', 'delete'],
+            'events'          => ['view', 'create', 'edit', 'delete'],
+            'volunteers'      => ['view', 'create', 'edit', 'delete'],
+            'checkin'         => ['view', 'scan'],
+            'inventory'       => ['view', 'edit'],
+            'purchase_orders' => ['view', 'create', 'edit', 'receive', 'cancel'],
+            'finance'         => ['view', 'create', 'edit', 'delete'],
+            'reports'         => ['view', 'export'],
+            'finance_reports' => ['view', 'export'],
+            'reviews'         => ['view', 'moderate'],
+            'audit_logs'      => ['view'],
+            'users'           => ['view', 'create', 'edit', 'delete'],
+            'roles'           => ['view', 'create', 'edit', 'delete'],
+            'settings'        => ['view', 'update'],
         ];
     }
 
