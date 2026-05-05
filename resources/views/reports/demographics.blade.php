@@ -21,8 +21,12 @@
 @include('reports._filter', ['formAction' => route('reports.demographics')])
 
 @php
-$comp     = $demo['composition'];
-$hasData  = $demo['sizeDist']->isNotEmpty() || $demo['zipDist']->isNotEmpty() || $demo['cityDist']->isNotEmpty() || $comp['total_people'] > 0;
+$comp           = $demo['composition'];
+$householdTypes = $demo['householdTypes']  ?? [];
+$visitFrequency = $demo['visitFrequency']  ?? [];
+$vulnerable     = $demo['vulnerable']      ?? ['single_seniors' => 0, 'single_seniors_pct' => 0, 'large_families' => 0, 'large_families_pct' => 0];
+$insights       = $demo['insights']        ?? [];
+$hasData        = $demo['sizeDist']->isNotEmpty() || $demo['zipDist']->isNotEmpty() || $demo['cityDist']->isNotEmpty() || $comp['total_people'] > 0;
 @endphp
 
 @if(!$hasData)
@@ -134,8 +138,125 @@ $hasData  = $demo['sizeDist']->isNotEmpty() || $demo['zipDist']->isNotEmpty() ||
 
 </div>
 
-{{-- ═══ Row 2: ZIP + City ═══════════════════════════════════════════ --}}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+{{-- ═══ Key Insights ═════════════════════════════════════════════════ --}}
+@if(count($insights) > 0)
+<div class="bg-gradient-to-br from-navy-700 to-navy-800 text-white rounded-2xl shadow-sm p-5 mb-5">
+    <div class="flex items-center gap-2 mb-3">
+        <svg class="w-4 h-4 text-amber-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"/>
+        </svg>
+        <h3 class="text-xs font-bold uppercase tracking-widest text-white/70">Key Insights</h3>
+    </div>
+    <ul class="space-y-1.5">
+        @foreach($insights as $line)
+            <li class="flex items-start gap-2 text-sm text-white/90">
+                <span class="text-amber-300 mt-0.5">•</span>
+                <span>{{ $line }}</span>
+            </li>
+        @endforeach
+    </ul>
+</div>
+@endif
+
+{{-- ═══ Row 2: Household Type + Visit Frequency ═══════════════════════ --}}
+@if($comp['households'] > 0)
+<div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+
+    {{-- Household Type Breakdown --}}
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <h3 class="text-sm font-bold text-gray-800 mb-1">Household Types</h3>
+        <p class="text-xs text-gray-400 mb-4">Mutually exclusive categories — who's in the home</p>
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-4 items-center">
+            <div class="sm:col-span-2 h-44">
+                <canvas id="hhTypeChart"></canvas>
+            </div>
+            <div class="sm:col-span-3 space-y-2">
+                @foreach($householdTypes as $t)
+                    @php
+                        $colorMap = [
+                            'multi_gen'        => 'bg-navy-700',
+                            'family_children'  => 'bg-amber-500',
+                            'senior_household' => 'bg-gray-500',
+                            'adults_only'      => 'bg-brand-500',
+                        ];
+                        $dotColor = $colorMap[$t['key']] ?? 'bg-gray-300';
+                    @endphp
+                    <div class="flex items-center gap-3">
+                        <span class="w-2.5 h-2.5 rounded-full {{ $dotColor }} flex-shrink-0"></span>
+                        <span class="text-sm text-gray-700 flex-1">{{ $t['label'] }}</span>
+                        <span class="text-sm font-bold text-gray-900 tabular-nums">{{ number_format($t['count']) }}</span>
+                        <span class="text-xs text-gray-400 tabular-nums w-12 text-right">{{ $t['pct'] }}%</span>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    </div>
+
+    {{-- Visit Frequency --}}
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <h3 class="text-sm font-bold text-gray-800 mb-1">Visit Frequency</h3>
+        <p class="text-xs text-gray-400 mb-4">How many times each household visited in the period</p>
+        @php $maxFreq = collect($visitFrequency)->max('count') ?: 1; @endphp
+        <div class="space-y-3">
+            @foreach($visitFrequency as $bucket)
+                <div class="flex items-center gap-3">
+                    <span class="text-sm font-medium text-gray-600 w-20 flex-shrink-0">{{ $bucket['label'] }}</span>
+                    <div class="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+                        <div class="h-3 rounded-full bg-navy-700 transition-all"
+                             style="width: {{ round($bucket['count'] / max($maxFreq, 1) * 100) }}%"></div>
+                    </div>
+                    <span class="text-sm font-bold text-gray-900 tabular-nums w-10 text-right">{{ number_format($bucket['count']) }}</span>
+                    <span class="text-xs text-gray-400 tabular-nums w-12 text-right">{{ $bucket['pct'] }}%</span>
+                </div>
+            @endforeach
+        </div>
+    </div>
+
+</div>
+@endif
+
+{{-- ═══ Vulnerable Households strip ════════════════════════════════════ --}}
+@if($comp['households'] > 0 && ($vulnerable['single_seniors'] > 0 || $vulnerable['large_families'] > 0 || $comp['households_with_children'] > 0))
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+
+    <div class="bg-white border border-amber-100 rounded-2xl px-5 py-4 shadow-sm">
+        <div class="flex items-start justify-between mb-1">
+            <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Households with Children</p>
+            <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 0 1-6.364 0M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75Zm-.375 0h.008v.008h-.008V9.75Zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75Zm-.375 0h.008v.008h-.008V9.75Z"/>
+            </svg>
+        </div>
+        <p class="text-2xl font-bold text-gray-900 tabular-nums">{{ number_format($comp['households_with_children']) }}</p>
+        <p class="text-xs text-gray-500 mt-0.5">{{ $comp['households_with_children_pct'] }}% of all served · {{ number_format($comp['children']) }} children total</p>
+    </div>
+
+    <div class="bg-white border border-gray-100 rounded-2xl px-5 py-4 shadow-sm">
+        <div class="flex items-start justify-between mb-1">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-600">Single Senior Households</p>
+            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
+            </svg>
+        </div>
+        <p class="text-2xl font-bold text-gray-900 tabular-nums">{{ number_format($vulnerable['single_seniors']) }}</p>
+        <p class="text-xs text-gray-500 mt-0.5">{{ $vulnerable['single_seniors_pct'] }}% of all served · seniors living alone</p>
+    </div>
+
+    <div class="bg-white border border-gray-100 rounded-2xl px-5 py-4 shadow-sm">
+        <div class="flex items-start justify-between mb-1">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-600">Large Households</p>
+            <svg class="w-5 h-5 text-navy-700" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z"/>
+            </svg>
+        </div>
+        <p class="text-2xl font-bold text-gray-900 tabular-nums">{{ number_format($vulnerable['large_families']) }}</p>
+        <p class="text-xs text-gray-500 mt-0.5">{{ $vulnerable['large_families_pct'] }}% of all served · 5+ members</p>
+    </div>
+
+</div>
+@endif
+
+{{-- ═══ Row 3: ZIP + City ═══════════════════════════════════════════ --}}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
 
     {{-- Top ZIP Codes --}}
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm">
@@ -274,6 +395,46 @@ document.addEventListener('DOMContentLoaded', function () {
                 responsive: true, maintainAspectRatio: false, cutout: '62%',
                 plugins: {
                     legend: { display: true, position: 'bottom', labels: { color: textC, font: { size: 11 }, boxWidth: 10, boxHeight: 10 } },
+                    tooltip: {
+                        backgroundColor: '#1F2937', padding: 8, cornerRadius: 8,
+                        callbacks: {
+                            label: (ctx) => {
+                                const v = ctx.parsed;
+                                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = total ? Math.round(v / total * 100) : 0;
+                                return `${ctx.label}: ${v.toLocaleString()} (${pct}%)`;
+                            },
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    // Household type donut (multi-gen / family-with-children / senior / adults-only)
+    const tEl = document.getElementById('hhTypeChart');
+    if (tEl && DEMO.householdTypes && DEMO.householdTypes.some(t => t.count > 0)) {
+        const typeColors = {
+            multi_gen:        navy,
+            family_children:  '#f59e0b', // amber-500
+            senior_household: '#6b7280', // gray-500
+            adults_only:      orange,
+        };
+        new Chart(tEl, {
+            type: 'doughnut',
+            data: {
+                labels: DEMO.householdTypes.map(t => t.label),
+                datasets: [{
+                    data: DEMO.householdTypes.map(t => t.count),
+                    backgroundColor: DEMO.householdTypes.map(t => typeColors[t.key] || '#9ca3af'),
+                    borderColor: '#fff',
+                    borderWidth: 2,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, cutout: '62%',
+                plugins: {
+                    legend: { display: false },
                     tooltip: {
                         backgroundColor: '#1F2937', padding: 8, cornerRadius: 8,
                         callbacks: {

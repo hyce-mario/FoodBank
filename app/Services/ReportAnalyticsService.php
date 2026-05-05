@@ -350,7 +350,182 @@ class ReportAnalyticsService
             ->limit(10)
             ->get();
 
-        return compact('sizeDist', 'composition', 'zipDist', 'cityDist', 'vehicleDist');
+        // Household-type breakdown — four mutually exclusive categories drawn
+        // from the children/seniors snapshot. Used for the donut + headline
+        // insights ("X% of households are families with children", etc.).
+        // Computed in PHP from a single one-row-per-household query so SQLite
+        // tests don't trip on a CASE inside GROUP BY (portable here).
+        $hhRows = $base()
+            ->selectRaw('vh.household_id,
+                         MAX(vh.children_count) as children_count,
+                         MAX(vh.adults_count)   as adults_count,
+                         MAX(vh.seniors_count)  as seniors_count,
+                         MAX(vh.household_size) as household_size')
+            ->groupBy('vh.household_id')
+            ->get();
+
+        $typeCounts = ['multi_gen' => 0, 'family_children' => 0, 'senior_household' => 0, 'adults_only' => 0];
+        $singleSeniorHouseholds = 0;
+        $largeFamilies          = 0;
+
+        foreach ($hhRows as $r) {
+            $kids    = (int) $r->children_count;
+            $sen     = (int) $r->seniors_count;
+            $size    = (int) $r->household_size;
+
+            if ($kids > 0 && $sen > 0)        { $typeCounts['multi_gen']++; }
+            elseif ($kids > 0)                { $typeCounts['family_children']++; }
+            elseif ($sen > 0)                 { $typeCounts['senior_household']++; }
+            else                              { $typeCounts['adults_only']++; }
+
+            if ($size === 1 && $sen === 1)    { $singleSeniorHouseholds++; }
+            if ($size >= 5)                   { $largeFamilies++; }
+        }
+
+        $totalTyped = max(1, array_sum($typeCounts));
+        $householdTypes = [
+            ['key' => 'multi_gen',        'label' => 'Multi-generational',  'count' => $typeCounts['multi_gen'],        'pct' => round($typeCounts['multi_gen']        / $totalTyped * 100, 1)],
+            ['key' => 'family_children',  'label' => 'Family with children','count' => $typeCounts['family_children'],  'pct' => round($typeCounts['family_children']  / $totalTyped * 100, 1)],
+            ['key' => 'senior_household', 'label' => 'Senior household',    'count' => $typeCounts['senior_household'], 'pct' => round($typeCounts['senior_household'] / $totalTyped * 100, 1)],
+            ['key' => 'adults_only',      'label' => 'Working-age adults',  'count' => $typeCounts['adults_only'],      'pct' => round($typeCounts['adults_only']      / $totalTyped * 100, 1)],
+        ];
+
+        // Visit-frequency distribution — how often each household visited in
+        // the period. Buckets: 1 visit, 2, 3-4, 5+. Surfaces "regulars" vs
+        // one-time visitors as a service-pattern signal.
+        $visitsPerHh = DB::table('visits as v')
+            ->join('visit_households as vh', 'vh.visit_id', '=', 'v.id')
+            ->where('v.visit_status', 'exited')
+            ->whereDate('v.start_time', '>=', $fromStr)
+            ->whereDate('v.start_time', '<=', $toStr)
+            ->select('vh.household_id', DB::raw('COUNT(DISTINCT v.id) as visit_count'))
+            ->groupBy('vh.household_id')
+            ->get();
+
+        $freqBuckets = ['1' => 0, '2' => 0, '3-4' => 0, '5+' => 0];
+        foreach ($visitsPerHh as $row) {
+            $n = (int) $row->visit_count;
+            if ($n === 1)        { $freqBuckets['1']++; }
+            elseif ($n === 2)    { $freqBuckets['2']++; }
+            elseif ($n <= 4)     { $freqBuckets['3-4']++; }
+            else                 { $freqBuckets['5+']++; }
+        }
+        $totalFreqHh = max(1, array_sum($freqBuckets));
+        $visitFrequency = [
+            ['label' => '1 visit',    'count' => $freqBuckets['1'],   'pct' => round($freqBuckets['1']   / $totalFreqHh * 100, 1)],
+            ['label' => '2 visits',   'count' => $freqBuckets['2'],   'pct' => round($freqBuckets['2']   / $totalFreqHh * 100, 1)],
+            ['label' => '3-4 visits', 'count' => $freqBuckets['3-4'], 'pct' => round($freqBuckets['3-4'] / $totalFreqHh * 100, 1)],
+            ['label' => '5+ visits',  'count' => $freqBuckets['5+'],  'pct' => round($freqBuckets['5+']  / $totalFreqHh * 100, 1)],
+        ];
+
+        $totalHh = (int) $composition['households'];
+        $vulnerable = [
+            'single_seniors'        => $singleSeniorHouseholds,
+            'single_seniors_pct'    => $totalHh > 0 ? round($singleSeniorHouseholds / $totalHh * 100, 1) : 0.0,
+            'large_families'        => $largeFamilies,
+            'large_families_pct'    => $totalHh > 0 ? round($largeFamilies / $totalHh * 100, 1) : 0.0,
+        ];
+
+        // Auto-generated insights — punchy plain-English bullets summarising
+        // what the demographic profile reveals about who was served.
+        $insights = $this->demographicsInsights(
+            $composition, $householdTypes, $visitFrequency, $vulnerable, $zipDist, $cityDist
+        );
+
+        return compact(
+            'sizeDist', 'composition', 'zipDist', 'cityDist', 'vehicleDist',
+            'householdTypes', 'visitFrequency', 'vulnerable', 'insights'
+        );
+    }
+
+    /**
+     * Plain-English bullets summarising the demographics profile. Returned as
+     * an array of strings so the view can render them as a list. Only emits
+     * a bullet when the underlying signal is meaningful (avoids "0% of …"
+     * filler in low-data periods).
+     */
+    private function demographicsInsights(
+        array $composition,
+        array $householdTypes,
+        array $visitFrequency,
+        array $vulnerable,
+        Collection $zipDist,
+        Collection $cityDist,
+    ): array {
+        $insights = [];
+
+        if ($composition['households'] === 0) {
+            return $insights;
+        }
+
+        // Largest household-type segment
+        $largestType = collect($householdTypes)->sortByDesc('count')->first();
+        if ($largestType && $largestType['count'] > 0) {
+            $insights[] = sprintf(
+                '%s%% of served households are %s (%s of %s).',
+                $largestType['pct'],
+                strtolower($largestType['label']),
+                number_format($largestType['count']),
+                number_format($composition['households']),
+            );
+        }
+
+        // Children prevalence
+        if ($composition['households_with_children_pct'] > 0) {
+            $insights[] = sprintf(
+                '%s%% of households include at least one child (%s households).',
+                $composition['households_with_children_pct'],
+                number_format($composition['households_with_children']),
+            );
+        }
+
+        // Vulnerable: single seniors
+        if ($vulnerable['single_seniors'] > 0) {
+            $insights[] = sprintf(
+                '%s households are seniors living alone (%s%% — flag for outreach).',
+                number_format($vulnerable['single_seniors']),
+                $vulnerable['single_seniors_pct'],
+            );
+        }
+
+        // Vulnerable: large families
+        if ($vulnerable['large_families'] > 0) {
+            $insights[] = sprintf(
+                '%s households have 5+ members (%s%% — higher per-family bag needs).',
+                number_format($vulnerable['large_families']),
+                $vulnerable['large_families_pct'],
+            );
+        }
+
+        // Repeat-visit pattern
+        $regulars = collect($visitFrequency)->whereIn('label', ['3-4 visits', '5+ visits'])->sum('count');
+        $regularsPct = round($regulars / max(1, $composition['households']) * 100, 1);
+        if ($regulars > 0) {
+            $insights[] = sprintf(
+                '%s%% of households (%s) visited 3+ times this period — a regular cohort.',
+                $regularsPct,
+                number_format($regulars),
+            );
+        }
+
+        // Top geo
+        if ($zipDist->isNotEmpty()) {
+            $top = $zipDist->first();
+            $insights[] = sprintf(
+                'ZIP %s is the most-served area (%s households).',
+                $top->zip,
+                number_format($top->count),
+            );
+        } elseif ($cityDist->isNotEmpty()) {
+            $top = $cityDist->first();
+            $insights[] = sprintf(
+                '%s is the most-served city (%s households).',
+                $top->city,
+                number_format($top->count),
+            );
+        }
+
+        return $insights;
     }
 
     // ─── Lane Performance ─────────────────────────────────────────────────────
