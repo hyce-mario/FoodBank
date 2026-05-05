@@ -36,7 +36,14 @@ class AuditLogController extends Controller
             $query->whereDate('created_at', '<=', $to);
         }
 
-        $logs  = $query->paginate(50)->withQueryString();
+        // Per-page selector — allowed values match the audit-logs footer
+        // dropdown. Anything outside the whitelist falls back to 25 so a
+        // hand-typed `?per_page=99999` can't drag the whole table down.
+        $perPage = in_array((int) $request->get('per_page', 25), [15, 25, 50, 100], true)
+            ? (int) $request->get('per_page', 25)
+            : 25;
+
+        $logs  = $query->paginate($perPage)->withQueryString();
         $users = User::orderBy('name')->get(['id', 'name']);
 
         return view('audit-logs.index', compact('logs', 'users'));
