@@ -21,7 +21,8 @@
 @include('reports._filter', ['formAction' => route('reports.demographics')])
 
 @php
-$hasData = $demo['sizeDist']->isNotEmpty() || $demo['zipDist']->isNotEmpty() || $demo['cityDist']->isNotEmpty();
+$comp     = $demo['composition'];
+$hasData  = $demo['sizeDist']->isNotEmpty() || $demo['zipDist']->isNotEmpty() || $demo['cityDist']->isNotEmpty() || $comp['total_people'] > 0;
 @endphp
 
 @if(!$hasData)
@@ -34,8 +35,39 @@ $hasData = $demo['sizeDist']->isNotEmpty() || $demo['zipDist']->isNotEmpty() || 
 </div>
 @else
 
-{{-- ═══ Row 1: Household Size + Family Distribution ══════════════════ --}}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+{{-- ═══ Composition Strip: people totals + averages ═══════════════════ --}}
+@if($comp['total_people'] > 0)
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-5">
+    <div class="bg-navy-700 text-white rounded-2xl px-4 py-4">
+        <p class="text-xs font-semibold uppercase tracking-wide text-white/60 mb-1">People Served</p>
+        <p class="text-2xl font-bold tabular-nums">{{ number_format($comp['total_people']) }}</p>
+        <p class="text-xs text-white/70 mt-0.5">{{ number_format($comp['households']) }} households</p>
+    </div>
+    <div class="bg-white border border-gray-100 rounded-2xl px-4 py-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Children</p>
+        <p class="text-2xl font-bold text-gray-900 tabular-nums">{{ number_format($comp['children']) }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">{{ $comp['pct_children'] }}% of all served</p>
+    </div>
+    <div class="bg-white border border-gray-100 rounded-2xl px-4 py-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Adults</p>
+        <p class="text-2xl font-bold text-gray-900 tabular-nums">{{ number_format($comp['adults']) }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">{{ $comp['pct_adults'] }}% of all served</p>
+    </div>
+    <div class="bg-white border border-gray-100 rounded-2xl px-4 py-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Seniors</p>
+        <p class="text-2xl font-bold text-gray-900 tabular-nums">{{ number_format($comp['seniors']) }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">{{ $comp['pct_seniors'] }}% of all served</p>
+    </div>
+    <div class="bg-white border border-gray-100 rounded-2xl px-4 py-4 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Avg HH Size</p>
+        <p class="text-2xl font-bold text-gray-900 tabular-nums">{{ $comp['avg_household_size'] }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">people per household</p>
+    </div>
+</div>
+@endif
+
+{{-- ═══ Row 1: Household Size + Family Composition ══════════════════ --}}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
 
     {{-- Household Size Distribution --}}
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -50,16 +82,53 @@ $hasData = $demo['sizeDist']->isNotEmpty() || $demo['zipDist']->isNotEmpty() || 
         @endif
     </div>
 
-    {{-- Number of Families Distribution --}}
+    {{-- Family Composition (children / adults / seniors) --}}
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 class="text-sm font-bold text-gray-800 mb-1">Families per Household</h3>
-        <p class="text-xs text-gray-400 mb-4">How many family units each household contains</p>
-        @if($demo['familiesDist']->isNotEmpty())
-            <div class="h-48">
-                <canvas id="familiesChart"></canvas>
+        <h3 class="text-sm font-bold text-gray-800 mb-1">Family Composition</h3>
+        <p class="text-xs text-gray-400 mb-4">Children, adults &amp; seniors served — and how they relate</p>
+
+        @if($comp['total_people'] > 0)
+            <div class="grid grid-cols-1 sm:grid-cols-5 gap-4 items-center">
+                {{-- Donut --}}
+                <div class="sm:col-span-2 h-44">
+                    <canvas id="compositionChart"></canvas>
+                </div>
+
+                {{-- Ratios + per-household averages --}}
+                <div class="sm:col-span-3 space-y-2.5 text-sm">
+                    @if($comp['adults'] > 0)
+                        <div class="flex items-baseline justify-between gap-3 border-b border-gray-50 pb-2">
+                            <span class="text-gray-500">Children per adult</span>
+                            <span class="font-bold text-gray-900 tabular-nums">{{ $comp['child_to_adult_ratio'] }}</span>
+                        </div>
+                        <div class="flex items-baseline justify-between gap-3 border-b border-gray-50 pb-2">
+                            <span class="text-gray-500">Seniors per adult</span>
+                            <span class="font-bold text-gray-900 tabular-nums">{{ $comp['senior_to_adult_ratio'] }}</span>
+                        </div>
+                    @endif
+                    <div class="flex items-baseline justify-between gap-3 border-b border-gray-50 pb-2">
+                        <span class="text-gray-500">Avg children / household</span>
+                        <span class="font-bold text-gray-900 tabular-nums">{{ $comp['avg_children'] }}</span>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-3 border-b border-gray-50 pb-2">
+                        <span class="text-gray-500">Avg adults / household</span>
+                        <span class="font-bold text-gray-900 tabular-nums">{{ $comp['avg_adults'] }}</span>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-3 border-b border-gray-50 pb-2">
+                        <span class="text-gray-500">Avg seniors / household</span>
+                        <span class="font-bold text-gray-900 tabular-nums">{{ $comp['avg_seniors'] }}</span>
+                    </div>
+                    <div class="flex items-baseline justify-between gap-3">
+                        <span class="text-gray-500">Households with children</span>
+                        <span class="font-bold text-gray-900 tabular-nums">
+                            {{ number_format($comp['households_with_children']) }}
+                            <span class="text-xs font-medium text-gray-400">· {{ $comp['households_with_children_pct'] }}%</span>
+                        </span>
+                    </div>
+                </div>
             </div>
         @else
-            <p class="text-sm text-gray-400 py-10 text-center">No data available.</p>
+            <p class="text-sm text-gray-400 py-10 text-center">No composition data for this period.</p>
         @endif
     </div>
 
@@ -149,12 +218,13 @@ $hasData = $demo['sizeDist']->isNotEmpty() || $demo['zipDist']->isNotEmpty() || 
 @endsection
 
 @push('scripts')
-@if(isset($demo) && ($demo['sizeDist']->isNotEmpty() || $demo['familiesDist']->isNotEmpty()))
+@if(isset($demo) && ($demo['sizeDist']->isNotEmpty() || ($demo['composition']['total_people'] ?? 0) > 0))
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const DEMO   = @json($demo);
     const navy   = '#1e3a5f';
     const orange = '#f97316';
+    const navy400= '#7892b8';
     const grid   = '#F3F4F6';
     const textC  = '#6B7280';
 
@@ -186,19 +256,37 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Families distribution
-    const fEl = document.getElementById('familiesChart');
-    if (fEl && DEMO.familiesDist.length) {
-        new Chart(fEl, {
-            type: 'bar',
+    // Family composition donut (children / adults / seniors)
+    const cEl = document.getElementById('compositionChart');
+    if (cEl && DEMO.composition && DEMO.composition.total_people > 0) {
+        new Chart(cEl, {
+            type: 'doughnut',
             data: {
-                labels: DEMO.familiesDist.map(r => r.families + ' famil' + (r.families > 1 ? 'ies' : 'y')),
+                labels: ['Children', 'Adults', 'Seniors'],
                 datasets: [{
-                    data: DEMO.familiesDist.map(r => r.count),
-                    backgroundColor: orange, borderRadius: 5, borderSkipped: false,
+                    data: [DEMO.composition.children, DEMO.composition.adults, DEMO.composition.seniors],
+                    backgroundColor: [orange, navy, navy400],
+                    borderColor: '#fff',
+                    borderWidth: 2,
                 }],
             },
-            options: { ...baseOpts },
+            options: {
+                responsive: true, maintainAspectRatio: false, cutout: '62%',
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { color: textC, font: { size: 11 }, boxWidth: 10, boxHeight: 10 } },
+                    tooltip: {
+                        backgroundColor: '#1F2937', padding: 8, cornerRadius: 8,
+                        callbacks: {
+                            label: (ctx) => {
+                                const v = ctx.parsed;
+                                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = total ? Math.round(v / total * 100) : 0;
+                                return `${ctx.label}: ${v.toLocaleString()} (${pct}%)`;
+                            },
+                        },
+                    },
+                },
+            },
         });
     }
 });

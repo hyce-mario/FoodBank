@@ -268,8 +268,54 @@ class ReportAnalyticsService
             ->orderBy('vh.household_size')
             ->get();
 
-        // Representative pickup distribution — how many households were served per visit
-        $familiesDist = collect(); // number_of_families column removed; use representative linkage instead
+        // Family composition — totals, ratios, and per-household averages drawn
+        // from the Phase 1.2.a snapshot columns (children_count / adults_count /
+        // seniors_count on visit_households). DISTINCT household so a household
+        // served twice in the period only counts once toward composition.
+        $compRow = $base()
+            ->selectRaw('
+                COUNT(DISTINCT vh.household_id)             AS households,
+                COALESCE(SUM(vh.children_count), 0)          AS children,
+                COALESCE(SUM(vh.adults_count),   0)          AS adults,
+                COALESCE(SUM(vh.seniors_count),  0)          AS seniors
+            ')
+            ->first();
+
+        $children = (int) ($compRow->children ?? 0);
+        $adults   = (int) ($compRow->adults   ?? 0);
+        $seniors  = (int) ($compRow->seniors  ?? 0);
+        $hh       = (int) ($compRow->households ?? 0);
+        $total    = $children + $adults + $seniors;
+
+        // Households-with-children: a separate distinct count so the percentage
+        // reflects households where at least one child was served, not a sum.
+        $householdsWithChildren = $hh > 0
+            ? (int) $base()
+                ->where('vh.children_count', '>', 0)
+                ->distinct('vh.household_id')
+                ->count('vh.household_id')
+            : 0;
+
+        $composition = [
+            'households'              => $hh,
+            'children'                => $children,
+            'adults'                  => $adults,
+            'seniors'                 => $seniors,
+            'total_people'            => $total,
+            'pct_children'            => $total > 0 ? round($children / $total * 100, 1) : 0.0,
+            'pct_adults'              => $total > 0 ? round($adults   / $total * 100, 1) : 0.0,
+            'pct_seniors'             => $total > 0 ? round($seniors  / $total * 100, 1) : 0.0,
+            'avg_children'            => $hh > 0 ? round($children / $hh, 2) : 0.0,
+            'avg_adults'              => $hh > 0 ? round($adults   / $hh, 2) : 0.0,
+            'avg_seniors'             => $hh > 0 ? round($seniors  / $hh, 2) : 0.0,
+            'avg_household_size'      => $hh > 0 ? round($total / $hh, 2) : 0.0,
+            // Ratio is "per adult". 0 when adults = 0 (no division-by-zero); the
+            // panel hides the ratio in that case so 0.0 doesn't read as "no kids."
+            'child_to_adult_ratio'    => $adults > 0 ? round($children / $adults, 2) : 0.0,
+            'senior_to_adult_ratio'   => $adults > 0 ? round($seniors  / $adults, 2) : 0.0,
+            'households_with_children'      => $householdsWithChildren,
+            'households_with_children_pct'  => $hh > 0 ? round($householdsWithChildren / $hh * 100, 1) : 0.0,
+        ];
 
         $zipDist = $base()
             ->selectRaw('h.zip, COUNT(DISTINCT vh.household_id) AS count')
@@ -300,7 +346,7 @@ class ReportAnalyticsService
             ->limit(10)
             ->get();
 
-        return compact('sizeDist', 'familiesDist', 'zipDist', 'cityDist', 'vehicleDist');
+        return compact('sizeDist', 'composition', 'zipDist', 'cityDist', 'vehicleDist');
     }
 
     // ─── Lane Performance ─────────────────────────────────────────────────────
