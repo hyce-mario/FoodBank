@@ -69,9 +69,9 @@
         <p class="text-xs text-blue-500 mt-0.5">back to shelf</p>
     </div>
     <div class="bg-red-50 border border-red-100 rounded-2xl px-4 py-4">
-        <p class="text-xs font-semibold uppercase tracking-wide text-red-600 mb-1">Waste</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-red-600 mb-1">Waste &amp; Loss</p>
         <p class="text-2xl font-bold text-red-900 tabular-nums">{{ number_format($summary['total_waste']) }}</p>
-        <p class="text-xs text-red-500 mt-0.5">damaged + expired</p>
+        <p class="text-xs text-red-500 mt-0.5">damaged + expired + removed</p>
     </div>
 </div>
 
