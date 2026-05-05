@@ -8,7 +8,10 @@ class StoreFinanceCategoryRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on finance.edit. Route middleware (finance.view on
+        // the resource) lets the user reach this endpoint; the FormRequest
+        // is the second tier of defense for writes.
+        return (bool) $this->user()?->hasPermission('finance.edit');
     }
 
     public function rules(): array

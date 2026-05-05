@@ -284,9 +284,17 @@ Route::middleware('auth')->group(function () {
     Route::get('visit-log/print',  [VisitLogController::class, 'print'])  ->name('visit-log.print');
     Route::get('visit-log/export', [VisitLogController::class, 'export']) ->name('visit-log.export');
 
-    // Finance Module
+    // Finance Module — Tier 2. Each sub-section is gated independently:
+    //   /finance               → finance.view (dashboard)
+    //   /finance/categories    → finance.view (read), finance.edit (writes)
+    //   /finance/transactions  → finance.view (read), finance.{create,edit,delete} via FormRequest
+    //   /finance/reports/*     → finance_reports.view, +finance_reports.export on print/pdf/csv
+    // Reports sit in their own permission key so a Finance Reports analyst
+    // role doesn't transitively require finance.view (and vice versa).
     Route::prefix('finance')->name('finance.')->group(function () {
-        Route::get('/',        [FinanceController::class, 'dashboard'])->name('dashboard');
+        Route::get('/',        [FinanceController::class, 'dashboard'])
+             ->middleware('permission:finance.view')
+             ->name('dashboard');
 
         // Phase 7.1 — Reports module. Hub + per-report endpoints. Each
         // report has print/pdf/csv siblings registered alongside the
@@ -353,8 +361,15 @@ Route::middleware('auth')->group(function () {
             Route::get('/csv',   [FinanceReportController::class, 'categoryTrendCsv'])  ->name('.csv');
         });
 
+        // Categories — finance.view baseline; Store/Update FormRequests gate
+        // writes on finance.edit; destroy gets finance.edit middleware (no
+        // FormRequest on the destroy action).
         Route::resource('categories', FinanceCategoryController::class)
-             ->except(['show', 'create', 'edit']);
+             ->except(['show', 'create', 'edit', 'destroy'])
+             ->middleware('permission:finance.view');
+        Route::delete('categories/{category}', [FinanceCategoryController::class, 'destroy'])
+             ->middleware('permission:finance.edit')
+             ->name('categories.destroy');
 
         // Transaction list exports — registered BEFORE the resource route so
         // /finance/transactions/export/* doesn't get parsed as Route::resource's
