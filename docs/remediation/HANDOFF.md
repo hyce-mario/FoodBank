@@ -4,11 +4,22 @@
 
 ---
 
-## Current state — 2026-05-04 (Session 7 — **Phases 5.6–5.11 closed; volunteer module + public check-in kiosk fully reworked**)
+## Current state — 2026-05-04 (Session 8 — **Phase 7.1 + 7.2 — Finance Reports foundation + 4 of 11 reports Live**)
 
 ### Where we are
 
-**Audit remediation Phases 0–6 remain fully closed** (per Session 5/6 status). This session added six post-audit phases:
+**Phase 7 — board-grade finance reporting suite — kicked off.** Foundation + 4 reports landed in this session; 7 reports remain (Phase 7.3 + 7.4). Plus Session 7 closure carried forward intact.
+
+**Phase 7 progress:**
+
+1. **Phase 7.1 — Foundation + Statement of Activities.** `FinanceReportService::resolvePeriod()` (universal 7-preset + custom + compare-prior decoder), `App\Support\SvgChart` (server-rendered SVG bar/line/donut/horizontal-stacked-bar — works identically on screen / print / dompdf-PDF, no JS dependency), Reports hub at `/finance/reports` (single-column row list, Live + Coming Soon badges), shared `_shell` + `_period_filter` partials, Statement of Activities full implementation (KPI strip + dual donut + detail table + auto-generated insights + Print/PDF/CSV exports). Brand-only chart palette alternates navy + orange shades sequentially per donut.
+2. **Phase 7.2.a — Income Detail Report.** Row-level + category-rollup. Filters: category / event / source / status. KPI = Total + Transactions + Top Donor. Composition stacked bar. Grouped detail table with per-category subtotals + delta. 5 auto-generated insight bullets.
+3. **Phase 7.2.b — Expense Detail Report.** Mirror of Income Detail with relabelling (Source → Payee). Adds status filter dropdown. KPI uses red-700 + inverted delta colour semantics (▼ = green/good for expenses).
+4. **Phase 7.2.c — General Ledger.** Auditor's landing page — chronological, both income + expense, includes pending + cancelled rows for full audit visibility. Running-balance column accumulates only across `completed` rows. Pending/cancelled rows render dimmed. Closing balance row at bottom. PDF uses A4 LANDSCAPE (8 cols).
+
+**Suite green at 446/446** (was 416 at start of session 8; +30 across 3 new test files).
+
+**Session 7 (carried forward, all already on origin):**
 
 1. **Phase 5.6 — Volunteer security + correctness.** CLOSED with a–h, j done; 5.6.i dropped. Public check-in flow now uses phone as the identity.
 2. **Phase 5.7 — Volunteer UX polish.** Group filter, total-hours tile, mailto/tel, history truncate, add-to-group picker.
@@ -208,9 +219,32 @@ ce6231f fix(events): make bulk allocate button visible (drop responsive prefix)
 
 ### What's next — start here on resume
 
-**Sessions 7 closed cleanly.** Volunteer module fully closed (5.6–5.11 all green and tagged). Session 6 leftover triage shipped as 18 cohesive commits. Origin/main is in sync; suite 362/362.
+**Phase 7.1 + 7.2 closed.** 4 of 11 finance reports now Live (Statement of Activities, Income Detail, Expense Detail, General Ledger). 7 reports remain across Phase 7.3 + 7.4. Foundation pieces (period filter, SVG charts, common shell, brand palette, shared detail templates) are all in place — remaining reports are mostly template work using the established patterns.
 
-**Three open items remain from Session 7's "what's next" agenda:**
+#### Phase 7.3 — Stakeholder analysis (next up)
+
+4 reports, will need new SVG chart helpers (Sparkline + StackedBar already exist; may add multi-line LineChart for trends):
+
+1. **Donor / Source Analysis** — top-N donors with sparkline trends per donor. Donut for share-of-total. Filter by source name.
+2. **Vendor / Payee Analysis** — same shape, expense side.
+3. **Per-Event P&L** — event picker → income vs expense for that event + cost-per-beneficiary (households-served comes free from `visit_households`). Highest fundraising leverage.
+4. **Category Trend Report** — multi-line time-series (1 line per category). Monthly granularity. Category toggle UI.
+
+Each follows the same shape as Phase 7.2 reports (page → service method → 4 controller endpoints → page Blade + print + PDF + CSV templates → ~10 tests). Phase 7.1 foundation makes each one ~1 hour of template work.
+
+#### Phase 7.4 — Schema-augmented reports (last)
+
+3 reports needing modest migrations:
+
+1. **Statement of Functional Expenses** — needs `function` enum on `finance_categories` (Program / Management & General / Fundraising). Cross-tab natural-by-functional. IRS Form 990 prep.
+2. **Budget vs. Actual / Variance** — needs new `budgets` table (period_start/end + category_id + amount). Color-coded variance.
+3. **Pledge / AR Aging** — needs new `pledges` table. Current/30/60/90+ buckets.
+
+Save for last because schema decisions are the highest-risk if requirements shift.
+
+---
+
+**Three carry-forward items from Session 7:**
 
 #### Open item A — Phase 6.5 household merge tool
 
