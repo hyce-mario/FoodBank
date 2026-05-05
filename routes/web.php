@@ -373,13 +373,28 @@ Route::middleware('auth')->group(function () {
 
         // Transaction list exports — registered BEFORE the resource route so
         // /finance/transactions/export/* doesn't get parsed as Route::resource's
-        // show action with {transaction}=export.
-        Route::get('transactions/export/print', [FinanceTransactionController::class, 'exportPrint'])->name('transactions.export.print');
-        Route::get('transactions/export/csv',   [FinanceTransactionController::class, 'exportCsv'])  ->name('transactions.export.csv');
+        // show action with {transaction}=export. Tier 2 — exports are reads
+        // (finance.view); destroy + removeAttachment are deletes (finance.delete).
+        Route::get('transactions/export/print', [FinanceTransactionController::class, 'exportPrint'])
+             ->middleware('permission:finance.view')
+             ->name('transactions.export.print');
+        Route::get('transactions/export/csv',   [FinanceTransactionController::class, 'exportCsv'])
+             ->middleware('permission:finance.view')
+             ->name('transactions.export.csv');
 
-        Route::resource('transactions', FinanceTransactionController::class);
-        Route::get('transactions/{transaction}/attachment',    [FinanceTransactionController::class, 'downloadAttachment'])->name('transactions.attachment.download');
-        Route::delete('transactions/{transaction}/attachment', [FinanceTransactionController::class, 'removeAttachment'])  ->name('transactions.attachment.remove');
+        Route::resource('transactions', FinanceTransactionController::class)
+             ->except(['destroy'])
+             ->middleware('permission:finance.view');
+        Route::delete('transactions/{transaction}', [FinanceTransactionController::class, 'destroy'])
+             ->middleware('permission:finance.delete')
+             ->name('transactions.destroy');
+
+        Route::get('transactions/{transaction}/attachment', [FinanceTransactionController::class, 'downloadAttachment'])
+             ->middleware('permission:finance.view')
+             ->name('transactions.attachment.download');
+        Route::delete('transactions/{transaction}/attachment', [FinanceTransactionController::class, 'removeAttachment'])
+             ->middleware('permission:finance.delete')
+             ->name('transactions.attachment.remove');
     });
 
     // Reports Module — gated behind reports.view (matches the seeded REPORTS role).

@@ -9,7 +9,10 @@ class StoreFinanceTransactionRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on finance.create. Route middleware (finance.view on
+        // the resource) lets the user reach this endpoint; the FormRequest
+        // is the second tier of defense for writes.
+        return (bool) $this->user()?->hasPermission('finance.create');
     }
 
     public function rules(): array

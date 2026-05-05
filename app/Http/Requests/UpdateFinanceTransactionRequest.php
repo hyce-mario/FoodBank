@@ -9,7 +9,8 @@ class UpdateFinanceTransactionRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on finance.edit (mutates an existing transaction).
+        return (bool) $this->user()?->hasPermission('finance.edit');
     }
 
     public function rules(): array
