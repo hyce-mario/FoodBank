@@ -8,11 +8,11 @@ class StorePurchaseOrderRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        $user = $this->user();
-        return (bool) $user && (
-            $user->isAdmin()
-            || (method_exists($user, 'hasPermission') && $user->hasPermission('inventory.edit'))
-        );
+        // Tier 3c — gates on the dedicated purchase_orders.create permission.
+        // ADMIN keeps access via Gate::before's '*' wildcard match. Tier 1
+        // catalog cleanup added the purchase_orders.* group; the prior
+        // "isAdmin OR inventory.edit" fallback is no longer needed.
+        return (bool) $this->user()?->hasPermission('purchase_orders.create');
     }
 
     public function rules(): array
