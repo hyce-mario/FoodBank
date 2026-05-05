@@ -102,12 +102,16 @@ class ReportAnalyticsService
             ->whereDate('e.date', '<=', $toStr)
             ->count();
 
-        $totalVolunteers = DB::table('event_volunteer as ev')
-            ->join('events as e', 'e.id', '=', 'ev.event_id')
+        // "Volunteers Served" = unique volunteers who actually checked in to an
+        // event in the period, NOT just those assigned. Matches the definition
+        // used by ReportAnalyticsService::volunteers() and the Volunteers
+        // report page so the Overview KPI agrees with the dedicated page.
+        $totalVolunteers = DB::table('volunteer_check_ins as vci')
+            ->join('events as e', 'e.id', '=', 'vci.event_id')
             ->whereDate('e.date', '>=', $fromStr)
             ->whereDate('e.date', '<=', $toStr)
-            ->distinct('ev.volunteer_id')
-            ->count('ev.volunteer_id');
+            ->distinct('vci.volunteer_id')
+            ->count('vci.volunteer_id');
 
         return [
             'households_served'  => $householdsServed,
