@@ -92,8 +92,10 @@ class UserController extends Controller
         $user->name  = $data['name'];
         $user->email = $data['email'];
 
-        // Defense in depth: role changes remain admin-only even if a future
-        // change widens UpdateUserRequest::authorize() beyond ADMIN.
+        // Defense in depth: role assignment stays ADMIN-only (Tier 3b widened
+        // UpdateUserRequest::authorize to users.edit, which lets a user-manager
+        // role rename + email-change accounts but explicitly NOT mutate role_id).
+        // Privilege escalation would otherwise be a one-PUT exploit.
         if ($request->user()?->isAdmin()) {
             $user->role_id = $data['role_id'];
         }
@@ -113,12 +115,11 @@ class UserController extends Controller
 
     public function destroy(Request $request, User $user): RedirectResponse
     {
-        // Guard: only admins may delete users. Without this, any authenticated
-        // user could DELETE /users/{id} for any account (including the only
-        // remaining admin), causing permanent loss of administrative access.
-        if (! $request->user()?->isAdmin()) {
-            abort(403);
-        }
+        // Tier 3b — delegated to UserPolicy::delete (which checks users.delete
+        // with ADMIN '*' wildcard via before()). Replaces the prior hard-coded
+        // isAdmin() so a dedicated user-manager role can be granted delete
+        // without full admin powers.
+        $this->authorize('delete', $user);
 
         // Guard: self-deletion blocked unless explicitly allowed in settings
         if ($user->id === Auth::id()) {

@@ -184,4 +184,101 @@ class UserAuthorizationTest extends TestCase
         $response->assertForbidden();
         $this->assertDatabaseHas('users', ['id' => $this->admin->id]);
     }
+
+    // ─── Tier 3b regressions ──────────────────────────────────────────────────
+    // A dedicated user-manager role with users.{view,create,edit,delete} should
+    // be able to manage accounts — but role assignment remains ADMIN-only as
+    // defense in depth (UserController::update line 97).
+
+    private function makeUserManager(): User
+    {
+        $role = Role::create(['name' => 'USER_MANAGER', 'display_name' => 'User Manager', 'description' => '']);
+        foreach (['users.view', 'users.create', 'users.edit', 'users.delete'] as $perm) {
+            RolePermission::create(['role_id' => $role->id, 'permission' => $perm]);
+        }
+        return User::create([
+            'name'              => 'Manager',
+            'email'             => 'manager@test.local',
+            'password'          => bcrypt('password'),
+            'role_id'           => $role->id,
+            'email_verified_at' => now(),
+        ]);
+    }
+
+    public function test_user_manager_can_create_user_without_admin(): void
+    {
+        $manager = $this->makeUserManager();
+
+        $response = $this->actingAs($manager)->post('/users', [
+            'name'                  => 'Created By Manager',
+            'email'                 => 'cbm@test.local',
+            'password'              => 'password123',
+            'password_confirmation' => 'password123',
+            'role_id'               => $this->intakeRole->id,
+        ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('users', ['email' => 'cbm@test.local']);
+    }
+
+    public function test_user_manager_can_edit_name_and_email_but_not_role(): void
+    {
+        $manager = $this->makeUserManager();
+        $target  = User::create([
+            'name'              => 'Original Name',
+            'email'             => 'target@test.local',
+            'password'          => bcrypt('password'),
+            'role_id'           => $this->intakeRole->id,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this->actingAs($manager)->put("/users/{$target->id}", [
+            'name'    => 'Renamed By Manager',
+            'email'   => 'renamed@test.local',
+            'role_id' => $this->adminRole->id,
+        ]);
+
+        $response->assertRedirect();
+        $target->refresh();
+        $this->assertSame('Renamed By Manager', $target->name);
+        $this->assertSame('renamed@test.local', $target->email);
+        $this->assertSame($this->intakeRole->id, $target->role_id,
+            'role_id MUST stay unchanged — non-admin user-manager cannot reassign roles');
+    }
+
+    public function test_user_manager_can_delete_user_without_admin(): void
+    {
+        $manager = $this->makeUserManager();
+        $target  = User::create([
+            'name'              => 'Doomed',
+            'email'             => 'doomed@test.local',
+            'password'          => bcrypt('password'),
+            'role_id'           => $this->intakeRole->id,
+            'email_verified_at' => now(),
+        ]);
+
+        $response = $this->actingAs($manager)->delete("/users/{$target->id}");
+
+        $response->assertRedirect();
+        $this->assertDatabaseMissing('users', ['id' => $target->id]);
+    }
+
+    public function test_user_manager_without_view_perm_blocked_at_route_middleware(): void
+    {
+        // Tier 3b — baseline middleware on /users is permission:users.view.
+        // A user with only users.create (no users.view) cannot reach the routes.
+        $role = Role::create(['name' => 'CREATE_ONLY', 'display_name' => 'Create Only', 'description' => '']);
+        RolePermission::create(['role_id' => $role->id, 'permission' => 'users.create']);
+        $halfManager = User::create([
+            'name'              => 'Half Manager',
+            'email'             => 'half@test.local',
+            'password'          => bcrypt('password'),
+            'role_id'           => $role->id,
+            'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($halfManager)
+             ->get('/users')
+             ->assertForbidden();
+    }
 }

@@ -238,8 +238,13 @@ Route::middleware('auth')->group(function () {
     Route::get('allocation-rulesets/{allocation_ruleset}/preview', [AllocationRulesetController::class, 'preview'])
         ->name('allocation-rulesets.preview');
 
-    // Users
-    Route::resource('users', UserController::class);
+    // Users — Tier 3b. Baseline gate is users.view; Store/UpdateUserRequest +
+    // UserPolicy::delete handle the granular create/edit/delete checks.
+    // UserController::update line 97 keeps a defense-in-depth isAdmin() check
+    // on role assignment so a non-admin users.edit grantee can rename + email
+    // change, but NOT mutate role_id.
+    Route::resource('users', UserController::class)
+         ->middleware('permission:users.view');
 
     // Roles & Permissions
     Route::resource('roles', RoleController::class);
