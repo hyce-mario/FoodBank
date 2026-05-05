@@ -8,7 +8,10 @@ class UpdateRoleRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on roles.edit. Prior to this fix any authenticated user
+        // could PUT /roles/{id} to grant any permission (including '*') to any
+        // role, including their own.
+        return (bool) $this->user()?->hasPermission('roles.edit');
     }
 
     public function rules(): array

@@ -246,8 +246,12 @@ Route::middleware('auth')->group(function () {
     Route::resource('users', UserController::class)
          ->middleware('permission:users.view');
 
-    // Roles & Permissions
-    Route::resource('roles', RoleController::class);
+    // Roles & Permissions — Tier 2. CRITICAL prior gap: any authenticated user
+    // could create / edit / delete roles, including assigning the '*' wildcard
+    // to themselves. Baseline gate is roles.view; FormRequests + RolePolicy
+    // handle the granular create/edit/delete checks.
+    Route::resource('roles', RoleController::class)
+         ->middleware('permission:roles.view');
 
     // Volunteer Groups
     Route::resource('volunteer-groups', VolunteerGroupController::class);

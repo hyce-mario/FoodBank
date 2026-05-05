@@ -100,6 +100,10 @@ class RoleController extends Controller
 
     public function destroy(Role $role): RedirectResponse
     {
+        // Tier 2 — RolePolicy::delete gates on roles.delete. Prior to this fix
+        // any authenticated user could DELETE /roles/{id}.
+        $this->authorize('delete', $role);
+
         // Protect system roles from deletion
         if ((bool) SettingService::get('security.protect_system_roles', true) && $role->is_system) {
             return redirect()

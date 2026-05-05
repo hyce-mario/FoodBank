@@ -9,7 +9,12 @@ class StoreRoleRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on roles.create. CRITICAL: prior to this fix any
+        // authenticated user could POST /roles with permissions=['*'], creating
+        // an admin-equivalent role and self-promoting via UserController::update
+        // (the role-assignment defense-in-depth check there is the second line
+        // of defense — this is the first).
+        return (bool) $this->user()?->hasPermission('roles.create');
     }
 
     public function rules(): array

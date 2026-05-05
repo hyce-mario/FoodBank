@@ -9,10 +9,12 @@ use App\Models\Household;
 use App\Models\Visit;
 use App\Models\Volunteer;
 use App\Observers\VisitObserver;
+use App\Models\Role;
 use App\Policies\AuditLogPolicy;
 use App\Policies\EventPolicy;
 use App\Policies\EventReviewPolicy;
 use App\Policies\HouseholdPolicy;
+use App\Policies\RolePolicy;
 use App\Policies\UserPolicy;
 use App\Policies\VolunteerPolicy;
 use App\Services\SettingService;
@@ -41,6 +43,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(EventReview::class, EventReviewPolicy::class);
         Gate::policy(AuditLog::class,    AuditLogPolicy::class);
         Gate::policy(\App\Models\User::class, UserPolicy::class);
+        Gate::policy(Role::class,        RolePolicy::class);
 
         // Bridge dot-notation permission strings ('reports.view', 'settings.update',
         // etc.) so @can() in Blade and Gate::check() use the same lookup as the
