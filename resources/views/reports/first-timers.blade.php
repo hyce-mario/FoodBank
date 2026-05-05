@@ -208,11 +208,9 @@
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Household</th>
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</th>
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Vehicle</th>
-                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Size</th>
+                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Family</th>
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">First Event</th>
                     <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">First Date</th>
-                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Representative</th>
-                    <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pickup</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
@@ -236,16 +234,7 @@
                         <td class="px-5 py-3.5 text-sm text-gray-500">{{ $h->phone ?? '—' }}</td>
                         <td class="px-5 py-3.5 text-sm text-gray-500">{{ $h->vehicle_label ?? '—' }}</td>
                         <td class="px-5 py-3.5">
-                            <div class="text-sm text-gray-700">
-                                {{ $h->household_size }}
-                                @if ($h->children_count || $h->adults_count || $h->seniors_count)
-                                    <span class="text-xs text-gray-400 block">
-                                        @if ($h->adults_count) {{ $h->adults_count }}A @endif
-                                        @if ($h->children_count) {{ $h->children_count }}C @endif
-                                        @if ($h->seniors_count) {{ $h->seniors_count }}S @endif
-                                    </span>
-                                @endif
-                            </div>
+                            @include('reports._family_tag', ['hh' => $h])
                         </td>
                         <td class="px-5 py-3.5">
                             @if ($h->first_event_name)
@@ -257,32 +246,10 @@
                         <td class="px-5 py-3.5 text-sm text-gray-600">
                             {{ $h->first_event_date ? \Carbon\Carbon::parse($h->first_event_date)->format('M j, Y') : '—' }}
                         </td>
-                        <td class="px-5 py-3.5">
-                            @if ($h->representative)
-                                <a href="{{ route('households.show', $h->representative) }}"
-                                   class="text-sm text-brand-600 hover:underline">
-                                    {{ $h->representative->full_name }}
-                                </a>
-                                <p class="text-xs text-gray-400">#{{ $h->representative->household_number }}</p>
-                            @else
-                                <span class="text-sm text-gray-400">—</span>
-                            @endif
-                        </td>
-                        <td class="px-5 py-3.5">
-                            @if ($h->representative)
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
-                                    Via Rep.
-                                </span>
-                            @else
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-                                    Direct
-                                </span>
-                            @endif
-                        </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="9" class="px-5 py-16 text-center">
+                        <td colspan="7" class="px-5 py-16 text-center">
                             <svg class="w-10 h-10 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
                             </svg>
@@ -306,11 +273,6 @@
                             <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700">
                                 First-Timer
                             </span>
-                            @if ($h->representative)
-                                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">
-                                    Via Rep.
-                                </span>
-                            @endif
                         </div>
                         <p class="font-semibold text-gray-900">{{ $h->full_name }}</p>
                         @if ($h->phone)<p class="text-sm text-gray-500">{{ $h->phone }}</p>@endif
@@ -331,25 +293,14 @@
                         <span class="text-gray-400">First Date</span>
                         <p class="font-medium text-gray-700">{{ $h->first_event_date ? \Carbon\Carbon::parse($h->first_event_date)->format('M j, Y') : '—' }}</p>
                     </div>
-                    <div>
-                        <span class="text-gray-400">Size</span>
-                        <p class="font-medium text-gray-700">
-                            {{ $h->household_size }}
-                            @if ($h->adults_count) · {{ $h->adults_count }}A @endif
-                            @if ($h->children_count) {{ $h->children_count }}C @endif
-                            @if ($h->seniors_count) {{ $h->seniors_count }}S @endif
-                        </p>
+                    <div class="col-span-2">
+                        <span class="text-gray-400 block mb-1">Family</span>
+                        @include('reports._family_tag', ['hh' => $h])
                     </div>
-                    <div>
+                    <div class="col-span-2">
                         <span class="text-gray-400">Vehicle</span>
                         <p class="font-medium text-gray-700">{{ $h->vehicle_label ?? '—' }}</p>
                     </div>
-                    @if ($h->representative)
-                    <div class="col-span-2">
-                        <span class="text-gray-400">Representative</span>
-                        <p class="font-medium text-gray-700">{{ $h->representative->full_name }} (#{{ $h->representative->household_number }})</p>
-                    </div>
-                    @endif
                 </div>
             </div>
         @empty
