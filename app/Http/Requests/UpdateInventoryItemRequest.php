@@ -8,7 +8,8 @@ class UpdateInventoryItemRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on inventory.edit (same as StoreInventoryItemRequest).
+        return (bool) $this->user()?->hasPermission('inventory.edit');
     }
 
     public function rules(): array

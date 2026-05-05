@@ -195,31 +195,64 @@ Route::middleware('auth')->group(function () {
     Route::get('volunteers/{volunteer}/service-history/export.csv', [VolunteerController::class, 'serviceHistoryCsv'])
         ->name('volunteers.service-history.csv');
 
-    // Inventory — Categories
+    // Inventory — Tier 2. Reads gated on inventory.view; writes gated on
+    // inventory.edit. The catalog uses just two keys (view/edit) — no
+    // separate inventory.create or inventory.delete since the pre-Tier-1
+    // catalog already had this layout.
+    //
+    // Categories — InventoryCategoryController uses inline $request->validate
+    // (no FormRequest) so writes need explicit middleware. Resource is split
+    // into read-only index (inventory.view) and write-only store/update/
+    // destroy (inventory.edit).
     Route::resource('inventory/categories', InventoryCategoryController::class)
          ->names('inventory.categories')
          ->parameters(['categories' => 'inventoryCategory'])
-         ->only(['index', 'store', 'update', 'destroy']);
+         ->only(['index'])
+         ->middleware('permission:inventory.view');
+    Route::resource('inventory/categories', InventoryCategoryController::class)
+         ->names('inventory.categories')
+         ->parameters(['categories' => 'inventoryCategory'])
+         ->only(['store', 'update', 'destroy'])
+         ->middleware('permission:inventory.edit');
 
     // Inventory — Items: print + CSV export (registered BEFORE resource so the
     // wildcard {inventory_item} show route doesn't swallow these literals).
+    // Both are reads — gated on inventory.view.
     Route::get('inventory/items/print',      [InventoryItemController::class, 'print'])
+         ->middleware('permission:inventory.view')
          ->name('inventory.items.print');
     Route::get('inventory/items/export.csv', [InventoryItemController::class, 'export'])
+         ->middleware('permission:inventory.view')
          ->name('inventory.items.export');
 
-    // Inventory — Items
+    // Inventory — Items. index/show are reads (inventory.view); Store/Update
+    // FormRequests gate writes on inventory.edit; destroy gets explicit
+    // middleware (no FormRequest on the destroy action).
     Route::resource('inventory/items', InventoryItemController::class)
          ->names('inventory.items')
-         ->parameters(['items' => 'inventory_item']);
+         ->parameters(['items' => 'inventory_item'])
+         ->only(['index', 'show'])
+         ->middleware('permission:inventory.view');
+    Route::resource('inventory/items', InventoryItemController::class)
+         ->names('inventory.items')
+         ->parameters(['items' => 'inventory_item'])
+         ->only(['create', 'store', 'edit', 'update'])
+         ->middleware('permission:inventory.edit');
+    Route::delete('inventory/items/{inventory_item}', [InventoryItemController::class, 'destroy'])
+         ->middleware('permission:inventory.edit')
+         ->name('inventory.items.destroy');
 
     // Inventory — Quick-create JSON endpoint (used by Purchase Order line-item
-    // picker to create + select an item without leaving the form).
+    // picker to create + select an item without leaving the form). Writes
+    // require inventory.edit.
     Route::post('inventory/items/quick-create', [InventoryItemController::class, 'quickStore'])
+         ->middleware('permission:inventory.edit')
          ->name('inventory.items.quick-create');
 
-    // Inventory — Movements (manual stock operations from item show page)
+    // Inventory — Movements (manual stock operations). FormRequest authorize
+    // also gates on inventory.edit; this middleware is the route-level mirror.
     Route::post('inventory/items/{inventory_item}/movements', [InventoryMovementController::class, 'store'])
+         ->middleware('permission:inventory.edit')
          ->name('inventory.movements.store');
 
     // Phase 6.6 — Purchase Orders (Inventory ↔ Finance bridge)

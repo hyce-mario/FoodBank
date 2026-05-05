@@ -37,11 +37,13 @@ class InventoryItemQuickStoreTest extends TestCase
         parent::setUp();
         SettingService::flush();
 
-        // The route lives inside the auth middleware group; we don't need
-        // ADMIN here because the existing inventory routes don't gate on
-        // permission. Match that posture exactly.
+        // Tier 2 — quick-create now requires inventory.edit (route mw +
+        // FormRequest authorize). Phase 6.6 originally used a phantom
+        // 'inventory.create' permission that didn't match the catalog;
+        // the catalog actually only ships inventory.{view,edit}.
         $role = Role::create(['name' => 'STAFF', 'display_name' => 'Staff', 'description' => '']);
-        RolePermission::create(['role_id' => $role->id, 'permission' => 'inventory.create']);
+        RolePermission::create(['role_id' => $role->id, 'permission' => 'inventory.view']);
+        RolePermission::create(['role_id' => $role->id, 'permission' => 'inventory.edit']);
         $this->user = User::create([
             'name'              => 'Staff',
             'email'             => 'staff@test.local',

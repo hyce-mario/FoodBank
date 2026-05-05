@@ -8,7 +8,10 @@ class StoreInventoryItemRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on inventory.edit. inventory keys are split view/edit
+        // (no separate create/delete) since the existing catalog pre-Tier-1
+        // already used that scheme; Tier 1 didn't expand it.
+        return (bool) $this->user()?->hasPermission('inventory.edit');
     }
 
     public function rules(): array

@@ -11,7 +11,11 @@ class StoreInventoryMovementRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on inventory.edit. Inventory movements mutate stock
+        // levels (the same effect as edit) — keeping them under inventory.edit
+        // means a warehouse role with inventory.edit can record adjustments
+        // without a separate movement-specific permission.
+        return (bool) $this->user()?->hasPermission('inventory.edit');
     }
 
     public function rules(): array
