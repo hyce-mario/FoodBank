@@ -255,15 +255,33 @@ Route::middleware('auth')->group(function () {
          ->middleware('permission:inventory.edit')
          ->name('inventory.movements.store');
 
-    // Phase 6.6 — Purchase Orders (Inventory ↔ Finance bridge)
+    // Phase 6.6 — Purchase Orders (Inventory ↔ Finance bridge). Tier 2 —
+    // gates split per action so a Buyer (create) and a Receiver (receive)
+    // can be configured independently:
+    //   - reads (index/show/print) → purchase_orders.view
+    //   - create (store)           → purchase_orders.create
+    //                                 (Tier 3c FormRequest authorize is the
+    //                                  defense-in-depth check inside)
+    //   - receive (markReceived)   → purchase_orders.receive
+    //   - cancel                   → purchase_orders.cancel
+    // create/store registered FIRST so the literal /create URL doesn't
+    // get swallowed by show's wildcard /{purchaseOrder}.
     Route::resource('purchase-orders', PurchaseOrderController::class)
          ->parameters(['purchase-orders' => 'purchaseOrder'])
-         ->except(['edit', 'update', 'destroy']);
+         ->only(['create', 'store'])
+         ->middleware('permission:purchase_orders.create');
+    Route::resource('purchase-orders', PurchaseOrderController::class)
+         ->parameters(['purchase-orders' => 'purchaseOrder'])
+         ->only(['index', 'show'])
+         ->middleware('permission:purchase_orders.view');
     Route::post('purchase-orders/{purchaseOrder}/receive', [PurchaseOrderController::class, 'markReceived'])
+         ->middleware('permission:purchase_orders.receive')
          ->name('purchase-orders.receive');
     Route::post('purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])
+         ->middleware('permission:purchase_orders.cancel')
          ->name('purchase-orders.cancel');
     Route::get('purchase-orders/{purchaseOrder}/print', [PurchaseOrderController::class, 'print'])
+         ->middleware('permission:purchase_orders.view')
          ->name('purchase-orders.print');
 
     // Allocation Rulesets
