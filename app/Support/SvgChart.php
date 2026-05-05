@@ -279,6 +279,67 @@ class SvgChart
     }
 
     /**
+     * Sparkline — tiny inline trend line for table cells. No axes, no
+     * labels, no legend; just a single path through N values with a dot
+     * at the most recent point. Used by Donor / Vendor analysis tables
+     * to show each entity's recent activity at a glance.
+     *
+     * Empty / all-zero series renders a flat baseline so the cell still
+     * has visual weight. A series with one non-zero value renders that
+     * value at the end with a flat lead-in — readable without faking a
+     * trend.
+     *
+     * @param array<int, float|int> $values  ordered oldest → newest
+     * @param array{
+     *   width?:int, height?:int,
+     *   color?:string,
+     * } $opts
+     */
+    public static function sparkline(array $values, array $opts = []): string
+    {
+        $width  = $opts['width']  ?? 80;
+        $height = $opts['height'] ?? 20;
+        $color  = $opts['color']  ?? '#1b2b4b';
+        $padX   = 2;
+        $padY   = 2;
+
+        $count = count($values);
+        if ($count === 0) {
+            return '<svg width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img">'
+                 . '<line x1="' . $padX . '" x2="' . ($width - $padX) . '" y1="' . ($height / 2) . '" y2="' . ($height / 2) . '" stroke="#e5e7eb" stroke-width="1"/>'
+                 . '</svg>';
+        }
+
+        $maxVal = max(array_map(fn ($v) => (float) $v, $values));
+        if ($maxVal <= 0) $maxVal = 1; // flat baseline for all-zero series
+
+        $chartW = $width  - 2 * $padX;
+        $chartH = $height - 2 * $padY;
+        $stepX  = $count > 1 ? $chartW / ($count - 1) : 0;
+
+        $svg = '<svg width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '" xmlns="http://www.w3.org/2000/svg" role="img">';
+
+        $path = '';
+        $lastX = $padX;
+        $lastY = $padY + $chartH;
+        foreach ($values as $i => $v) {
+            $x = $padX + $i * $stepX;
+            $y = $padY + $chartH - (((float) $v / $maxVal) * $chartH);
+            $path .= ($i === 0 ? 'M' : 'L') . round($x, 1) . ',' . round($y, 1) . ' ';
+            $lastX = $x;
+            $lastY = $y;
+        }
+
+        $svg .= '<path d="' . trim($path) . '" fill="none" stroke="' . $color . '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>';
+
+        // Dot on the most recent point — anchors the eye to "what's happening now".
+        $svg .= '<circle cx="' . round($lastX, 1) . '" cy="' . round($lastY, 1) . '" r="2" fill="' . $color . '"/>';
+
+        $svg .= '</svg>';
+        return $svg;
+    }
+
+    /**
      * Single donut "slice" path. Geometry: outer arc → line in to inner
      * radius → inner arc back → close. Uses the standard "large arc
      * flag" trick for slices > 180°.

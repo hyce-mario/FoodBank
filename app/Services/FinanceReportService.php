@@ -801,6 +801,757 @@ class FinanceReportService
         return $bullets;
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.3.a — Donor / Source Analysis
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Donor / Source Analysis — top contributors in the period with
+     * gift counts, average gift, first/last activity, a 12-month
+     * sparkline trail, and a prior-period comparison (delta + lapsed +
+     * new + retention rate).
+     *
+     * The screen + print render the top 10; CSV exports every donor.
+     * `donor_total_count` is the unique-donor count across the full
+     * period (used for the "Show all (N)" toggle on the screen).
+     *
+     * Always uses status=completed (this is a fundraising report — pending
+     * pledges belong on a Pledge Aging report, not here).
+     *
+     * Filters: `source` (LIKE), `category_id` (single income category).
+     *
+     * Returns:
+     *   [
+     *     'period'           => ['label', 'from', 'to'],
+     *     'compare'          => ?['label', 'from', 'to'],
+     *     'donors'           => array of top-10 donor records (see below),
+     *     'all_donors'       => array of every donor record (CSV consumes this),
+     *     'donor_total_count'=> int,    // unique donors in period
+     *     'gift_count'       => int,    // total # gifts
+     *     'total'            => float,
+     *     'prior_total'      => ?float,
+     *     'avg_gift'         => float,
+     *     'top_donor'        => ?['name', 'total'],
+     *     'lapsed'           => array of ['name', 'prior_total'] for prior donors absent in current,
+     *     'new_donors'       => array of ['name', 'total'] for current donors absent in prior,
+     *     'retention_rate'   => ?float, // fraction in [0..1]; null when no prior donors
+     *     'insights'         => array of strings,
+     *     'filters'          => echo-back of applied filters,
+     *   ]
+     *
+     * Each donor record:
+     *   ['name', 'total', 'count', 'avg_gift', 'first_gift', 'last_gift',
+     *    'color', 'share', 'sparkline', 'prior_total', 'delta', 'is_new']
+     */
+    public function donorAnalysis(Carbon $from, Carbon $to, ?Carbon $compareFrom = null, ?Carbon $compareTo = null, array $filters = []): array
+    {
+        return $this->stakeholderAnalysis('income', $from, $to, $compareFrom, $compareTo, $filters);
+    }
+
+    /**
+     * Vendor / Payee Analysis — same shape as Donor Analysis but for
+     * expense transactions. Phase 7.3.b uses this; the engine is shared
+     * because the ranking + retention + sparkline logic is identical
+     * regardless of direction.
+     */
+    public function vendorAnalysis(Carbon $from, Carbon $to, ?Carbon $compareFrom = null, ?Carbon $compareTo = null, array $filters = []): array
+    {
+        return $this->stakeholderAnalysis('expense', $from, $to, $compareFrom, $compareTo, $filters);
+    }
+
+    /**
+     * Shared engine for Donor Analysis (income) + Vendor Analysis
+     * (expense). The two reports differ only in transaction_type and
+     * the labelling in the view; the ranking, sparkline, retention,
+     * and insight logic is identical.
+     */
+    private function stakeholderAnalysis(string $type, Carbon $from, Carbon $to, ?Carbon $compareFrom, ?Carbon $compareTo, array $filters): array
+    {
+        $current = $this->aggregateBySource($type, $from, $to, $filters);
+        $prior   = $compareFrom ? $this->aggregateBySource($type, $compareFrom, $compareTo, $filters) : [];
+
+        // Build the full donor list, sorted by total $ descending. Ties
+        // broken alphabetically so output is deterministic across runs.
+        $allDonors = [];
+        foreach ($current as $name => $agg) {
+            $priorAmt = $prior[$name]['total'] ?? 0.0;
+            $allDonors[] = [
+                'name'        => $name,
+                'total'       => (float) $agg['total'],
+                'count'       => (int)   $agg['count'],
+                'avg_gift'    => $agg['count'] > 0 ? (float) $agg['total'] / $agg['count'] : 0.0,
+                'first_gift'  => $agg['first'],
+                'last_gift'   => $agg['last'],
+                'prior_total' => (float) $priorAmt,
+                'delta'       => $priorAmt > 0 ? (((float) $agg['total'] - $priorAmt) / $priorAmt) : null,
+                'is_new'      => $compareFrom !== null && $priorAmt <= 0,
+            ];
+        }
+        usort($allDonors, function ($a, $b) {
+            if ($a['total'] === $b['total']) return strcmp($a['name'], $b['name']);
+            return $b['total'] <=> $a['total'];
+        });
+
+        $total = array_sum(array_column($allDonors, 'total'));
+
+        // Assign share + sequential brand palette colour to every donor
+        // (top 10 use the colour on screen; CSV records carry it too so
+        // anyone consuming the payload sees the same ordering signal).
+        foreach ($allDonors as $i => &$row) {
+            $row['share'] = $total > 0 ? $row['total'] / $total : 0.0;
+            $row['color'] = self::colorForSlice($i);
+        }
+        unset($row);
+
+        // Top 10 — main display set. Sparklines are computed only for
+        // these to avoid a 12-month-per-donor query when the period has
+        // hundreds of donors.
+        $top = array_slice($allDonors, 0, 10);
+        $sparklines = ! empty($top) ? $this->donorSparklines($type, array_column($top, 'name'), $to, $filters) : [];
+        foreach ($top as &$row) {
+            $row['sparkline'] = $sparklines[$row['name']] ?? array_fill(0, 12, 0.0);
+        }
+        unset($row);
+
+        // Lapsed: gave in prior, didn't give in current.
+        $lapsed = [];
+        foreach ($prior as $name => $agg) {
+            if (! isset($current[$name])) {
+                $lapsed[] = ['name' => $name, 'prior_total' => (float) $agg['total']];
+            }
+        }
+        usort($lapsed, fn ($a, $b) => $b['prior_total'] <=> $a['prior_total']);
+
+        // New donors: appeared in current, weren't in prior. Only meaningful
+        // when comparing — without a prior period, "new" is ambiguous.
+        $newDonors = [];
+        if ($compareFrom) {
+            foreach ($allDonors as $row) {
+                if ($row['is_new']) {
+                    $newDonors[] = ['name' => $row['name'], 'total' => $row['total']];
+                }
+            }
+        }
+
+        // Retention: % of prior donors who also gave in current. Null when
+        // prior period had no donors (division by zero is meaningless here,
+        // and the UI prints a dash rather than 0%).
+        $retentionRate = null;
+        if (! empty($prior)) {
+            $retained = count(array_intersect_key($prior, $current));
+            $retentionRate = $retained / count($prior);
+        }
+
+        $giftCount = (int) array_sum(array_column($allDonors, 'count'));
+        $priorTotal = $compareFrom ? (float) array_sum(array_column($prior, 'total')) : null;
+
+        return [
+            'period'            => ['label' => $this->labelFor($from, $to), 'from' => $from, 'to' => $to],
+            'compare'           => $compareFrom
+                ? ['label' => $this->labelFor($compareFrom, $compareTo), 'from' => $compareFrom, 'to' => $compareTo]
+                : null,
+            'donors'            => $top,
+            'all_donors'        => $allDonors,
+            'donor_total_count' => count($allDonors),
+            'gift_count'        => $giftCount,
+            'total'             => (float) $total,
+            'prior_total'       => $priorTotal,
+            'avg_gift'          => $giftCount > 0 ? (float) $total / $giftCount : 0.0,
+            'top_donor'         => ! empty($allDonors) ? ['name' => $allDonors[0]['name'], 'total' => (float) $allDonors[0]['total']] : null,
+            'lapsed'            => $lapsed,
+            'new_donors'        => $newDonors,
+            'retention_rate'    => $retentionRate,
+            'insights'          => $this->buildStakeholderInsights($type, $allDonors, $total, $priorTotal, $newDonors, $lapsed, $retentionRate, (bool) $compareFrom),
+            'filters'           => $filters,
+        ];
+    }
+
+    /**
+     * Aggregate transactions by source_or_payee for a date range. Returns
+     * a map keyed by donor name → ['total' => float, 'count' => int,
+     * 'first' => Y-m-d, 'last' => Y-m-d].
+     *
+     * Rows where source_or_payee is null / empty / whitespace-only are
+     * collapsed under "(Anonymous)" — board still wants visibility into
+     * unattributed giving rather than dropping it from the picture.
+     */
+    private function aggregateBySource(string $type, Carbon $from, Carbon $to, array $filters): array
+    {
+        $rows = FinanceTransaction::query()
+            ->where('transaction_type', $type)
+            ->where('status', 'completed')
+            ->whereBetween('transaction_date', [$from->toDateString(), $to->toDateString()])
+            ->when(! empty($filters['category_id']), fn ($q) => $q->where('category_id', $filters['category_id']))
+            ->when(! empty($filters['source']), fn ($q) => $q->where('source_or_payee', 'like', '%' . $filters['source'] . '%'))
+            ->get(['amount', 'source_or_payee', 'transaction_date']);
+
+        $bySource = [];
+        foreach ($rows as $tx) {
+            $name = trim((string) ($tx->source_or_payee ?? ''));
+            if ($name === '') $name = '(Anonymous)';
+            $date = $tx->transaction_date?->toDateString();
+
+            if (! isset($bySource[$name])) {
+                $bySource[$name] = ['total' => 0.0, 'count' => 0, 'first' => $date, 'last' => $date];
+            }
+            $bySource[$name]['total'] += (float) $tx->amount;
+            $bySource[$name]['count'] += 1;
+            if ($date !== null && ($bySource[$name]['first'] === null || $date < $bySource[$name]['first'])) {
+                $bySource[$name]['first'] = $date;
+            }
+            if ($date !== null && ($bySource[$name]['last'] === null || $date > $bySource[$name]['last'])) {
+                $bySource[$name]['last'] = $date;
+            }
+        }
+        return $bySource;
+    }
+
+    /**
+     * Compute 12-month giving sparklines for a list of donors. Bucket
+     * end-anchor is `$endingAt`'s month — so a report for "Last Year
+     * 2025" anchors the sparkline at Dec 2025 (showing Jan-Dec 2025),
+     * not at today. Each donor → array of 12 monthly totals,
+     * oldest → newest.
+     *
+     * Single broad query + PHP grouping (per HANDOFF carry-forward
+     * learning: sub-100-row aggregation is portable and trivial in
+     * memory; SQL `MONTH()` / `YEARWEEK()` break sqlite tests).
+     */
+    private function donorSparklines(string $type, array $donorNames, Carbon $endingAt, array $filters): array
+    {
+        if (empty($donorNames)) return [];
+
+        // Build an ordered list of 12 month-keys (YYYY-MM) ending at $endingAt's month.
+        $endMonth = $endingAt->copy()->endOfMonth();
+        $monthKeys = [];
+        for ($i = 11; $i >= 0; $i--) {
+            $monthKeys[] = $endMonth->copy()->subMonthsNoOverflow($i)->format('Y-m');
+        }
+
+        // Window: first day of the oldest month → last day of the newest.
+        $windowFrom = $endMonth->copy()->subMonthsNoOverflow(11)->startOfMonth();
+        $windowTo   = $endMonth;
+
+        // Resolve the filter values — treat "(Anonymous)" specially: it's
+        // a synthetic name we assign in PHP, not a value in the DB. For
+        // anonymous, match rows where source_or_payee is null / empty.
+        $hasAnonymous = in_array('(Anonymous)', $donorNames, true);
+        $namedDonors  = array_values(array_filter($donorNames, fn ($n) => $n !== '(Anonymous)'));
+
+        $query = FinanceTransaction::query()
+            ->where('transaction_type', $type)
+            ->where('status', 'completed')
+            ->whereBetween('transaction_date', [$windowFrom->toDateString(), $windowTo->toDateString()])
+            ->when(! empty($filters['category_id']), fn ($q) => $q->where('category_id', $filters['category_id']));
+
+        $query->where(function ($q) use ($namedDonors, $hasAnonymous) {
+            if (! empty($namedDonors)) {
+                $q->whereIn('source_or_payee', $namedDonors);
+            }
+            if ($hasAnonymous) {
+                $q->orWhereNull('source_or_payee')->orWhere('source_or_payee', '');
+            }
+        });
+
+        $rows = $query->get(['amount', 'source_or_payee', 'transaction_date']);
+
+        // Bootstrap each donor with 12 zeroed buckets.
+        $out = [];
+        foreach ($donorNames as $name) {
+            $out[$name] = array_fill(0, 12, 0.0);
+        }
+
+        foreach ($rows as $tx) {
+            $rawName = trim((string) ($tx->source_or_payee ?? ''));
+            $name = $rawName === '' ? '(Anonymous)' : $rawName;
+            if (! isset($out[$name])) continue; // shouldn't happen, but guard
+
+            $key = $tx->transaction_date?->format('Y-m');
+            $idx = array_search($key, $monthKeys, true);
+            if ($idx === false) continue; // outside the 12-month window
+            $out[$name][$idx] += (float) $tx->amount;
+        }
+
+        return $out;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.3.d — Category Trend Report
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Category Trend Report — monthly buckets across the period showing
+     * how each category's income/expense moves over time. Default
+     * direction is "income"; pass `direction => 'expense' | 'both'` to
+     * change. Top-6 categories by total are plotted; the rest collapse
+     * into "Other" so the line chart stays readable.
+     *
+     * Bucket granularity is monthly (locked for v1). PHP-side bucketing
+     * keeps the DB-portability promise — `MONTH()` etc. break sqlite
+     * tests; per HANDOFF this scale (≤ ~24 months × ~30 categories) is
+     * trivial in memory.
+     *
+     * Returns:
+     *   [
+     *     'period'      => ['label', 'from', 'to'],
+     *     'direction'   => 'income' | 'expense' | 'both',
+     *     'months'      => array of YYYY-MM keys ordered oldest → newest,
+     *     'month_labels'=> array of human labels e.g. ['Jan 2026', 'Feb 2026', ...],
+     *     'series'      => array of category records (see below),
+     *     'totals'      => ['period' => float, 'months' => array of floats per month],
+     *     'leaders'     => ['top_grower' => ?{name, delta}, 'top_shrinker' => ?{name, delta}],
+     *     'insights'    => array of strings,
+     *   ]
+     *
+     * Each category series:
+     *   ['name', 'type', 'color', 'monthly' => [...], 'total' => float, 'first' => float, 'last' => float, 'delta' => ?float]
+     */
+    public function categoryTrend(Carbon $from, Carbon $to, string $direction = 'income'): array
+    {
+        $direction = in_array($direction, ['income', 'expense', 'both'], true) ? $direction : 'income';
+
+        // Build month keys + labels
+        $months      = [];
+        $monthLabels = [];
+        $cursor      = $from->copy()->startOfMonth();
+        $end         = $to->copy()->endOfMonth();
+        while ($cursor->lessThanOrEqualTo($end)) {
+            $months[]      = $cursor->format('Y-m');
+            $monthLabels[] = $cursor->format('M Y');
+            $cursor->addMonthNoOverflow();
+        }
+
+        // Pull all completed transactions in the period in a single query
+        $query = FinanceTransaction::query()
+            ->where('status', 'completed')
+            ->whereBetween('transaction_date', [$from->toDateString(), $to->toDateString()])
+            ->with('category:id,name,type');
+
+        if ($direction !== 'both') {
+            $query->where('transaction_type', $direction);
+        }
+
+        $rows = $query->get(['amount', 'category_id', 'transaction_type', 'transaction_date']);
+
+        // Aggregate: name + type → month → total
+        // Using "name|type" as composite key so an income "Donations" and
+        // an expense "Donations" never collide. Output drops the suffix.
+        $byKey = [];
+        foreach ($rows as $tx) {
+            $name = $tx->category?->name ?? '(Uncategorised)';
+            $type = $tx->transaction_type;
+            $key  = $name . '|' . $type;
+            $monthKey = $tx->transaction_date?->format('Y-m');
+
+            if (! isset($byKey[$key])) {
+                $byKey[$key] = ['name' => $name, 'type' => $type, 'monthly' => array_fill_keys($months, 0.0), 'total' => 0.0];
+            }
+            if (isset($byKey[$key]['monthly'][$monthKey])) {
+                $byKey[$key]['monthly'][$monthKey] += (float) $tx->amount;
+            }
+            $byKey[$key]['total'] += (float) $tx->amount;
+        }
+
+        // Sort by total desc, take top 6, fold remainder into "Other"
+        uasort($byKey, fn ($a, $b) => $b['total'] <=> $a['total']);
+
+        $series   = [];
+        $i        = 0;
+        $otherMonthly = array_fill_keys($months, 0.0);
+        $otherTotal   = 0.0;
+        $otherCount   = 0;
+
+        foreach ($byKey as $row) {
+            if ($i < 6) {
+                $monthlyValues = array_values($row['monthly']);
+                $first  = $monthlyValues[0] ?? 0.0;
+                $last   = end($monthlyValues) ?: 0.0;
+                $delta  = $first > 0 ? ($last - $first) / $first : null;
+
+                $series[] = [
+                    'name'    => $row['name'],
+                    'type'    => $row['type'],
+                    'color'   => self::colorForSlice($i),
+                    'monthly' => $monthlyValues,
+                    'total'   => $row['total'],
+                    'first'   => $first,
+                    'last'    => $last,
+                    'delta'   => $delta,
+                ];
+            } else {
+                foreach ($row['monthly'] as $m => $v) $otherMonthly[$m] += $v;
+                $otherTotal += $row['total'];
+                $otherCount += 1;
+            }
+            $i++;
+        }
+
+        if ($otherCount > 0) {
+            $otherValues = array_values($otherMonthly);
+            $first = $otherValues[0] ?? 0.0;
+            $last  = end($otherValues) ?: 0.0;
+            $series[] = [
+                'name'    => 'Other (' . $otherCount . ' ' . ($otherCount === 1 ? 'category' : 'categories') . ')',
+                'type'    => $direction === 'both' ? 'both' : $direction,
+                'color'   => '#9ca3af', // neutral grey to visually demote
+                'monthly' => $otherValues,
+                'total'   => $otherTotal,
+                'first'   => $first,
+                'last'    => $last,
+                'delta'   => $first > 0 ? ($last - $first) / $first : null,
+            ];
+        }
+
+        // Period totals + per-month totals
+        $monthlyTotals = array_fill_keys($months, 0.0);
+        foreach ($byKey as $row) {
+            foreach ($row['monthly'] as $m => $v) $monthlyTotals[$m] += $v;
+        }
+        $periodTotal = array_sum($monthlyTotals);
+
+        // Leaders — biggest grower and biggest shrinker (by % delta)
+        $top    = null;
+        $bottom = null;
+        foreach ($series as $s) {
+            if ($s['delta'] === null) continue;
+            if ($top === null || $s['delta'] > $top['delta']) {
+                $top = ['name' => $s['name'], 'delta' => $s['delta']];
+            }
+            if ($bottom === null || $s['delta'] < $bottom['delta']) {
+                $bottom = ['name' => $s['name'], 'delta' => $s['delta']];
+            }
+        }
+
+        return [
+            'period'       => ['label' => $this->labelFor($from, $to), 'from' => $from, 'to' => $to],
+            'direction'    => $direction,
+            'months'       => $months,
+            'month_labels' => $monthLabels,
+            'series'       => $series,
+            'totals'       => ['period' => $periodTotal, 'months' => array_values($monthlyTotals)],
+            'leaders'      => ['top_grower' => $top, 'top_shrinker' => $bottom],
+            'insights'     => $this->buildCategoryTrendInsights($direction, $series, $periodTotal, $top, $bottom),
+        ];
+    }
+
+    private function buildCategoryTrendInsights(string $direction, array $series, float $periodTotal, ?array $top, ?array $bottom): array
+    {
+        $directionLabel = match ($direction) {
+            'income'  => 'income',
+            'expense' => 'expense',
+            'both'    => 'income + expense',
+        };
+
+        if (empty($series) || $periodTotal === 0.0) {
+            return [sprintf('No completed %s transactions were recorded for this period.', $directionLabel)];
+        }
+
+        $bullets = [];
+        $bullets[] = sprintf(
+            '%d %s categories totaled %s across the period.',
+            count($series),
+            $directionLabel,
+            self::usd($periodTotal),
+        );
+
+        if (! empty($series)) {
+            $largest = $series[0];
+            $bullets[] = sprintf(
+                '%s was the largest %s category at %s (%d%% of total).',
+                $largest['name'],
+                $directionLabel,
+                self::usd($largest['total']),
+                $periodTotal > 0 ? (int) round(($largest['total'] / $periodTotal) * 100) : 0,
+            );
+        }
+
+        if ($top && $top['delta'] !== null && $top['delta'] > 0) {
+            $bullets[] = sprintf(
+                'Biggest mover: %s grew %s%% from the first month to the last.',
+                $top['name'],
+                number_format($top['delta'] * 100, 0),
+            );
+        }
+        if ($bottom && $bottom['delta'] !== null && $bottom['delta'] < 0) {
+            $bullets[] = sprintf(
+                'Biggest decline: %s dropped %s%% from the first month to the last.',
+                $bottom['name'],
+                number_format(abs($bottom['delta']) * 100, 0),
+            );
+        }
+
+        return $bullets;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.3.c — Per-Event P&L
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Per-Event P&L — income vs expense for a single event, plus
+     * cost-per-beneficiary computed against the visit_households
+     * snapshot pivot (not live `households.household_size`, which
+     * drifts when households are edited after the event).
+     *
+     * Period filter doesn't apply — this is a single-event report
+     * picked from a dropdown. Compare-to-prior is dropped for v1
+     * (the right comparison shape — same event a year ago, average
+     * of last 3 events of the same type — is its own design call).
+     *
+     * Households-served + people-served use snapshot semantics from
+     * Phase 1.2.c (`visit_households.household_size` set at attach
+     * time). Only `visit_status = 'exited'` visits count — the same
+     * gate the production /visit-log uses for "Households Served".
+     *
+     * Returns:
+     *   [
+     *     'event'              => ['id', 'name', 'date', 'status', 'location'],
+     *     'income'             => ['categories' => [...], 'total' => float],
+     *     'expense'            => same shape,
+     *     'rows'               => array of transactions ordered by date,
+     *     'net'                => float,
+     *     'households_served'  => int,
+     *     'people_served'      => int,
+     *     'cost_per_household' => ?float,
+     *     'cost_per_person'    => ?float,
+     *     'income_per_household'=> ?float,
+     *     'insights'           => array of plain-English bullets,
+     *   ]
+     */
+    public function perEventPnl(int $eventId): array
+    {
+        $event = \App\Models\Event::findOrFail($eventId);
+
+        $income  = $this->breakdownByCategoryForEvent('income',  $eventId);
+        $expense = $this->breakdownByCategoryForEvent('expense', $eventId);
+
+        // All transactions tied to this event, completed only, ordered by date
+        $rows = FinanceTransaction::query()
+            ->where('event_id', $eventId)
+            ->where('status', 'completed')
+            ->with(['category:id,name'])
+            ->orderBy('transaction_date', 'asc')
+            ->orderBy('id', 'asc')
+            ->get(['id', 'transaction_date', 'title', 'source_or_payee', 'category_id', 'amount', 'transaction_type'])
+            ->map(fn ($tx) => [
+                'id'       => $tx->id,
+                'date'     => $tx->transaction_date?->format('Y-m-d'),
+                'type'     => $tx->transaction_type,
+                'title'    => $tx->title,
+                'source'   => $tx->source_or_payee ?? '',
+                'category' => $tx->category?->name ?? '(Uncategorised)',
+                'amount'   => (float) $tx->amount,
+            ])->all();
+
+        // Snapshot-driven beneficiary counts. The join goes through
+        // `visits` (filtered to status=exited at this event) and uses
+        // the snapshot fields on `visit_households`. We pull a single
+        // aggregate result from the DB rather than loading rows into
+        // memory — this scales to events with thousands of visits.
+        $served = \DB::table('visit_households as vh')
+            ->join('visits as v', 'v.id', '=', 'vh.visit_id')
+            ->where('v.event_id', $eventId)
+            ->where('v.visit_status', 'exited')
+            ->selectRaw('COUNT(DISTINCT vh.household_id) as households, COALESCE(SUM(vh.household_size), 0) as people')
+            ->first();
+
+        $householdsServed = (int) ($served->households ?? 0);
+        $peopleServed     = (int) ($served->people ?? 0);
+
+        $net = $income['total'] - $expense['total'];
+
+        $costPerHousehold   = $householdsServed > 0 ? $expense['total'] / $householdsServed : null;
+        $costPerPerson      = $peopleServed > 0     ? $expense['total'] / $peopleServed     : null;
+        $incomePerHousehold = $householdsServed > 0 ? $income['total']  / $householdsServed : null;
+
+        return [
+            'event' => [
+                'id'       => $event->id,
+                'name'     => $event->name,
+                'date'     => $event->date?->format('Y-m-d'),
+                'status'   => $event->status,
+                'location' => $event->location ?? null,
+            ],
+            'income'              => $income,
+            'expense'             => $expense,
+            'rows'                => $rows,
+            'net'                 => $net,
+            'households_served'   => $householdsServed,
+            'people_served'       => $peopleServed,
+            'cost_per_household'  => $costPerHousehold,
+            'cost_per_person'     => $costPerPerson,
+            'income_per_household'=> $incomePerHousehold,
+            'insights'            => $this->buildPerEventInsights($event, $income, $expense, $net, $householdsServed, $peopleServed, $costPerHousehold, $costPerPerson),
+        ];
+    }
+
+    /**
+     * Income or expense breakdown for a single event, grouped by category.
+     * Mirrors `breakdownByCategory()` but scoped by event_id rather than
+     * a date range.
+     */
+    private function breakdownByCategoryForEvent(string $type, int $eventId): array
+    {
+        $rows = FinanceTransaction::query()
+            ->where('transaction_type', $type)
+            ->where('status', 'completed')
+            ->where('event_id', $eventId)
+            ->with('category:id,name')
+            ->get(['id', 'amount', 'category_id']);
+
+        $byCat = [];
+        foreach ($rows as $tx) {
+            $name = $tx->category?->name ?? '(Uncategorised)';
+            $byCat[$name] = ($byCat[$name] ?? 0) + (float) $tx->amount;
+        }
+        $total = array_sum($byCat);
+        arsort($byCat);
+
+        $categories = [];
+        $i = 0;
+        foreach ($byCat as $name => $amount) {
+            $categories[] = [
+                'name'   => $name,
+                'amount' => (float) $amount,
+                'color'  => self::colorForSlice($i),
+                'share'  => $total > 0 ? ($amount / $total) : 0.0,
+            ];
+            $i++;
+        }
+        return ['categories' => $categories, 'total' => (float) $total];
+    }
+
+    private function buildPerEventInsights(\App\Models\Event $event, array $income, array $expense, float $net, int $households, int $people, ?float $costPerHousehold, ?float $costPerPerson): array
+    {
+        $bullets = [];
+        $bullets[] = sprintf('Event %s — %s.', $event->name, $event->date?->format('M j, Y') ?? '(date unknown)');
+
+        if ($income['total'] === 0.0 && $expense['total'] === 0.0) {
+            $bullets[] = 'No completed finance transactions are linked to this event.';
+        } else {
+            $bullets[] = sprintf(
+                'Net result: %s (income %s, expense %s).',
+                $net >= 0 ? '+' . self::usd($net) : self::usd($net),
+                self::usd($income['total']),
+                self::usd($expense['total']),
+            );
+        }
+
+        if ($households > 0) {
+            $bullets[] = sprintf(
+                '%d %s and %d %s served (snapshot at visit time).',
+                $households, $households === 1 ? 'household' : 'households',
+                $people, $people === 1 ? 'person' : 'people',
+            );
+        } else {
+            $bullets[] = 'No exited visits recorded for this event yet — beneficiary metrics unavailable.';
+        }
+
+        if ($costPerHousehold !== null && $expense['total'] > 0) {
+            $bullets[] = sprintf(
+                'Cost per household served: %s · cost per person: %s.',
+                self::usd($costPerHousehold),
+                $costPerPerson !== null ? self::usd($costPerPerson) : '—',
+            );
+        }
+
+        if (! empty($expense['categories'])) {
+            $top = $expense['categories'][0];
+            $bullets[] = sprintf(
+                'Largest expense category: %s at %s (%d%% of expenses).',
+                $top['name'],
+                self::usd($top['amount']),
+                (int) round($top['share'] * 100),
+            );
+        }
+
+        return $bullets;
+    }
+
+    /**
+     * Plain-English insight bullets for Donor / Vendor analysis.
+     * Reusable across both report types; the labelling adjusts via $type.
+     */
+    private function buildStakeholderInsights(string $type, array $allDonors, float $total, ?float $priorTotal, array $newDonors, array $lapsed, ?float $retentionRate, bool $hasCompare): array
+    {
+        $entity        = $type === 'income' ? 'donor'  : 'vendor';
+        $entityPlural  = $type === 'income' ? 'donors' : 'vendors';
+        $action        = $type === 'income' ? 'gave'   : 'were paid';
+        $totalLabel    = $type === 'income' ? 'raised' : 'spent';
+
+        if (empty($allDonors)) {
+            return [sprintf('No %s activity recorded for this period.', $entity)];
+        }
+
+        $bullets = [];
+
+        $bullets[] = sprintf(
+            '%d %s %s a total of %s.',
+            count($allDonors),
+            count($allDonors) === 1 ? $entity : $entityPlural,
+            $action,
+            self::usd($total),
+        );
+
+        // Period-over-period
+        if ($hasCompare && $priorTotal !== null && $priorTotal > 0) {
+            $delta = ($total - $priorTotal) / $priorTotal;
+            $direction = $delta >= 0 ? 'up' : 'down';
+            $bullets[] = sprintf(
+                'Total %s is %s %s versus the prior period (%s).',
+                $totalLabel,
+                $direction,
+                number_format(abs($delta) * 100, 0) . '%',
+                self::usd($priorTotal),
+            );
+        }
+
+        // Top contributor
+        $top = $allDonors[0];
+        $bullets[] = sprintf(
+            'Top %s: %s at %s (%d%% of total).',
+            $entity,
+            $top['name'],
+            self::usd($top['total']),
+            (int) round($top['share'] * 100),
+        );
+
+        // New donors / vendors (only meaningful on compare)
+        if ($hasCompare && ! empty($newDonors)) {
+            $newTotal = (float) array_sum(array_column($newDonors, 'total'));
+            $bullets[] = sprintf(
+                '%d new %s contributed %s this period.',
+                count($newDonors),
+                count($newDonors) === 1 ? $entity : $entityPlural,
+                self::usd($newTotal),
+            );
+        }
+
+        // Lapsed
+        if ($hasCompare && ! empty($lapsed)) {
+            $lapsedTotal = (float) array_sum(array_column($lapsed, 'prior_total'));
+            $bullets[] = sprintf(
+                '%d %s from the prior period haven\'t %s this period (totalling %s previously).',
+                count($lapsed),
+                count($lapsed) === 1 ? $entity : $entityPlural,
+                $type === 'income' ? 'given' : 'been paid',
+                self::usd($lapsedTotal),
+            );
+        }
+
+        // Retention
+        if ($hasCompare && $retentionRate !== null) {
+            $bullets[] = sprintf(
+                'Retention rate: %d%% of last period\'s %s %s again.',
+                (int) round($retentionRate * 100),
+                $entityPlural,
+                $type === 'income' ? 'gave' : 'were paid',
+            );
+        }
+
+        return $bullets;
+    }
+
     /**
      * Auto-generate 3-5 plain-English insight bullets at the bottom of
      * the report. The "board-pitch" differentiator — every report ends

@@ -103,28 +103,36 @@ class FinanceReportController extends Controller
                 'title'       => 'Donor / Source Analysis',
                 'description' => 'Top sources by total contribution, frequency, and average gift size.',
                 'category'    => 'Analysis',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.donor-analysis',
+                'icon'        => 'document',
             ],
             [
                 'id'          => 'vendor_analysis',
                 'title'       => 'Vendor / Payee Analysis',
                 'description' => 'Top vendors by total spent. Useful for procurement leverage and audit prep.',
                 'category'    => 'Analysis',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.vendor-analysis',
+                'icon'        => 'document',
             ],
             [
                 'id'          => 'per_event_pl',
                 'title'       => 'Per-Event P&L',
                 'description' => 'Income vs expense for a single event, with cost-per-beneficiary computed.',
                 'category'    => 'Analysis',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.per-event-pnl',
+                'icon'        => 'document',
             ],
             [
                 'id'          => 'category_trend',
                 'title'       => 'Category Trend Report',
                 'description' => 'Monthly time-series for income and expense categories. Spot growth + variance.',
                 'category'    => 'Analysis',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.category-trend',
+                'icon'        => 'document',
             ],
             // ── Phase 7.4 (needs schema) ─────────────────────────────
             [
@@ -547,6 +555,497 @@ class FinanceReportController extends Controller
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.3.a — Donor / Source Analysis
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function donorAnalysis(Request $request): View
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->stakeholderFilters($request);
+        $data    = $this->service->donorAnalysis(
+            $period['from'], $period['to'],
+            $period['compare_from'], $period['compare_to'],
+            $filters,
+        );
+
+        $categories = FinanceCategory::active()->where('type', 'income')->orderBy('name')->get(['id', 'name']);
+
+        return view('finance.reports.analysis', [
+            'period'      => $period,
+            'data'        => $data,
+            'filters'     => $filters,
+            'categories'  => $categories,
+            'reportTitle' => 'Donor / Source Analysis',
+            'entityLabel' => 'donor',
+            'entityLabelPlural' => 'donors',
+            'totalLabel'  => 'Total Raised',
+            'sourceLabel' => 'Source / Donor',
+            'colorClass'  => 'income',
+            'exportRoutes' => [
+                'print' => 'finance.reports.donor-analysis.print',
+                'pdf'   => 'finance.reports.donor-analysis.pdf',
+                'csv'   => 'finance.reports.donor-analysis.csv',
+            ],
+        ]);
+    }
+
+    public function donorAnalysisPrint(Request $request): View
+    {
+        return $this->renderAnalysisPrint($request, 'income', 'Donor / Source Analysis', 'donor', 'donors', 'Total Raised', 'Source / Donor', 'income');
+    }
+
+    public function donorAnalysisPdf(Request $request): Response
+    {
+        return $this->renderAnalysisPdf($request, 'income', 'Donor / Source Analysis', 'donor', 'donors', 'Total Raised', 'Source / Donor', 'income', 'donor-analysis');
+    }
+
+    public function donorAnalysisCsv(Request $request): StreamedResponse
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->stakeholderFilters($request);
+        $data    = $this->service->donorAnalysis($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+
+        $filename = 'donor-analysis-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
+        return $this->stakeholderCsv($filename, 'Donor / Source Analysis', 'Donor', 'income', $period, $data);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.3.b — Vendor / Payee Analysis
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function vendorAnalysis(Request $request): View
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->stakeholderFilters($request);
+        $data    = $this->service->vendorAnalysis(
+            $period['from'], $period['to'],
+            $period['compare_from'], $period['compare_to'],
+            $filters,
+        );
+
+        $categories = FinanceCategory::active()->where('type', 'expense')->orderBy('name')->get(['id', 'name']);
+
+        return view('finance.reports.analysis', [
+            'period'      => $period,
+            'data'        => $data,
+            'filters'     => $filters,
+            'categories'  => $categories,
+            'reportTitle' => 'Vendor / Payee Analysis',
+            'entityLabel' => 'vendor',
+            'entityLabelPlural' => 'vendors',
+            'totalLabel'  => 'Total Spent',
+            'sourceLabel' => 'Vendor / Payee',
+            'colorClass'  => 'expense',
+            'exportRoutes' => [
+                'print' => 'finance.reports.vendor-analysis.print',
+                'pdf'   => 'finance.reports.vendor-analysis.pdf',
+                'csv'   => 'finance.reports.vendor-analysis.csv',
+            ],
+        ]);
+    }
+
+    public function vendorAnalysisPrint(Request $request): View
+    {
+        return $this->renderAnalysisPrint($request, 'expense', 'Vendor / Payee Analysis', 'vendor', 'vendors', 'Total Spent', 'Vendor / Payee', 'expense');
+    }
+
+    public function vendorAnalysisPdf(Request $request): Response
+    {
+        return $this->renderAnalysisPdf($request, 'expense', 'Vendor / Payee Analysis', 'vendor', 'vendors', 'Total Spent', 'Vendor / Payee', 'expense', 'vendor-analysis');
+    }
+
+    public function vendorAnalysisCsv(Request $request): StreamedResponse
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->stakeholderFilters($request);
+        $data    = $this->service->vendorAnalysis($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+
+        $filename = 'vendor-analysis-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
+        return $this->stakeholderCsv($filename, 'Vendor / Payee Analysis', 'Vendor', 'expense', $period, $data);
+    }
+
+    /**
+     * Shared print-export pipeline for Donor + Vendor analysis. Both
+     * reports render through the same Blade — only the labelling
+     * differs. Centralising avoids drift between the two.
+     */
+    private function renderAnalysisPrint(Request $request, string $type, string $title, string $entity, string $entityPlural, string $totalLabel, string $sourceLabel, string $colorClass): View
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->stakeholderFilters($request);
+        $data    = $type === 'income'
+            ? $this->service->donorAnalysis($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters)
+            : $this->service->vendorAnalysis($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+
+        return view('finance.reports.exports.analysis-print', [
+            'period'            => $period,
+            'data'              => $data,
+            'branding'          => $this->exportBranding(),
+            'autoPrint'         => true,
+            'reportTitle'       => $title,
+            'entityLabel'       => $entity,
+            'entityLabelPlural' => $entityPlural,
+            'totalLabel'        => $totalLabel,
+            'sourceLabel'       => $sourceLabel,
+            'colorClass'        => $colorClass,
+        ]);
+    }
+
+    private function renderAnalysisPdf(Request $request, string $type, string $title, string $entity, string $entityPlural, string $totalLabel, string $sourceLabel, string $colorClass, string $filenameStem): Response
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->stakeholderFilters($request);
+        $data    = $type === 'income'
+            ? $this->service->donorAnalysis($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters)
+            : $this->service->vendorAnalysis($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+
+        $filename = $filenameStem . '-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.pdf';
+        $payload  = [
+            'period'            => $period,
+            'data'              => $data,
+            'branding'          => $this->exportBranding(),
+            'reportTitle'       => $title,
+            'entityLabel'       => $entity,
+            'entityLabelPlural' => $entityPlural,
+            'totalLabel'        => $totalLabel,
+            'sourceLabel'       => $sourceLabel,
+            'colorClass'        => $colorClass,
+        ];
+
+        try {
+            return Pdf::loadView('finance.reports.exports.analysis-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-' . $filenameStem . '-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.analysis-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        }
+    }
+
+    /**
+     * Shared CSV writer for Donor + Vendor analysis. Two sections:
+     * top-line summary (totals + retention), then every donor / vendor
+     * with totals, count, average, first/last activity, prior-period
+     * comparison. UTF-8 BOM so Excel opens it cleanly.
+     */
+    private function stakeholderCsv(string $filename, string $title, string $entityLabel, string $type, array $period, array $data): StreamedResponse
+    {
+        return response()->streamDownload(function () use ($title, $entityLabel, $type, $period, $data) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM
+
+            fputcsv($out, [$title]);
+            fputcsv($out, ['Period', $period['label']]);
+            if (! empty($period['compare'])) {
+                fputcsv($out, ['Compare to', $period['compare']['label']]);
+            }
+            fputcsv($out, ['Total ' . ($type === 'income' ? 'Raised' : 'Spent'), number_format($data['total'], 2, '.', '')]);
+            fputcsv($out, ['Unique ' . strtolower($entityLabel) . 's', $data['donor_total_count']]);
+            fputcsv($out, ['Total ' . ($type === 'income' ? 'gifts' : 'payments'), $data['gift_count']]);
+            fputcsv($out, ['Average ' . ($type === 'income' ? 'gift' : 'payment'), number_format($data['avg_gift'], 2, '.', '')]);
+            if ($data['retention_rate'] !== null) {
+                fputcsv($out, ['Retention rate', number_format($data['retention_rate'] * 100, 1) . '%']);
+            }
+            fputcsv($out, []);
+
+            // Every donor / vendor — CSV doesn't get the top-10 cap.
+            $hasCompare = ! empty($period['compare']);
+            $hdr = $hasCompare
+                ? [$entityLabel, 'Total', 'Count', 'Average', 'First', 'Last', 'Prior Period', 'Δ %']
+                : [$entityLabel, 'Total', 'Count', 'Average', 'First', 'Last'];
+            fputcsv($out, [$type === 'income' ? 'CONTRIBUTORS' : 'PAYEES']);
+            fputcsv($out, $hdr);
+            foreach ($data['all_donors'] as $row) {
+                $line = [
+                    $row['name'],
+                    number_format($row['total'], 2, '.', ''),
+                    $row['count'],
+                    number_format($row['avg_gift'], 2, '.', ''),
+                    $row['first_gift'] ?? '',
+                    $row['last_gift'] ?? '',
+                ];
+                if ($hasCompare) {
+                    $line[] = number_format($row['prior_total'] ?? 0, 2, '.', '');
+                    $line[] = $row['delta'] !== null ? number_format($row['delta'] * 100, 1) . '%' : ($row['is_new'] ? 'NEW' : '');
+                }
+                fputcsv($out, $line);
+            }
+
+            // Lapsed (compare only) — separate section so it's clear these
+            // are people who gave previously but not in the current period.
+            if ($hasCompare && ! empty($data['lapsed'])) {
+                fputcsv($out, []);
+                fputcsv($out, ['LAPSED ' . strtoupper($entityLabel) . 'S (gave in prior period, not current)']);
+                fputcsv($out, [$entityLabel, 'Prior Period Total']);
+                foreach ($data['lapsed'] as $l) {
+                    fputcsv($out, [$l['name'], number_format($l['prior_total'], 2, '.', '')]);
+                }
+            }
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.3.d — Category Trend Report
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function categoryTrend(Request $request): View
+    {
+        // Default period: last 12 months (trend reports need range)
+        if (! $request->has('period') && ! $request->has('from')) {
+            $request->merge(['period' => 'last_12_months']);
+        }
+        $period    = $this->service->resolvePeriod($request);
+        $direction = $request->get('direction', 'income');
+        $data      = $this->service->categoryTrend($period['from'], $period['to'], $direction);
+
+        return view('finance.reports.category-trend', [
+            'period' => $period,
+            'data'   => $data,
+        ]);
+    }
+
+    public function categoryTrendPrint(Request $request): View
+    {
+        if (! $request->has('period') && ! $request->has('from')) {
+            $request->merge(['period' => 'last_12_months']);
+        }
+        $period    = $this->service->resolvePeriod($request);
+        $direction = $request->get('direction', 'income');
+        $data      = $this->service->categoryTrend($period['from'], $period['to'], $direction);
+
+        return view('finance.reports.exports.category-trend-print', [
+            'period'    => $period,
+            'data'      => $data,
+            'branding'  => $this->exportBranding(),
+            'autoPrint' => true,
+        ]);
+    }
+
+    public function categoryTrendPdf(Request $request): Response
+    {
+        if (! $request->has('period') && ! $request->has('from')) {
+            $request->merge(['period' => 'last_12_months']);
+        }
+        $period    = $this->service->resolvePeriod($request);
+        $direction = $request->get('direction', 'income');
+        $data      = $this->service->categoryTrend($period['from'], $period['to'], $direction);
+
+        $filename = 'category-trend-' . $direction . '-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.pdf';
+        $payload  = [
+            'period'   => $period,
+            'data'     => $data,
+            'branding' => $this->exportBranding(),
+        ];
+
+        try {
+            return Pdf::loadView('finance.reports.exports.category-trend-pdf', $payload)
+                ->setPaper('a4', 'landscape')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-category-trend-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.category-trend-pdf', $payload)
+                ->setPaper('a4', 'landscape')
+                ->download($filename);
+        }
+    }
+
+    public function categoryTrendCsv(Request $request): StreamedResponse
+    {
+        if (! $request->has('period') && ! $request->has('from')) {
+            $request->merge(['period' => 'last_12_months']);
+        }
+        $period    = $this->service->resolvePeriod($request);
+        $direction = $request->get('direction', 'income');
+        $data      = $this->service->categoryTrend($period['from'], $period['to'], $direction);
+
+        $filename = 'category-trend-' . $direction . '-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
+
+        return response()->streamDownload(function () use ($data, $period, $direction) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['Category Trend Report']);
+            fputcsv($out, ['Period',    $period['label']]);
+            fputcsv($out, ['Direction', ucfirst($direction)]);
+            fputcsv($out, ['Total',     number_format($data['totals']['period'], 2, '.', '')]);
+            fputcsv($out, []);
+
+            // Wide format: months as columns, categories as rows
+            $header = ['Category', 'Type'];
+            foreach ($data['month_labels'] as $label) $header[] = $label;
+            $header[] = 'Total';
+            $header[] = 'Δ first→last';
+            fputcsv($out, $header);
+
+            foreach ($data['series'] as $s) {
+                $row = [$s['name'], ucfirst((string) $s['type'])];
+                foreach ($s['monthly'] as $v) {
+                    $row[] = number_format($v, 2, '.', '');
+                }
+                $row[] = number_format($s['total'], 2, '.', '');
+                $row[] = $s['delta'] !== null ? number_format($s['delta'] * 100, 1) . '%' : '';
+                fputcsv($out, $row);
+            }
+
+            // Footer total row
+            $totalRow = ['TOTAL', ''];
+            foreach ($data['totals']['months'] as $v) {
+                $totalRow[] = number_format($v, 2, '.', '');
+            }
+            $totalRow[] = number_format($data['totals']['period'], 2, '.', '');
+            $totalRow[] = '';
+            fputcsv($out, $totalRow);
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.3.c — Per-Event P&L
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function perEventPnl(Request $request): View
+    {
+        $eventId = $request->integer('event_id') ?: null;
+
+        // Picker: every event ordered newest-first. We could limit to those
+        // with finance activity, but auditors sometimes want to see "this
+        // event has zero entries" as a finding.
+        $events = Event::orderByDesc('date')->get(['id', 'name', 'date', 'status']);
+
+        $data = $eventId ? $this->service->perEventPnl($eventId) : null;
+
+        return view('finance.reports.per-event-pnl', [
+            'events'  => $events,
+            'eventId' => $eventId,
+            'data'    => $data,
+        ]);
+    }
+
+    public function perEventPnlPrint(Request $request): View
+    {
+        $eventId = $request->integer('event_id') ?: abort(400, 'event_id is required');
+        $data    = $this->service->perEventPnl($eventId);
+
+        return view('finance.reports.exports.per-event-pnl-print', [
+            'data'      => $data,
+            'branding'  => $this->exportBranding(),
+            'autoPrint' => true,
+        ]);
+    }
+
+    public function perEventPnlPdf(Request $request): Response
+    {
+        $eventId = $request->integer('event_id') ?: abort(400, 'event_id is required');
+        $data    = $this->service->perEventPnl($eventId);
+
+        $filename = 'event-pnl-' . $eventId . '-' . ($data['event']['date'] ?? 'undated') . '.pdf';
+        $payload  = [
+            'data'     => $data,
+            'branding' => $this->exportBranding(),
+        ];
+
+        try {
+            return Pdf::loadView('finance.reports.exports.per-event-pnl-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-per-event-pnl-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.per-event-pnl-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        }
+    }
+
+    public function perEventPnlCsv(Request $request): StreamedResponse
+    {
+        $eventId = $request->integer('event_id') ?: abort(400, 'event_id is required');
+        $data    = $this->service->perEventPnl($eventId);
+
+        $filename = 'event-pnl-' . $eventId . '-' . ($data['event']['date'] ?? 'undated') . '.csv';
+
+        return response()->streamDownload(function () use ($data) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['Per-Event P&L']);
+            fputcsv($out, ['Event', $data['event']['name']]);
+            fputcsv($out, ['Date',  $data['event']['date'] ?? '']);
+            fputcsv($out, ['Status', ucfirst((string) $data['event']['status'])]);
+            fputcsv($out, []);
+
+            fputcsv($out, ['SUMMARY']);
+            fputcsv($out, ['Total Income',  number_format($data['income']['total'],  2, '.', '')]);
+            fputcsv($out, ['Total Expense', number_format($data['expense']['total'], 2, '.', '')]);
+            fputcsv($out, ['Net',           number_format($data['net'],              2, '.', '')]);
+            fputcsv($out, ['Households served', $data['households_served']]);
+            fputcsv($out, ['People served',     $data['people_served']]);
+            if ($data['cost_per_household'] !== null) {
+                fputcsv($out, ['Cost per household', number_format($data['cost_per_household'], 2, '.', '')]);
+            }
+            if ($data['cost_per_person'] !== null) {
+                fputcsv($out, ['Cost per person', number_format($data['cost_per_person'], 2, '.', '')]);
+            }
+            fputcsv($out, []);
+
+            fputcsv($out, ['INCOME BY CATEGORY']);
+            fputcsv($out, ['Category', 'Amount', 'Share']);
+            foreach ($data['income']['categories'] as $cat) {
+                fputcsv($out, [$cat['name'], number_format($cat['amount'], 2, '.', ''), number_format($cat['share'] * 100, 1) . '%']);
+            }
+            fputcsv($out, []);
+
+            fputcsv($out, ['EXPENSE BY CATEGORY']);
+            fputcsv($out, ['Category', 'Amount', 'Share']);
+            foreach ($data['expense']['categories'] as $cat) {
+                fputcsv($out, [$cat['name'], number_format($cat['amount'], 2, '.', ''), number_format($cat['share'] * 100, 1) . '%']);
+            }
+            fputcsv($out, []);
+
+            fputcsv($out, ['ALL TRANSACTIONS']);
+            fputcsv($out, ['Date', 'Type', 'Title', 'Source / Payee', 'Category', 'Amount']);
+            foreach ($data['rows'] as $r) {
+                fputcsv($out, [
+                    $r['date'],
+                    ucfirst($r['type']),
+                    $r['title'],
+                    $r['source'],
+                    $r['category'],
+                    ($r['type'] === 'expense' ? '-' : '') . number_format($r['amount'], 2, '.', ''),
+                ]);
+            }
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    /**
+     * Filter set for Donor + Vendor analysis. Narrower than the detail
+     * report filters — there's no event filter (donor analysis is
+     * donor-centric, not event-centric) and status is always completed.
+     */
+    private function stakeholderFilters(Request $request): array
+    {
+        $f = [];
+        if ($v = $request->get('category_id')) $f['category_id'] = (int) $v;
+        if ($v = $request->get('source'))      $f['source']      = trim((string) $v);
+        return $f;
     }
 
     private function ledgerFilters(Request $request): array

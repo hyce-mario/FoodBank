@@ -307,6 +307,38 @@ Route::middleware('auth')->group(function () {
             Route::get('/csv',   [FinanceReportController::class, 'generalLedgerCsv'])  ->name('.csv');
         });
 
+        // Phase 7.3.a — Donor / Source Analysis
+        Route::prefix('reports/donor-analysis')->name('reports.donor-analysis')->group(function () {
+            Route::get('/',      [FinanceReportController::class, 'donorAnalysis']);
+            Route::get('/print', [FinanceReportController::class, 'donorAnalysisPrint'])->name('.print');
+            Route::get('/pdf',   [FinanceReportController::class, 'donorAnalysisPdf'])  ->name('.pdf');
+            Route::get('/csv',   [FinanceReportController::class, 'donorAnalysisCsv'])  ->name('.csv');
+        });
+
+        // Phase 7.3.b — Vendor / Payee Analysis
+        Route::prefix('reports/vendor-analysis')->name('reports.vendor-analysis')->group(function () {
+            Route::get('/',      [FinanceReportController::class, 'vendorAnalysis']);
+            Route::get('/print', [FinanceReportController::class, 'vendorAnalysisPrint'])->name('.print');
+            Route::get('/pdf',   [FinanceReportController::class, 'vendorAnalysisPdf'])  ->name('.pdf');
+            Route::get('/csv',   [FinanceReportController::class, 'vendorAnalysisCsv'])  ->name('.csv');
+        });
+
+        // Phase 7.3.c — Per-Event P&L
+        Route::prefix('reports/per-event-pnl')->name('reports.per-event-pnl')->group(function () {
+            Route::get('/',      [FinanceReportController::class, 'perEventPnl']);
+            Route::get('/print', [FinanceReportController::class, 'perEventPnlPrint'])->name('.print');
+            Route::get('/pdf',   [FinanceReportController::class, 'perEventPnlPdf'])  ->name('.pdf');
+            Route::get('/csv',   [FinanceReportController::class, 'perEventPnlCsv'])  ->name('.csv');
+        });
+
+        // Phase 7.3.d — Category Trend Report
+        Route::prefix('reports/category-trend')->name('reports.category-trend')->group(function () {
+            Route::get('/',      [FinanceReportController::class, 'categoryTrend']);
+            Route::get('/print', [FinanceReportController::class, 'categoryTrendPrint'])->name('.print');
+            Route::get('/pdf',   [FinanceReportController::class, 'categoryTrendPdf'])  ->name('.pdf');
+            Route::get('/csv',   [FinanceReportController::class, 'categoryTrendCsv'])  ->name('.csv');
+        });
+
         Route::resource('categories', FinanceCategoryController::class)
              ->except(['show', 'create', 'edit']);
 
