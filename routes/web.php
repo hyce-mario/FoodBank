@@ -321,20 +321,24 @@ Route::middleware('auth')->group(function () {
         Route::delete('transactions/{transaction}/attachment', [FinanceTransactionController::class, 'removeAttachment'])  ->name('transactions.attachment.remove');
     });
 
-    // Reports Module
-    Route::prefix('reports')->name('reports.')->group(function () {
-        Route::get('/',            [ReportsController::class, 'overview'])   ->name('overview');
-        Route::get('/events',      [ReportsController::class, 'events'])     ->name('events');
-        Route::get('/trends',      [ReportsController::class, 'trends'])     ->name('trends');
-        Route::get('/demographics',[ReportsController::class, 'demographics'])->name('demographics');
-        Route::get('/lanes',       [ReportsController::class, 'lanes'])      ->name('lanes');
-        Route::get('/queue-flow',  [ReportsController::class, 'queueFlow'])  ->name('queue-flow');
-        Route::get('/volunteers',  [ReportsController::class, 'volunteers']) ->name('volunteers');
-        Route::get('/reviews',     [ReportsController::class, 'reviews'])    ->name('reviews');
+    // Reports Module — gated behind reports.view (matches the seeded REPORTS role).
+    // The /download endpoint additionally requires reports.export so a viewer
+    // can browse but not bulk-export PII (household contact info, demographics).
+    Route::prefix('reports')->name('reports.')->middleware('permission:reports.view')->group(function () {
+        Route::get('/',             [ReportsController::class, 'overview'])    ->name('overview');
+        Route::get('/events',       [ReportsController::class, 'events'])      ->name('events');
+        Route::get('/trends',       [ReportsController::class, 'trends'])      ->name('trends');
+        Route::get('/demographics', [ReportsController::class, 'demographics'])->name('demographics');
+        Route::get('/lanes',        [ReportsController::class, 'lanes'])       ->name('lanes');
+        Route::get('/queue-flow',   [ReportsController::class, 'queueFlow'])   ->name('queue-flow');
+        Route::get('/volunteers',   [ReportsController::class, 'volunteers']) ->name('volunteers');
+        Route::get('/reviews',      [ReportsController::class, 'reviews'])    ->name('reviews');
         Route::get('/inventory',    [ReportsController::class, 'inventory'])   ->name('inventory');
         Route::get('/first-timers', [ReportsController::class, 'firstTimers'])->name('first-timers');
         Route::get('/export',       [ReportsController::class, 'export'])     ->name('export');
-        Route::get('/download',     [ReportsController::class, 'downloadExport'])->name('download');
+        Route::get('/download',     [ReportsController::class, 'downloadExport'])
+             ->middleware('permission:reports.export')
+             ->name('download');
     });
 
     // Settings Module

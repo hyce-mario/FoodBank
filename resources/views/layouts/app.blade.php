@@ -241,6 +241,7 @@
                 </li>
                 
                 
+                @can('reports.view')
                 <li>
                     <a href="{{ route('reports.overview') }}"
                        class="nav-item {{ request()->routeIs('reports.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -253,6 +254,7 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
                 
             </ul>
         </div>
