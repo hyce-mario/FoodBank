@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Event;
+use App\Models\FinanceCategory;
 use App\Services\FinanceReportService;
 use App\Services\SettingService;
 use Illuminate\Http\Request;
@@ -73,7 +75,9 @@ class FinanceReportController extends Controller
                 'title'       => 'Income Detail Report',
                 'description' => 'Every income transaction in the period, grouped by category, with subtotals.',
                 'category'    => 'Detail',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.income-detail',
+                'icon'        => 'document',
             ],
             [
                 'id'          => 'expense_detail',
@@ -266,6 +270,172 @@ class FinanceReportController extends Controller
 
             // Net change
             fputcsv($out, ['CHANGE IN NET ASSETS', number_format($data['net_change'], 2, '.', '')]);
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.2.a — Income Detail Report
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function incomeDetail(Request $request): View
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->detailFilters($request);
+
+        $data = $this->service->incomeDetail(
+            $period['from'], $period['to'],
+            $period['compare_from'], $period['compare_to'],
+            $filters,
+        );
+
+        // Filter dropdown payloads — Income side shows only income
+        // categories so the picker doesn't list expense categories.
+        $categories = FinanceCategory::active()->where('type', 'income')->orderBy('name')->get(['id', 'name']);
+        $events     = Event::orderByDesc('date')->limit(50)->get(['id', 'name', 'date']);
+
+        return view('finance.reports.income-detail', compact(
+            'period', 'data', 'filters', 'categories', 'events',
+        ));
+    }
+
+    public function incomeDetailPrint(Request $request): View
+    {
+        $period   = $this->service->resolvePeriod($request);
+        $filters  = $this->detailFilters($request);
+        $data     = $this->service->incomeDetail($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+        $branding  = $this->exportBranding();
+        $autoPrint = true;
+
+        return view('finance.reports.exports.detail-print', [
+            'period'    => $period,
+            'data'      => $data,
+            'branding'  => $branding,
+            'autoPrint' => $autoPrint,
+            'reportTitle' => 'Income Detail Report',
+            'rowLabel'    => 'Income',
+            'sourceLabel' => 'Source',
+            'totalLabel'  => 'Total Income',
+            'colorClass'  => 'income',
+        ]);
+    }
+
+    public function incomeDetailPdf(Request $request): Response
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->detailFilters($request);
+        $data    = $this->service->incomeDetail($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+        $branding = $this->exportBranding();
+
+        $filename = 'income-detail-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.pdf';
+        $payload  = [
+            'period'      => $period,
+            'data'        => $data,
+            'branding'    => $branding,
+            'reportTitle' => 'Income Detail Report',
+            'rowLabel'    => 'Income',
+            'sourceLabel' => 'Source',
+            'totalLabel'  => 'Total Income',
+            'colorClass'  => 'income',
+        ];
+
+        try {
+            return Pdf::loadView('finance.reports.exports.detail-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-income-detail-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.detail-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        }
+    }
+
+    public function incomeDetailCsv(Request $request): StreamedResponse
+    {
+        $period  = $this->service->resolvePeriod($request);
+        $filters = $this->detailFilters($request);
+        $data    = $this->service->incomeDetail($period['from'], $period['to'], $period['compare_from'], $period['compare_to'], $filters);
+
+        $filename = 'income-detail-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
+        return $this->detailCsv($filename, 'Income Detail Report', 'Source / Donor', $period, $data);
+    }
+
+    /**
+     * Read the detail-report filter set from the request. Validates +
+     * narrows down to the keys FinanceReportService::detailReport
+     * accepts — anything else is dropped.
+     */
+    private function detailFilters(Request $request): array
+    {
+        $f = [];
+        if ($v = $request->get('category_id')) $f['category_id'] = (int) $v;
+        if ($v = $request->get('event_id'))    $f['event_id']    = (int) $v;
+        if ($v = $request->get('source'))      $f['source']      = trim((string) $v);
+        if ($v = $request->get('status'))      $f['status']      = $v;
+        return $f;
+    }
+
+    /**
+     * Shared CSV writer for Income Detail + Expense Detail (and any
+     * future detail report). Two sections: row-level transactions, then
+     * the category rollup. UTF-8 BOM, accountant-friendly formatting.
+     */
+    private function detailCsv(string $filename, string $title, string $sourceLabel, array $period, array $data): StreamedResponse
+    {
+        return response()->streamDownload(function () use ($title, $sourceLabel, $period, $data) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF"); // UTF-8 BOM
+
+            fputcsv($out, [$title]);
+            fputcsv($out, ['Period', $period['label']]);
+            if (! empty($period['compare'])) {
+                fputcsv($out, ['Compare to', $period['compare']['label']]);
+            }
+            fputcsv($out, ['Total', number_format($data['total'], 2, '.', '')]);
+            fputcsv($out, ['Transaction count', $data['count']]);
+            fputcsv($out, []);
+
+            // Row-level transactions
+            fputcsv($out, ['TRANSACTIONS']);
+            fputcsv($out, ['Date', 'Title', $sourceLabel, 'Category', 'Amount', 'Status', 'Event']);
+            foreach ($data['rows'] as $r) {
+                fputcsv($out, [
+                    $r['date'], $r['title'], $r['source'], $r['category'],
+                    number_format($r['amount'], 2, '.', ''),
+                    ucfirst((string) $r['status']),
+                    $r['event'],
+                ]);
+            }
+            fputcsv($out, []);
+
+            // Category rollup
+            fputcsv($out, ['BY CATEGORY']);
+            $hasCompare = ! empty($period['compare']);
+            $hdr = $hasCompare
+                ? ['Category', 'Amount', 'Count', 'Prior Period', 'Δ %']
+                : ['Category', 'Amount', 'Count'];
+            fputcsv($out, $hdr);
+            foreach ($data['by_category'] as $row) {
+                $line = [
+                    $row['name'],
+                    number_format($row['amount'], 2, '.', ''),
+                    $row['count'],
+                ];
+                if ($hasCompare) {
+                    $line[] = number_format($row['prior_amount'] ?? 0, 2, '.', '');
+                    $line[] = $row['delta'] !== null ? number_format($row['delta'] * 100, 1) . '%' : '';
+                }
+                fputcsv($out, $line);
+            }
+            fputcsv($out, $hasCompare
+                ? ['TOTAL', number_format($data['total'], 2, '.', ''), $data['count'],
+                   number_format($data['prior_total'] ?? 0, 2, '.', ''), '']
+                : ['TOTAL', number_format($data['total'], 2, '.', ''), $data['count']]);
 
             fclose($out);
         }, $filename, [

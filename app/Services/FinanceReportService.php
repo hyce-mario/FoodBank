@@ -404,6 +404,264 @@ class FinanceReportService
         return $current;
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+     // Phase 7.2.a — Income Detail Report
+     // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Income Detail Report — every income transaction in the period,
+     * grouped by category, with subtotals + grand total. Mirrors the
+     * Statement of Activities filter contract but exposes per-row
+     * detail (vs. category-level rollup) and adds a category /
+     * source / event filter trio.
+     *
+     * Returns:
+     *   [
+     *     'period'         => array,
+     *     'compare'        => ?array,
+     *     'rows'           => array of {date, title, source, category, amount, status, event},
+     *     'by_category'    => array of {name, amount, color, share, count, prior_amount?, delta?},
+     *     'total'          => float,
+     *     'prior_total'    => ?float,
+     *     'count'          => int,
+     *     'top_source'     => ?array {name, amount},
+     *     'largest_single' => ?array {title, amount, source, date},
+     *     'insights'       => array of strings,
+     *     'filters'        => echo-back of applied filters for the export header,
+     *   ]
+     */
+    public function incomeDetail(Carbon $from, Carbon $to, ?Carbon $compareFrom = null, ?Carbon $compareTo = null, array $filters = []): array
+    {
+        return $this->detailReport('income', $from, $to, $compareFrom, $compareTo, $filters);
+    }
+
+    /**
+     * Expense Detail Report — same shape as Income Detail but for
+     * expense transactions. The filter contract is identical (category
+     * / payee search / event); the labelling in the view differs
+     * (Source → Payee, etc.).
+     */
+    public function expenseDetail(Carbon $from, Carbon $to, ?Carbon $compareFrom = null, ?Carbon $compareTo = null, array $filters = []): array
+    {
+        return $this->detailReport('expense', $from, $to, $compareFrom, $compareTo, $filters);
+    }
+
+    /**
+     * Shared engine for Income Detail + Expense Detail. The two reports
+     * have identical data shape and filter axes — only the
+     * `transaction_type` differs. Pulling the implementation here keeps
+     * one source of truth for the row-level + category-rollup logic.
+     */
+    private function detailReport(string $type, Carbon $from, Carbon $to, ?Carbon $compareFrom, ?Carbon $compareTo, array $filters): array
+    {
+        $query = $this->buildDetailQuery($type, $from, $to, $filters);
+        $rows  = $query->with(['category:id,name', 'event:id,name'])
+            ->orderBy('transaction_date', 'desc')
+            ->orderBy('id', 'desc')
+            ->get(['id', 'transaction_date', 'title', 'source_or_payee', 'category_id', 'amount', 'status', 'event_id']);
+
+        // Per-row payload — flat array, no Eloquent collection so the
+        // exports can re-consume without re-querying.
+        $rowsPayload = $rows->map(fn ($tx) => [
+            'id'       => $tx->id,
+            'date'     => $tx->transaction_date?->format('Y-m-d'),
+            'title'    => $tx->title,
+            'source'   => $tx->source_or_payee ?? '',
+            'category' => $tx->category?->name ?? '(Uncategorised)',
+            'amount'   => (float) $tx->amount,
+            'status'   => $tx->status,
+            'event'    => $tx->event?->name ?? '',
+        ])->all();
+
+        // Category rollup — sum amounts per category, sorted largest
+        // first. Sequential palette colours same as SoA donuts.
+        $byCatRaw = [];
+        $countByCat = [];
+        foreach ($rowsPayload as $r) {
+            $name = $r['category'];
+            $byCatRaw[$name]   = ($byCatRaw[$name] ?? 0) + $r['amount'];
+            $countByCat[$name] = ($countByCat[$name] ?? 0) + 1;
+        }
+        arsort($byCatRaw);
+
+        $total = (float) array_sum($byCatRaw);
+        $byCategory = [];
+        $i = 0;
+        foreach ($byCatRaw as $name => $amount) {
+            $byCategory[] = [
+                'name'   => $name,
+                'amount' => (float) $amount,
+                'color'  => self::colorForSlice($i),
+                'share'  => $total > 0 ? ($amount / $total) : 0.0,
+                'count'  => $countByCat[$name],
+            ];
+            $i++;
+        }
+
+        // Prior-period comparison
+        $priorTotal     = null;
+        $priorByCatRaw  = [];
+        if ($compareFrom) {
+            $priorRows = $this->buildDetailQuery($type, $compareFrom, $compareTo, $filters)
+                ->with('category:id,name')
+                ->get(['amount', 'category_id']);
+            foreach ($priorRows as $tx) {
+                $name = $tx->category?->name ?? '(Uncategorised)';
+                $priorByCatRaw[$name] = ($priorByCatRaw[$name] ?? 0) + (float) $tx->amount;
+            }
+            $priorTotal = (float) array_sum($priorByCatRaw);
+
+            // Inline the prior amounts onto the current category rows
+            foreach ($byCategory as &$row) {
+                $row['prior_amount'] = (float) ($priorByCatRaw[$row['name']] ?? 0);
+                if ($row['prior_amount'] > 0) {
+                    $row['delta'] = ($row['amount'] - $row['prior_amount']) / $row['prior_amount'];
+                } else {
+                    $row['delta'] = null;
+                }
+            }
+            unset($row);
+        }
+
+        // Top source (donor for income, vendor for expense). Excludes
+        // empty source strings so a row with no donor doesn't dominate.
+        $bySource = [];
+        foreach ($rowsPayload as $r) {
+            if ($r['source'] === '') continue;
+            $bySource[$r['source']] = ($bySource[$r['source']] ?? 0) + $r['amount'];
+        }
+        arsort($bySource);
+        $topSource = ! empty($bySource)
+            ? ['name' => array_key_first($bySource), 'amount' => (float) array_values($bySource)[0]]
+            : null;
+
+        // Largest single transaction
+        $largest = ! empty($rowsPayload)
+            ? collect($rowsPayload)->sortByDesc('amount')->first()
+            : null;
+        $largestSingle = $largest
+            ? ['title' => $largest['title'], 'amount' => $largest['amount'], 'source' => $largest['source'], 'date' => $largest['date']]
+            : null;
+
+        return [
+            'period'         => ['label' => $this->labelFor($from, $to), 'from' => $from, 'to' => $to],
+            'compare'        => $compareFrom
+                ? ['label' => $this->labelFor($compareFrom, $compareTo), 'from' => $compareFrom, 'to' => $compareTo]
+                : null,
+            'rows'           => $rowsPayload,
+            'by_category'    => $byCategory,
+            'total'          => $total,
+            'prior_total'    => $priorTotal,
+            'count'          => count($rowsPayload),
+            'top_source'     => $topSource,
+            'largest_single' => $largestSingle,
+            'insights'       => $this->buildDetailInsights($type, $rowsPayload, $total, $priorTotal, $topSource, $largestSingle, $byCategory),
+            'filters'        => $filters,
+        ];
+    }
+
+    /**
+     * Compose the filtered query for income/expense detail. Filters
+     * accepted: category_id (single), source (LIKE), event_id, status.
+     * Status defaults to `completed` when not specified — same default
+     * as Statement of Activities so headline numbers reconcile.
+     */
+    private function buildDetailQuery(string $type, Carbon $from, Carbon $to, array $filters)
+    {
+        $query = FinanceTransaction::query()
+            ->where('transaction_type', $type)
+            ->whereBetween('transaction_date', [$from->toDateString(), $to->toDateString()]);
+
+        // Status default: completed only — same as SoA. Caller can
+        // override via filters['status'] (e.g. 'all' to include
+        // pending/cancelled, or a specific value).
+        if (! empty($filters['status'])) {
+            if ($filters['status'] !== 'all') {
+                $query->where('status', $filters['status']);
+            }
+        } else {
+            $query->where('status', 'completed');
+        }
+
+        if (! empty($filters['category_id'])) {
+            $query->where('category_id', $filters['category_id']);
+        }
+        if (! empty($filters['event_id'])) {
+            $query->where('event_id', $filters['event_id']);
+        }
+        if (! empty($filters['source'])) {
+            $query->where('source_or_payee', 'like', '%' . $filters['source'] . '%');
+        }
+        return $query;
+    }
+
+    private function buildDetailInsights(string $type, array $rows, float $total, ?float $priorTotal, ?array $topSource, ?array $largest, array $byCategory): array
+    {
+        $bullets = [];
+        $label = $type === 'income' ? 'income' : 'expense';
+        $sourceLabel = $type === 'income' ? 'donor' : 'vendor';
+
+        if (empty($rows)) {
+            return ["No completed {$label} transactions were recorded for this period."];
+        }
+
+        // Totals
+        $bullets[] = sprintf(
+            '%d %s transactions totaled %s across %d %s.',
+            count($rows),
+            $label,
+            self::usd($total),
+            count($byCategory),
+            count($byCategory) === 1 ? 'category' : 'categories',
+        );
+
+        // Trend
+        if ($priorTotal !== null && $priorTotal > 0) {
+            $delta = ($total - $priorTotal) / $priorTotal;
+            $direction = $delta >= 0 ? 'up' : 'down';
+            $bullets[] = sprintf(
+                'Total is %s %s versus the prior period (%s).',
+                $direction,
+                number_format(abs($delta) * 100, 0) . '%',
+                self::usd($priorTotal),
+            );
+        }
+
+        // Top category
+        if (! empty($byCategory)) {
+            $top = $byCategory[0];
+            $bullets[] = sprintf(
+                '%s was the largest %s category at %s%% (%s).',
+                $top['name'],
+                $label,
+                number_format($top['share'] * 100, 0),
+                self::usd($top['amount']),
+            );
+        }
+
+        // Top source
+        if ($topSource) {
+            $bullets[] = sprintf(
+                'Top %s: %s at %s.',
+                $sourceLabel,
+                $topSource['name'],
+                self::usd($topSource['amount']),
+            );
+        }
+
+        // Largest single transaction
+        if ($largest) {
+            $bullets[] = sprintf(
+                'Largest single transaction: %s at %s%s.',
+                $largest['title'],
+                self::usd($largest['amount']),
+                $largest['source'] ? " ({$largest['source']})" : '',
+            );
+        }
+
+        return $bullets;
+    }
+
     /**
      * Auto-generate 3-5 plain-English insight bullets at the bottom of
      * the report. The "board-pitch" differentiator — every report ends
