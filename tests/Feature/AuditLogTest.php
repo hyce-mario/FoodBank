@@ -206,6 +206,38 @@ class AuditLogTest extends TestCase
     }
 
     /**
+     * Tier 3a — a non-admin role granted audit_logs.view should be able to read
+     * the audit page WITHOUT needing the full admin (*) wildcard. Demonstrates
+     * the new dedicated permission works through both the route middleware and
+     * the policy.
+     */
+    public function test_user_with_audit_logs_view_permission_can_view_page(): void
+    {
+        $complianceRole = Role::create(['name' => 'COMPLIANCE', 'display_name' => 'Compliance Officer', 'description' => '']);
+        RolePermission::create(['role_id' => $complianceRole->id, 'permission' => 'audit_logs.view']);
+        $officer = User::create([
+            'name' => 'Officer', 'email' => 'officer@test.local',
+            'password' => bcrypt('p'), 'role_id' => $complianceRole->id, 'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($officer)
+             ->get(route('audit-logs.index'))
+             ->assertOk()
+             ->assertSee('Audit Log');
+    }
+
+    /**
+     * Tier 3a — unauthenticated requests redirect to login (CheckPermission middleware
+     * runs `auth` before the permission check; route group already enforces auth, so
+     * the middleware itself short-circuits to redirect()->route('login')).
+     */
+    public function test_unauthenticated_audit_log_request_redirects_to_login(): void
+    {
+        $this->get(route('audit-logs.index'))
+             ->assertRedirect(route('login'));
+    }
+
+    /**
      * Acceptance criterion: audit entries are queryable by who/when/what.
      */
     public function test_audit_log_is_queryable_by_action_and_model(): void

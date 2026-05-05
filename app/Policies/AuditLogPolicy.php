@@ -9,6 +9,6 @@ class AuditLogPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $user->hasPermission('audit_logs.view');
     }
 }

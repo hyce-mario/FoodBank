@@ -251,8 +251,13 @@ Route::middleware('auth')->group(function () {
     Route::post('volunteer-groups/{volunteer_group}/members', [VolunteerGroupController::class, 'updateMembers'])
         ->name('volunteer-groups.members.update');
 
-    // Audit Log (admin-only, read-only)
-    Route::get('audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
+    // Audit Log (read-only). Tier 3a — gated behind the dedicated audit_logs.view
+    // permission rather than hard-coded isAdmin(); ADMIN keeps full access via the
+    // '*' wildcard. Lets a Compliance Officer / Reports role read audits without
+    // being granted full admin powers.
+    Route::get('audit-logs', [AuditLogController::class, 'index'])
+         ->middleware('permission:audit_logs.view')
+         ->name('audit-logs.index');
 
     // Event Reviews (admin)
     Route::get('reviews', [ReviewController::class, 'index'])->name('reviews.index');
