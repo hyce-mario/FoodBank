@@ -165,6 +165,7 @@
                     Tell us about your experience <span class="text-red-500">*</span>
                 </label>
                 <textarea id="review_text" name="review_text"
+                          x-model="reviewText"
                           rows="5"
                           maxlength="2000"
                           placeholder="Share your experience with the event, staff, organization, or food distribution process."
@@ -233,15 +234,15 @@
 function reviewForm() {
     const labels = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent'];
     return {
-        rating:  {{ old('rating', 0) }},
-        hovered: 0,
+        rating:     {{ old('rating', 0) }},
+        hovered:    0,
+        reviewText: @json(old('review_text', '')),
         get ratingLabel() {
             const val = this.hovered || this.rating;
             return val ? labels[val] : '';
         },
         get hasText() {
-            const el = document.getElementById('review_text');
-            return el && el.value.trim().length > 0;
+            return this.reviewText.trim().length > 0;
         },
     };
 }
