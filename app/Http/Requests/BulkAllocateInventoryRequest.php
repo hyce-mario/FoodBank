@@ -25,10 +25,9 @@ class BulkAllocateInventoryRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // Route is auth-gated; matches the single-allocate request which
-        // also returns true here. A future granular policy can swap this
-        // for a real check without changing callers.
-        return true;
+        // Tier 2 — gates on inventory.edit. Bulk allocation decrements stock,
+        // matching the inventory.edit gate on /inventory/items writes.
+        return (bool) $this->user()?->hasPermission('inventory.edit');
     }
 
     public function rules(): array

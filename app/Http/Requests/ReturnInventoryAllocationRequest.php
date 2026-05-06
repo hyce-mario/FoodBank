@@ -8,7 +8,9 @@ class ReturnInventoryAllocationRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on inventory.edit. Returns mutate stock (back into
+        // the shelf) — same gate as the allocation that pulled it.
+        return (bool) $this->user()?->hasPermission('inventory.edit');
     }
 
     public function rules(): array

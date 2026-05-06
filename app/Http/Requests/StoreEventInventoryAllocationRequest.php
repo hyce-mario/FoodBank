@@ -8,7 +8,11 @@ class StoreEventInventoryAllocationRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        // Tier 2 — gates on inventory.edit. Allocations decrement stock, so
+        // the stock-side permission wins over events.edit (the event-side
+        // grants viewing/editing the allocation table on the event page,
+        // but a user without inventory.edit can't actually pull stock).
+        return (bool) $this->user()?->hasPermission('inventory.edit');
     }
 
     public function rules(): array

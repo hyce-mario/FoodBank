@@ -163,13 +163,16 @@ Route::middleware('auth')->group(function () {
         [EventVolunteerCheckInController::class, 'checkout'])
         ->name('events.volunteer-checkins.checkout');
 
-    // Event Inventory Allocations
-    Route::post('events/{event}/inventory',                                      [EventInventoryAllocationController::class, 'store'])              ->name('events.inventory.store');
-    // Phase D — atomic bulk allocation drawer
-    Route::post('events/{event}/inventory/bulk',                                 [EventInventoryAllocationController::class, 'bulkStore'])          ->name('events.inventory.bulk');
-    Route::patch('events/{event}/inventory/{allocation}/distributed',            [EventInventoryAllocationController::class, 'updateDistributed'])   ->name('events.inventory.distributed');
-    Route::post('events/{event}/inventory/{allocation}/return',                  [EventInventoryAllocationController::class, 'returnStock'])         ->name('events.inventory.return');
-    Route::delete('events/{event}/inventory/{allocation}',                       [EventInventoryAllocationController::class, 'destroy'])             ->name('events.inventory.destroy');
+    // Event Inventory Allocations — Tier 2. All routes mutate stock, so
+    // the gate is inventory.edit (matching the FormRequests' authorize).
+    Route::middleware('permission:inventory.edit')->group(function () {
+        Route::post('events/{event}/inventory',                                      [EventInventoryAllocationController::class, 'store'])              ->name('events.inventory.store');
+        // Phase D — atomic bulk allocation drawer
+        Route::post('events/{event}/inventory/bulk',                                 [EventInventoryAllocationController::class, 'bulkStore'])          ->name('events.inventory.bulk');
+        Route::patch('events/{event}/inventory/{allocation}/distributed',            [EventInventoryAllocationController::class, 'updateDistributed'])   ->name('events.inventory.distributed');
+        Route::post('events/{event}/inventory/{allocation}/return',                  [EventInventoryAllocationController::class, 'returnStock'])         ->name('events.inventory.return');
+        Route::delete('events/{event}/inventory/{allocation}',                       [EventInventoryAllocationController::class, 'destroy'])             ->name('events.inventory.destroy');
+    });
     Route::post('events/{event}/media',          [EventMediaController::class, 'store'])  ->name('events.media.store');
     Route::delete('events/{event}/media/{media}',[EventMediaController::class, 'destroy'])->name('events.media.destroy');
 
@@ -284,9 +287,16 @@ Route::middleware('auth')->group(function () {
          ->middleware('permission:purchase_orders.view')
          ->name('purchase-orders.print');
 
-    // Allocation Rulesets
-    Route::resource('allocation-rulesets', AllocationRulesetController::class)->except(['show', 'create', 'edit']);
+    // Allocation Rulesets — Tier 2. Rulesets drive bag composition (sit on
+    // the inventory side of the system), so they reuse inventory.edit
+    // rather than introducing a separate rulesets.* permission. Preview is
+    // a read but only useful to someone who can already edit, so it shares
+    // the inventory.edit gate.
+    Route::resource('allocation-rulesets', AllocationRulesetController::class)
+         ->except(['show', 'create', 'edit'])
+         ->middleware('permission:inventory.edit');
     Route::get('allocation-rulesets/{allocation_ruleset}/preview', [AllocationRulesetController::class, 'preview'])
+        ->middleware('permission:inventory.edit')
         ->name('allocation-rulesets.preview');
 
     // Users — Tier 3b. Baseline gate is users.view; Store/UpdateUserRequest +
