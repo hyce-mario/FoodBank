@@ -29,6 +29,21 @@
 <form method="POST" action="{{ route('roles.store') }}">
 @csrf
 
+{{-- Top-level validation summary — surfaces every error, including
+     ones on fields that don't have an inline @error display
+     (like permissions[]). Without this the form silently 302s back
+     to itself when permissions or another non-displayed field fails. --}}
+@if ($errors->any())
+    <div class="mb-5 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+        <p class="font-semibold mb-1">Please fix the following:</p>
+        <ul class="list-disc list-inside space-y-0.5 text-xs">
+            @foreach ($errors->all() as $error)
+                <li>{{ $error }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
+
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
     {{-- ── Left: Role Details ───────────────────────────────────────── --}}
@@ -101,7 +116,15 @@
                     <p class="text-xs text-gray-500 mt-0.5">Grant <code class="bg-gray-100 px-1 rounded">*</code> permission — role can perform any action in the system.</p>
                 </div>
             </label>
-            <input type="hidden" name="permissions[]" value="" x-show="false">
+            {{-- When wildcard is on, ship a hidden permissions[]=* so the
+                 backend sees the wildcard. The previous version also had a
+                 second hidden input with value="" alongside this one to
+                 "ensure permissions[] always exists in the request" — but
+                 Laravel's ConvertEmptyStringsToNull middleware rewrote that
+                 "" to null before validation, which then 422'd on the
+                 permissions.* string rule and silently 302'd back to this
+                 form. Removed; Laravel handles a missing permissions[] key
+                 fine via `nullable|array` + `?? []` in the service. --}}
             <template x-if="wildcard">
                 <input type="hidden" name="permissions[]" value="*">
             </template>
