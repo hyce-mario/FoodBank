@@ -150,18 +150,21 @@ Route::middleware('auth')->group(function () {
         ->name('events.regenerate-codes');
 
     // Admin-side volunteer check-in / checkout for a specific event.
-    Route::post('events/{event}/volunteer-checkins',
-        [EventVolunteerCheckInController::class, 'store'])
-        ->name('events.volunteer-checkins.store');
-    Route::post('events/{event}/volunteer-checkins/bulk',
-        [EventVolunteerCheckInController::class, 'bulkStore'])
-        ->name('events.volunteer-checkins.bulk');
-    Route::post('events/{event}/volunteer-checkins/bulk-checkout',
-        [EventVolunteerCheckInController::class, 'bulkCheckout'])
-        ->name('events.volunteer-checkins.bulk-checkout');
-    Route::patch('events/{event}/volunteer-checkins/{checkIn}/checkout',
-        [EventVolunteerCheckInController::class, 'checkout'])
-        ->name('events.volunteer-checkins.checkout');
+    // Tier 2 — all routes mutate volunteer service rows; gate on volunteers.edit.
+    Route::middleware('permission:volunteers.edit')->group(function () {
+        Route::post('events/{event}/volunteer-checkins',
+            [EventVolunteerCheckInController::class, 'store'])
+            ->name('events.volunteer-checkins.store');
+        Route::post('events/{event}/volunteer-checkins/bulk',
+            [EventVolunteerCheckInController::class, 'bulkStore'])
+            ->name('events.volunteer-checkins.bulk');
+        Route::post('events/{event}/volunteer-checkins/bulk-checkout',
+            [EventVolunteerCheckInController::class, 'bulkCheckout'])
+            ->name('events.volunteer-checkins.bulk-checkout');
+        Route::patch('events/{event}/volunteer-checkins/{checkIn}/checkout',
+            [EventVolunteerCheckInController::class, 'checkout'])
+            ->name('events.volunteer-checkins.checkout');
+    });
 
     // Event Inventory Allocations — Tier 2. All routes mutate stock, so
     // the gate is inventory.edit (matching the FormRequests' authorize).
@@ -173,8 +176,12 @@ Route::middleware('auth')->group(function () {
         Route::post('events/{event}/inventory/{allocation}/return',                  [EventInventoryAllocationController::class, 'returnStock'])         ->name('events.inventory.return');
         Route::delete('events/{event}/inventory/{allocation}',                       [EventInventoryAllocationController::class, 'destroy'])             ->name('events.inventory.destroy');
     });
-    Route::post('events/{event}/media',          [EventMediaController::class, 'store'])  ->name('events.media.store');
-    Route::delete('events/{event}/media/{media}',[EventMediaController::class, 'destroy'])->name('events.media.destroy');
+    // Event Media — Tier 2. Photos / videos / docs attached to an event;
+    // gate on events.edit since they're event-scoped attachments.
+    Route::middleware('permission:events.edit')->group(function () {
+        Route::post('events/{event}/media',          [EventMediaController::class, 'store'])  ->name('events.media.store');
+        Route::delete('events/{event}/media/{media}',[EventMediaController::class, 'destroy'])->name('events.media.destroy');
+    });
 
     // Check-in — admin-only routes (the page itself and admin-shaped actions).
     // Tier 2 — reads (index/queue) gated on checkin.view; writes (quick-add,
@@ -342,9 +349,15 @@ Route::middleware('auth')->group(function () {
          ->middleware('permission:audit_logs.view')
          ->name('audit-logs.index');
 
-    // Event Reviews (admin)
-    Route::get('reviews', [ReviewController::class, 'index'])->name('reviews.index');
+    // Event Reviews (admin) — Tier 2. ReviewController already calls
+    // \$this->authorize() which routes through EventReviewPolicy
+    // (reviews.view / reviews.moderate). Adding route middleware as
+    // defense in depth so the gate is visible at the route table.
+    Route::get('reviews', [ReviewController::class, 'index'])
+         ->middleware('permission:reviews.view')
+         ->name('reviews.index');
     Route::patch('reviews/{review}/toggle-visibility', [ReviewController::class, 'toggleVisibility'])
+        ->middleware('permission:reviews.moderate')
         ->name('reviews.toggle-visibility');
 
     // Visit Monitor — Tier 2. Read endpoints gated on checkin.view; reorder

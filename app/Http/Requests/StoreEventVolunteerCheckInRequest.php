@@ -18,7 +18,10 @@ class StoreEventVolunteerCheckInRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        // Tier 2 — gates on volunteers.edit. Pre-Tier-2 was just "logged in"
+        // which let any authenticated user check in volunteers and inflate
+        // their hours_served — a payroll/grants-reporting input.
+        return (bool) $this->user()?->hasPermission('volunteers.edit');
     }
 
     public function rules(): array

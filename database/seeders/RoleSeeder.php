@@ -64,6 +64,28 @@ class RoleSeeder extends Seeder
                     'volunteers.edit', 'volunteers.delete',
                 ],
             ],
+            // Tier 2 demo roles — exercise the new finance / inventory /
+            // purchase_orders / finance_reports gates so the perms have a
+            // visible non-admin grantee for QA. ADMIN keeps everything via '*'.
+            [
+                'name'         => 'FINANCE',
+                'display_name' => 'Finance Officer',
+                'description'  => 'Manage finance transactions, categories, and reports',
+                'permissions'  => [
+                    'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
+                    'finance_reports.view', 'finance_reports.export',
+                ],
+            ],
+            [
+                'name'         => 'WAREHOUSE',
+                'display_name' => 'Warehouse Operator',
+                'description'  => 'Manage inventory items, stock movements, and purchase orders',
+                'permissions'  => [
+                    'inventory.view', 'inventory.edit',
+                    'purchase_orders.view', 'purchase_orders.create',
+                    'purchase_orders.receive', 'purchase_orders.cancel',
+                ],
+            ],
         ];
 
         foreach ($roles as $data) {
