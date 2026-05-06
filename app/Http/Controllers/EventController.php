@@ -16,9 +16,12 @@ use App\Services\EventAnalyticsService;
 use App\Services\FinanceService;
 use App\Services\HouseholdService;
 use App\Services\SettingService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -289,6 +292,147 @@ class EventController extends Controller
                         $reg->created_at?->format('Y-m-d H:i'),
                     ]);
                 });
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    // ─── Event Report exports (Phase C.3.b) ───────────────────────────────────
+    //
+    // Export the per-event check-in report (the in-page "Event Report" table)
+    // as a printable HTML sheet, a PDF, or a CSV. Mirrors the attendees export
+    // pattern; the PDF path uses the same logo-fallback as HouseholdController
+    // so an image-pipeline failure on dompdf doesn't 500 the user.
+
+    private function eventReportExportData(Event $event): array
+    {
+        $event->loadMissing('ruleset');
+
+        $visits = $event->visits()
+            ->with(['households' => fn ($q) => $q->orderBy('visit_households.id')])
+            ->orderByDesc('start_time')
+            ->orderByDesc('id')
+            ->get();
+
+        $ruleset = $event->ruleset;
+        $totalHouseholds = 0;
+        $totalBags       = 0;
+
+        foreach ($visits as $visit) {
+            foreach ($visit->households as $h) {
+                $totalHouseholds++;
+                $size = (int) ($h->pivot->household_size ?? $h->household_size);
+                if ($ruleset) {
+                    $totalBags += (int) $ruleset->getBagsFor($size);
+                }
+            }
+        }
+
+        return [
+            'event'           => $event,
+            'visits'          => $visits,
+            'ruleset'         => $ruleset,
+            'totalVisits'     => $visits->count(),
+            'totalHouseholds' => $totalHouseholds,
+            'totalBags'       => $totalBags,
+            'branding'        => [
+                'logo_src' => SettingService::brandingLogoDataUri(),
+                'app_name' => (string) SettingService::get('general.app_name', config('app.name')),
+            ],
+        ];
+    }
+
+    public function eventReportPrint(Event $event): View
+    {
+        $this->authorize('view', $event);
+        return view('events.exports.event-report-print', $this->eventReportExportData($event));
+    }
+
+    public function eventReportPdf(Event $event): Response
+    {
+        $this->authorize('view', $event);
+
+        $data = $this->eventReportExportData($event);
+        $filename = sprintf(
+            'event-report-%s-%s.pdf',
+            Str::slug($event->name),
+            $event->date?->format('Ymd') ?? now()->format('Ymd'),
+        );
+
+        try {
+            $pdf = Pdf::loadView('events.exports.event-report-pdf', $data)->setPaper('a4', 'landscape');
+            return $pdf->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('event-report-pdf: dompdf failed with logo embedded; retrying without logo.', [
+                'message' => $e->getMessage(),
+                'at'      => $e->getFile() . ':' . $e->getLine(),
+            ]);
+            $data['branding']['logo_src'] = null;
+            $pdf = Pdf::loadView('events.exports.event-report-pdf', $data)->setPaper('a4', 'landscape');
+            return $pdf->download($filename);
+        }
+    }
+
+    public function eventReportCsv(Event $event): StreamedResponse
+    {
+        $this->authorize('view', $event);
+
+        $data = $this->eventReportExportData($event);
+        $filename = sprintf(
+            'event-report-%s-%s.csv',
+            Str::slug($event->name),
+            $event->date?->format('Ymd') ?? now()->format('Ymd'),
+        );
+
+        return response()->streamDownload(function () use ($data) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM — Excel needs it to read accented characters correctly.
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, [
+                'Household #', 'Household', 'Household Size', 'Bags',
+                'Check-in Time', 'Status', 'Role',
+            ]);
+
+            $ruleset = $data['ruleset'];
+
+            foreach ($data['visits'] as $visit) {
+                $households = $visit->households;
+                $primary    = $households->first();
+                if (! $primary) {
+                    continue;
+                }
+
+                $time   = $visit->start_time?->format('Y-m-d H:i') ?? '';
+                $status = $visit->statusLabel();
+
+                $primarySize = (int) ($primary->pivot->household_size ?? $primary->household_size);
+                $primaryBags = $ruleset ? (int) $ruleset->getBagsFor($primarySize) : 0;
+                fputcsv($out, [
+                    '#' . $primary->household_number,
+                    $primary->full_name,
+                    $primarySize,
+                    $primaryBags,
+                    $time,
+                    $status,
+                    'Primary',
+                ]);
+
+                foreach ($households->slice(1) as $rep) {
+                    $repSize = (int) ($rep->pivot->household_size ?? $rep->household_size);
+                    $repBags = $ruleset ? (int) $ruleset->getBagsFor($repSize) : 0;
+                    fputcsv($out, [
+                        '#' . $rep->household_number,
+                        $rep->full_name,
+                        $repSize,
+                        $repBags,
+                        $time,
+                        $status,
+                        'Represented',
+                    ]);
+                }
+            }
 
             fclose($out);
         }, $filename, [

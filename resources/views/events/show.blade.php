@@ -252,7 +252,23 @@
 
             {{-- Event meta --}}
             <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
-                <h2 class="text-base font-bold text-gray-900 mb-3">{{ $event->name }}</h2>
+                <div class="flex items-start justify-between gap-3 mb-3">
+                    <h2 class="text-base font-bold text-gray-900">{{ $event->name }}</h2>
+                    @if ($event->isLocked())
+                        @can('view', $event)
+                            {{-- Event Summary trigger — only on past events. Permission
+                                 mirrors the page's own `view` policy; the modal then
+                                 lets the user pick which sections to include. --}}
+                            <button type="button" @click="summaryOpen = true"
+                                    class="inline-flex items-center gap-1.5 text-xs font-semibold text-navy-700 bg-navy-50 border border-navy-100 hover:bg-gray-100 rounded-lg px-3 py-1.5 transition-colors flex-shrink-0">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25"/>
+                                </svg>
+                                Event Summary
+                            </button>
+                        @endcan
+                    @endif
+                </div>
                 <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600">
                     <span class="flex items-center gap-1.5">
                         <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/></svg>
@@ -282,20 +298,18 @@
                 <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                     <h3 class="text-sm font-bold text-gray-800">Event Report</h3>
                     <div class="flex items-center gap-2">
-                        {{-- Export PDF / Excel / Print buttons stay inert here;
-                             Phase C.3 ships a real CSV + branded print sheet. --}}
-                        <button type="button" title="Export PDF" disabled
-                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 opacity-60 cursor-not-allowed">
+                        <a href="{{ route('events.event-report.pdf', $event) }}" title="Export PDF"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 1.5L18.5 9H13zM8 17v-1h8v1zm0-3v-1h8v1zm0-3V10h4v1z"/></svg>
-                        </button>
-                        <button type="button" title="Export Excel" disabled
-                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-600 opacity-60 cursor-not-allowed">
+                        </a>
+                        <a href="{{ route('events.event-report.csv', $event) }}" title="Export CSV"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-600 hover:bg-green-100 transition-colors">
                             <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 1.5L18.5 9H13zm-3 8.5 2 3h-1.3l-1.2-2-1.2 2H8l2-3-2-3h1.3l1.2 2 1.2-2H13z"/></svg>
-                        </button>
-                        <button type="button" title="Print" disabled
-                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 opacity-60 cursor-not-allowed">
+                        </a>
+                        <a href="{{ route('events.event-report.print', $event) }}" target="_blank" rel="noopener" title="Print"
+                                class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z"/></svg>
-                        </button>
+                        </a>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
@@ -1391,6 +1405,80 @@
     </div>
 </div>
 
+{{-- ── Event Summary Modal ─────────────────────────────────────────────────────
+     Lets the user pick which sections to include in the report. Submitting
+     opens the summary page in a new tab with the chosen sections in the URL.
+     The Finance section is filtered out by EventSummaryService when the user
+     lacks finance.view, so it's safe to show the checkbox to everyone. --}}
+@if ($event->isLocked())
+@can('view', $event)
+<div x-show="summaryOpen"
+     x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+     class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+     @click.self="summaryOpen = false"
+     style="display:none;">
+    <div x-show="summaryOpen"
+         x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+         class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-base font-bold text-gray-900">Event Summary Report</h2>
+            <button @click="summaryOpen = false" class="text-gray-400 hover:text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">Pick which sections to include in the report.</p>
+
+        <div class="grid grid-cols-2 gap-2 mb-5">
+            @foreach ([
+                ['key' => 'event_details', 'label' => 'Event Details',  'desc' => 'Name, date, ruleset'],
+                ['key' => 'attendees',     'label' => 'Attendees',      'desc' => 'Pre-reg, walk-ins, totals'],
+                ['key' => 'volunteers',    'label' => 'Volunteers',     'desc' => 'Counts and hours'],
+                ['key' => 'reviews',       'label' => 'Reviews',        'desc' => 'Top 5 good and bad'],
+                ['key' => 'inventory',     'label' => 'Inventory',      'desc' => 'Allocated vs distributed'],
+                ['key' => 'finance',       'label' => 'Finance',        'desc' => 'Income, expense, sources'],
+                ['key' => 'queue',         'label' => 'Queue Summary',  'desc' => 'Stage timing averages'],
+                ['key' => 'evaluation',    'label' => 'Evaluation',     'desc' => 'Heuristic insights'],
+            ] as $opt)
+                <label class="flex items-start gap-2.5 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50"
+                       :class="summarySections.{{ $opt['key'] }} ? 'border-brand-300 bg-brand-50/40' : ''">
+                    <input type="checkbox" x-model="summarySections.{{ $opt['key'] }}"
+                           class="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500">
+                    <div class="min-w-0">
+                        <p class="text-sm font-semibold text-gray-800">{{ $opt['label'] }}</p>
+                        <p class="text-[11px] text-gray-500 mt-0.5">{{ $opt['desc'] }}</p>
+                    </div>
+                </label>
+            @endforeach
+        </div>
+
+        <div class="flex items-center justify-between gap-2">
+            <div class="flex gap-2 text-xs">
+                <button type="button" @click="summarySelectAll(true)"
+                        class="text-brand-600 hover:underline font-medium">Select all</button>
+                <span class="text-gray-300">|</span>
+                <button type="button" @click="summarySelectAll(false)"
+                        class="text-gray-500 hover:underline font-medium">Clear</button>
+            </div>
+            <div class="flex gap-2">
+                <button type="button" @click="summaryOpen = false"
+                        class="px-4 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg">
+                    Cancel
+                </button>
+                <button type="button" @click="openSummaryReport()"
+                        :disabled="!summaryHasSelection()"
+                        :class="summaryHasSelection() ? 'bg-navy-700 hover:bg-navy-800' : 'bg-gray-300 cursor-not-allowed'"
+                        class="px-4 py-2 text-sm font-semibold text-white rounded-lg transition-colors">
+                    View Report
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@endcan
+@endif
+
 {{-- ── Inventory Tab ───────────────────────────────────────────────────────── --}}
 <div x-show="activeTab === 'inventory'" style="display:none">
 
@@ -2117,6 +2205,36 @@ function eventShow() {
     return {
         activeTab:   @json(session('open_tab', 'details')),
         deleteOpen:  false,
+
+        // ── Event Summary modal (only visible on past events) ─────────────
+        // Each section toggle defaults to true; the user can deselect any
+        // before clicking "View Report" which opens the summary page in a
+        // new tab with the selected sections in the URL query string.
+        summaryOpen: false,
+        summarySections: {
+            event_details: true,
+            attendees:     true,
+            volunteers:    true,
+            reviews:       true,
+            inventory:     true,
+            finance:       true,
+            queue:         true,
+            evaluation:    true,
+        },
+        summaryHasSelection() {
+            return Object.values(this.summarySections).some(v => v);
+        },
+        summarySelectAll(value) {
+            Object.keys(this.summarySections).forEach(k => this.summarySections[k] = value);
+        },
+        openSummaryReport() {
+            const selected = Object.keys(this.summarySections).filter(k => this.summarySections[k]);
+            if (selected.length === 0) return;
+            const params = selected.map(s => 'sections[]=' + encodeURIComponent(s)).join('&');
+            const url = '{{ route('events.summary.show', $event) }}' + '?' + params;
+            window.open(url, '_blank', 'noopener');
+            this.summaryOpen = false;
+        },
 
         // ── Attendee delete confirmation ─────────────────────────────────
         // Replaces the previous browser confirm() dialog with an in-page

@@ -29,6 +29,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\CheckInController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EventController;
+use App\Http\Controllers\EventSummaryController;
 use App\Http\Controllers\HouseholdController;
 use App\Http\Controllers\PublicEventController;
 use App\Http\Controllers\PublicVolunteerCheckInController;
@@ -148,6 +149,22 @@ Route::middleware('auth')->group(function () {
         ->name('events.attendees.print');
     Route::get('events/{event}/attendees/export.csv', [EventController::class, 'attendeesCsv'])
         ->name('events.attendees.csv');
+    // Phase C.3.b — Event Report exports (per-event check-in roster)
+    Route::get('events/{event}/event-report/print', [EventController::class, 'eventReportPrint'])
+        ->name('events.event-report.print');
+    Route::get('events/{event}/event-report/pdf', [EventController::class, 'eventReportPdf'])
+        ->name('events.event-report.pdf');
+    Route::get('events/{event}/event-report/export.csv', [EventController::class, 'eventReportCsv'])
+        ->name('events.event-report.csv');
+    // Phase C.3.c — Event Summary report (vertical-tab view, only for past events)
+    Route::get('events/{event}/summary',             [EventSummaryController::class, 'show'])
+        ->name('events.summary.show');
+    Route::get('events/{event}/summary/print',       [EventSummaryController::class, 'print'])
+        ->name('events.summary.print');
+    Route::get('events/{event}/summary/pdf',         [EventSummaryController::class, 'pdf'])
+        ->name('events.summary.pdf');
+    Route::get('events/{event}/summary/export.xlsx', [EventSummaryController::class, 'xlsx'])
+        ->name('events.summary.xlsx');
     Route::post('events/{event}/regenerate-codes', [EventController::class, 'regenerateCodes'])
         ->name('events.regenerate-codes');
 
@@ -253,16 +270,22 @@ Route::middleware('auth')->group(function () {
     // Inventory — Items. index/show are reads (inventory.view); Store/Update
     // FormRequests gate writes on inventory.edit; destroy gets explicit
     // middleware (no FormRequest on the destroy action).
-    Route::resource('inventory/items', InventoryItemController::class)
-         ->names('inventory.items')
-         ->parameters(['items' => 'inventory_item'])
-         ->only(['index', 'show'])
-         ->middleware('permission:inventory.view');
+    //
+    // ORDER MATTERS: the writes resource is registered FIRST so that the
+    // literal `/create` and `/edit` paths are matched before the wildcard
+    // `{inventory_item}` show route. Otherwise a request for
+    // `/inventory/items/create` matches the show route with $inventory_item
+    // = 'create', model binding fails, and the user gets a spurious 404.
     Route::resource('inventory/items', InventoryItemController::class)
          ->names('inventory.items')
          ->parameters(['items' => 'inventory_item'])
          ->only(['create', 'store', 'edit', 'update'])
          ->middleware('permission:inventory.edit');
+    Route::resource('inventory/items', InventoryItemController::class)
+         ->names('inventory.items')
+         ->parameters(['items' => 'inventory_item'])
+         ->only(['index', 'show'])
+         ->middleware('permission:inventory.view');
     Route::delete('inventory/items/{inventory_item}', [InventoryItemController::class, 'destroy'])
          ->middleware('permission:inventory.edit')
          ->name('inventory.items.destroy');
