@@ -73,7 +73,7 @@
         <h2 class="text-sm font-semibold text-gray-900 mb-4">Functional Allocation</h2>
         @if (! empty($segments))
             <div class="flex justify-center">
-                {!! \App\Support\SvgChart::donut($segments, 220, 60) !!}
+                {!! \App\Support\SvgChart::donut($segments, ['width' => 220, 'height' => 220]) !!}
             </div>
             <ul class="mt-4 space-y-2">
                 @foreach ($data['by_function'] as $f)
