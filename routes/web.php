@@ -176,11 +176,24 @@ Route::middleware('auth')->group(function () {
     Route::post('events/{event}/media',          [EventMediaController::class, 'store'])  ->name('events.media.store');
     Route::delete('events/{event}/media/{media}',[EventMediaController::class, 'destroy'])->name('events.media.destroy');
 
-    // Check-in — admin-only routes (the page itself and admin-shaped actions)
-    Route::get('/checkin',                  [CheckInController::class, 'index'])    ->name('checkin.index');
-    Route::get('/checkin/queue',            [CheckInController::class, 'queue'])    ->name('checkin.queue');
-    Route::post('/checkin/quick-add',       [CheckInController::class, 'quickAdd']) ->name('checkin.quickAdd');
-    Route::patch('/checkin/{visit}/done',   [CheckInController::class, 'done'])     ->name('checkin.done');
+    // Check-in — admin-only routes (the page itself and admin-shaped actions).
+    // Tier 2 — reads (index/queue) gated on checkin.view; writes (quick-add,
+    // mark done) gated on checkin.scan. Note: the shared /checkin POST + GET
+    // /checkin/search etc. that sit in the event-day-or-auth group below are
+    // intentionally NOT gated by permission middleware — they're shared with
+    // the public intake kiosk flow which auths via event-day session, not user.
+    Route::get('/checkin',                  [CheckInController::class, 'index'])
+         ->middleware('permission:checkin.view')
+         ->name('checkin.index');
+    Route::get('/checkin/queue',            [CheckInController::class, 'queue'])
+         ->middleware('permission:checkin.view')
+         ->name('checkin.queue');
+    Route::post('/checkin/quick-add',       [CheckInController::class, 'quickAdd'])
+         ->middleware('permission:checkin.scan')
+         ->name('checkin.quickAdd');
+    Route::patch('/checkin/{visit}/done',   [CheckInController::class, 'done'])
+         ->middleware('permission:checkin.scan')
+         ->name('checkin.done');
 
     // Volunteers
     // List exports — registered BEFORE the resource route so /volunteers/export/*
@@ -334,16 +347,27 @@ Route::middleware('auth')->group(function () {
     Route::patch('reviews/{review}/toggle-visibility', [ReviewController::class, 'toggleVisibility'])
         ->name('reviews.toggle-visibility');
 
-    // Visit Monitor
-    Route::get('monitor',                                     [VisitMonitorController::class, 'index'])      ->name('monitor.index');
-    Route::get('monitor/{event}/data',                        [VisitMonitorController::class, 'data'])       ->name('monitor.data');
-    Route::post('monitor/{event}/reorder',                    [VisitMonitorController::class, 'reorder'])    ->name('monitor.reorder');
-    Route::patch('monitor/{event}/visits/{visit}/transition', [VisitMonitorController::class, 'transition']) ->name('monitor.transition');
+    // Visit Monitor — Tier 2. Read endpoints gated on checkin.view; reorder
+    // + transition mutate visit state and gate on checkin.scan.
+    Route::get('monitor',                                     [VisitMonitorController::class, 'index'])
+         ->middleware('permission:checkin.view')
+         ->name('monitor.index');
+    Route::get('monitor/{event}/data',                        [VisitMonitorController::class, 'data'])
+         ->middleware('permission:checkin.view')
+         ->name('monitor.data');
+    Route::post('monitor/{event}/reorder',                    [VisitMonitorController::class, 'reorder'])
+         ->middleware('permission:checkin.scan')
+         ->name('monitor.reorder');
+    Route::patch('monitor/{event}/visits/{visit}/transition', [VisitMonitorController::class, 'transition'])
+         ->middleware('permission:checkin.scan')
+         ->name('monitor.transition');
 
-    // Visit Log / Event Operations Report
-    Route::get('visit-log',        [VisitLogController::class, 'index'])  ->name('visit-log.index');
-    Route::get('visit-log/print',  [VisitLogController::class, 'print'])  ->name('visit-log.print');
-    Route::get('visit-log/export', [VisitLogController::class, 'export']) ->name('visit-log.export');
+    // Visit Log / Event Operations Report — Tier 2. All reads, gate on checkin.view.
+    Route::middleware('permission:checkin.view')->group(function () {
+        Route::get('visit-log',        [VisitLogController::class, 'index'])  ->name('visit-log.index');
+        Route::get('visit-log/print',  [VisitLogController::class, 'print'])  ->name('visit-log.print');
+        Route::get('visit-log/export', [VisitLogController::class, 'export']) ->name('visit-log.export');
+    });
 
     // Finance Module — Tier 2. Each sub-section is gated independently:
     //   /finance               → finance.view (dashboard)

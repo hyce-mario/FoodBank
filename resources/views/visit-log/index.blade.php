@@ -2,15 +2,17 @@
 @section('title', 'Visit Log')
 
 @php
-/**
- * Format decimal minutes as "Xh Ym" or "Ym"
- */
-function fmtDuration(float $mins): string {
-    $m = (int) round($mins);
-    if ($m < 60) return $m . 'm';
-    $h = intdiv($m, 60);
-    $r = $m % 60;
-    return $r === 0 ? "{$h}h" : "{$h}h {$r}m";
+// Format decimal minutes as "Xh Ym" or "Ym".
+// function_exists guard prevents "Cannot redeclare fmtDuration" when the
+// blade is rendered twice in the same PHP process (e.g. test runner).
+if (! function_exists('fmtDuration')) {
+    function fmtDuration(float $mins): string {
+        $m = (int) round($mins);
+        if ($m < 60) return $m . 'm';
+        $h = intdiv($m, 60);
+        $r = $m % 60;
+        return $r === 0 ? "{$h}h" : "{$h}h {$r}m";
+    }
 }
 @endphp
 
