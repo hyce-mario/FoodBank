@@ -158,7 +158,9 @@ class FinanceReportController extends Controller
                 'title'       => 'Pledge / AR Aging',
                 'description' => 'Outstanding pledges aged into Current / 30 / 60 / 90+ day buckets.',
                 'category'    => 'Compliance',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.pledge-aging',
+                'icon'        => 'document',
             ],
         ];
     }
@@ -1155,6 +1157,102 @@ class FinanceReportController extends Controller
                 $data['totals']['variance_pct'] !== null ? number_format($data['totals']['variance_pct'] * 100, 1) . '%' : '',
                 '',
             ]);
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.4.c — Pledge / AR Aging
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function pledgeAging(Request $request): View
+    {
+        $asOf = $request->date('as_of') ?: now()->startOfDay();
+        $data = $this->service->pledgeAging($asOf);
+
+        return view('finance.reports.pledge-aging', compact('data', 'asOf'));
+    }
+
+    public function pledgeAgingPrint(Request $request): View
+    {
+        $asOf      = $request->date('as_of') ?: now()->startOfDay();
+        $data      = $this->service->pledgeAging($asOf);
+        $branding  = $this->exportBranding();
+        $autoPrint = true;
+
+        return view('finance.reports.exports.pledge-aging-print', compact('data', 'asOf', 'branding', 'autoPrint'));
+    }
+
+    public function pledgeAgingPdf(Request $request): Response
+    {
+        $asOf     = $request->date('as_of') ?: now()->startOfDay();
+        $data     = $this->service->pledgeAging($asOf);
+        $branding = $this->exportBranding();
+
+        $filename = 'pledge-aging-' . $asOf->format('Ymd') . '.pdf';
+        $payload  = compact('data', 'asOf', 'branding');
+
+        try {
+            return Pdf::loadView('finance.reports.exports.pledge-aging-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-pledge-aging-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.pledge-aging-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        }
+    }
+
+    public function pledgeAgingCsv(Request $request): StreamedResponse
+    {
+        $asOf = $request->date('as_of') ?: now()->startOfDay();
+        $data = $this->service->pledgeAging($asOf);
+
+        $filename = 'pledge-aging-' . $asOf->format('Ymd') . '.csv';
+
+        return response()->streamDownload(function () use ($data, $asOf) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['Pledge / AR Aging']);
+            fputcsv($out, ['As of',         $asOf->format('Y-m-d')]);
+            fputcsv($out, ['Total Outstanding', number_format($data['total'], 2, '.', '')]);
+            fputcsv($out, ['Pledge Count',  $data['count']]);
+            fputcsv($out, []);
+
+            fputcsv($out, ['Bucket', 'Donor / Source', 'Pledged', 'Expected', 'Days Overdue', 'Amount', 'Status', 'Category', 'Event']);
+
+            foreach ($data['buckets'] as $key => $bucket) {
+                if (empty($bucket['pledges'])) continue;
+                foreach ($bucket['pledges'] as $p) {
+                    fputcsv($out, [
+                        $bucket['label'],
+                        $p['source_or_payee'],
+                        $p['pledged_at'],
+                        $p['expected_at'],
+                        $p['days_overdue'] > 0 ? $p['days_overdue'] : 0,
+                        number_format($p['amount'], 2, '.', ''),
+                        ucfirst($p['status']),
+                        $p['category_name'] ?? '',
+                        $p['event_name'] ?? '',
+                    ]);
+                }
+                // Bucket subtotal
+                fputcsv($out, [
+                    $bucket['label'] . ' SUBTOTAL', '', '', '', '',
+                    number_format($bucket['total'], 2, '.', ''),
+                    "({$bucket['count']} pledges)", '', '',
+                ]);
+                fputcsv($out, []);
+            }
+
+            fputcsv($out, ['GRAND TOTAL', '', '', '', '', number_format($data['total'], 2, '.', ''), "({$data['count']} pledges)", '', '']);
 
             fclose($out);
         }, $filename, [

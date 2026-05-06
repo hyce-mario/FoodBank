@@ -15,6 +15,10 @@
        class="px-4 py-2 text-sm font-medium rounded-lg transition-colors {{ request()->routeIs('finance.budgets.*') ? 'bg-navy-700 text-white' : 'text-gray-600 hover:bg-gray-100' }}">
         Budgets
     </a>
+    <a href="{{ route('finance.pledges.index') }}"
+       class="px-4 py-2 text-sm font-medium rounded-lg transition-colors {{ request()->routeIs('finance.pledges.*') ? 'bg-navy-700 text-white' : 'text-gray-600 hover:bg-gray-100' }}">
+        Pledges
+    </a>
     <a href="{{ route('finance.reports') }}"
        class="px-4 py-2 text-sm font-medium rounded-lg transition-colors {{ request()->routeIs('finance.reports') ? 'bg-navy-700 text-white' : 'text-gray-600 hover:bg-gray-100' }}">
         Reports

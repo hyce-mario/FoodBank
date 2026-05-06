@@ -122,14 +122,17 @@ class FinanceReportIncomeDetailTest extends TestCase
     public function test_source_filter_searches_donor(): void
     {
         $this->income($this->donations, 500, '2026-04-05', 'Springfield Foundation', 'Foundation Grant');
-        $this->income($this->donations, 200, '2026-04-08', 'Anon Individual',         'Pledge');
+        // Title intentionally distinct from any nav text — Phase 7.4.c added a
+        // "Pledges" nav link, so the prior 'Pledge' title would substring-match
+        // the nav even when the transaction was filtered out of the report.
+        $this->income($this->donations, 200, '2026-04-08', 'Anon Individual',         'Anonymous-Donation-XYZ');
 
         $response = $this->actingAs($this->admin)
                          ->get('/finance/reports/income-detail?source=Springfield')
                          ->assertOk();
 
         $response->assertSee('Foundation Grant');
-        $response->assertDontSee('Pledge');
+        $response->assertDontSee('Anonymous-Donation-XYZ');
     }
 
     public function test_event_filter_narrows_results(): void

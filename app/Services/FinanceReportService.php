@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Budget;
 use App\Models\FinanceTransaction;
+use App\Models\Pledge;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
@@ -2051,6 +2052,169 @@ class FinanceReportService
                 $overCount,
                 $overCount === 1 ? 'y is' : 'ies are'
             );
+        }
+
+        return $bullets;
+    }
+
+    // ─── Phase 7.4.c — Pledge / AR Aging ─────────────────────────────────────
+
+    /**
+     * Pledge / AR Aging report — outstanding pledges bucketed by age of
+     * expected_at relative to "today" (or the supplied as-of date).
+     *
+     * Buckets: Current (not yet due) / 1-30 / 31-60 / 61-90 / 90+. The 30/60/
+     * 90/90+ thresholds are the AR-aging industry standard; per the user-
+     * confirmed plan they're hard-coded for v1 (a future settings key can
+     * make them per-org configurable without schema change).
+     *
+     * Only 'open' + 'partial' pledges count toward the aging totals (the
+     * Pledge model's outstanding() scope). Fulfilled and written-off rows
+     * are excluded — they're closed AR.
+     *
+     * @return array{
+     *   as_of: Carbon,
+     *   buckets: array<string, array{label:string, total:float, count:int, color:string, pledges: array<int, array<string, mixed>>}>,
+     *   total: float,
+     *   count: int,
+     *   top_donors: array<int, array{name:string, total:float, count:int}>,
+     *   insights: array<int, string>,
+     * }
+     */
+    public function pledgeAging(?Carbon $asOf = null): array
+    {
+        $asOf = $asOf ?? now()->startOfDay();
+
+        $bucketDefs = [
+            'current'  => ['label' => 'Current (not yet due)', 'min' => null, 'max' => 0,    'color' => '#1b2b4b'],
+            '1_30'     => ['label' => '1–30 days overdue',     'min' => 1,    'max' => 30,   'color' => '#3a4a6b'],
+            '31_60'    => ['label' => '31–60 days overdue',    'min' => 31,   'max' => 60,   'color' => '#f97316'],
+            '61_90'    => ['label' => '61–90 days overdue',    'min' => 61,   'max' => 90,   'color' => '#ea6b0a'],
+            'over_90'  => ['label' => '90+ days overdue',      'min' => 91,   'max' => null, 'color' => '#b91c1c'],
+        ];
+
+        $buckets = [];
+        foreach ($bucketDefs as $key => $meta) {
+            $buckets[$key] = [
+                'label'   => $meta['label'],
+                'color'   => $meta['color'],
+                'total'   => 0.0,
+                'count'   => 0,
+                'pledges' => [],
+            ];
+        }
+
+        $rows = Pledge::query()
+            ->outstanding()
+            ->with(['household:id,first_name,last_name', 'category:id,name', 'event:id,name,date'])
+            ->orderBy('expected_at')
+            ->get();
+
+        $grandTotal     = 0.0;
+        $grandCount     = 0;
+        $bySource       = []; // for top-donors rollup
+        foreach ($rows as $p) {
+            // Days overdue: positive = past due; zero/negative = current
+            $daysOverdue = $asOf->copy()->startOfDay()->diffInDays($p->expected_at->copy()->startOfDay(), false);
+            $daysOverdue = -$daysOverdue; // flip sign so positive = overdue
+
+            $bucketKey = 'over_90';
+            foreach ($bucketDefs as $key => $meta) {
+                $min = $meta['min'];
+                $max = $meta['max'];
+                if ($min === null && $daysOverdue <= $max) { $bucketKey = $key; break; }
+                if ($min !== null && $max !== null && $daysOverdue >= $min && $daysOverdue <= $max) { $bucketKey = $key; break; }
+                if ($min !== null && $max === null && $daysOverdue >= $min) { $bucketKey = $key; break; }
+            }
+
+            $amount = (float) $p->amount;
+            $buckets[$bucketKey]['total'] += $amount;
+            $buckets[$bucketKey]['count']++;
+            $buckets[$bucketKey]['pledges'][] = [
+                'id'              => $p->id,
+                'source_or_payee' => $p->source_or_payee,
+                'household_name'  => $p->household ? trim($p->household->first_name . ' ' . $p->household->last_name) : null,
+                'amount'          => $amount,
+                'pledged_at'      => $p->pledged_at?->format('Y-m-d'),
+                'expected_at'     => $p->expected_at?->format('Y-m-d'),
+                'days_overdue'    => max(0, $daysOverdue),
+                'status'          => $p->status,
+                'category_name'   => $p->category?->name,
+                'event_name'      => $p->event?->name,
+            ];
+
+            $grandTotal += $amount;
+            $grandCount++;
+
+            $bySource[$p->source_or_payee] = [
+                'name'  => $p->source_or_payee,
+                'total' => ($bySource[$p->source_or_payee]['total'] ?? 0) + $amount,
+                'count' => ($bySource[$p->source_or_payee]['count'] ?? 0) + 1,
+            ];
+        }
+
+        // Top donors by outstanding total — top 5
+        usort($bySource, fn ($a, $b) => $b['total'] <=> $a['total']);
+        $topDonors = array_slice($bySource, 0, 5);
+
+        return [
+            'as_of'     => $asOf,
+            'buckets'   => $buckets,
+            'total'     => $grandTotal,
+            'count'     => $grandCount,
+            'top_donors'=> array_values($topDonors),
+            'insights'  => $this->buildPledgeAgingInsights($buckets, $grandTotal, $grandCount, $topDonors),
+        ];
+    }
+
+    /** Insight bullets for Pledge / AR Aging. */
+    private function buildPledgeAgingInsights(array $buckets, float $total, int $count, array $topDonors): array
+    {
+        if ($total <= 0) {
+            return ['No outstanding pledges. AR is clean.'];
+        }
+
+        $bullets = [];
+        $bullets[] = sprintf('%d outstanding pledge%s totalling %s.',
+            $count, $count === 1 ? '' : 's', self::usd($total)
+        );
+
+        // Risk concentration: 90+ bucket as % of total
+        $over90 = $buckets['over_90']['total'];
+        if ($over90 > 0) {
+            $sharePct = ($over90 / $total) * 100;
+            $verdict  = $sharePct >= 25 ? 'serious AR risk — strong write-off candidate' : 'follow-up needed';
+            $bullets[] = sprintf('%s in 90+ day bucket (%s%% of outstanding) — %s.',
+                self::usd($over90), number_format($sharePct, 1), $verdict
+            );
+        }
+
+        // Current vs overdue split
+        $current = $buckets['current']['total'];
+        $overdue = $total - $current;
+        if ($overdue > 0) {
+            $bullets[] = sprintf('%s overdue (%s%% of outstanding); %s still current.',
+                self::usd($overdue),
+                number_format(($overdue / $total) * 100, 1),
+                self::usd($current)
+            );
+        } else {
+            $bullets[] = 'All outstanding pledges are still within their expected date — no overdue AR.';
+        }
+
+        // Top donor concentration
+        if (! empty($topDonors)) {
+            $top = $topDonors[0];
+            $sharePct = ($top['total'] / $total) * 100;
+            if ($sharePct >= 30) {
+                $bullets[] = sprintf('Concentration risk: %s represents %s%% of outstanding pledges.',
+                    $top['name'], number_format($sharePct, 1)
+                );
+            } else {
+                $bullets[] = sprintf('Largest outstanding donor: %s at %s (%s%% of total).',
+                    $top['name'], self::usd($top['total']), number_format($sharePct, 1)
+                );
+            }
         }
 
         return $bullets;

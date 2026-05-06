@@ -147,7 +147,7 @@ class FinanceReportStatementOfActivitiesTest extends TestCase
 
     // ─── Hub ──────────────────────────────────────────────────────────────────
 
-    public function test_hub_lists_all_eleven_reports_with_one_live(): void
+    public function test_hub_lists_all_eleven_reports_all_live(): void
     {
         $response = $this->actingAs($this->admin)
                          ->get('/finance/reports')
@@ -165,9 +165,9 @@ class FinanceReportStatementOfActivitiesTest extends TestCase
         $response->assertSee('Budget vs. Actual');
         $response->assertSee('Pledge / AR Aging');
 
-        // Live badge for SoA, Coming Soon for the other 10
+        // Phase 7.4 closed all 11 reports — Live badge present, no Coming Soon.
         $response->assertSee('Live');
-        $response->assertSee('Coming soon');
+        $response->assertDontSee('Coming soon');
     }
 
     // ─── Print export ─────────────────────────────────────────────────────────

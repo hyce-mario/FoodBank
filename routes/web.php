@@ -3,6 +3,7 @@
 use App\Http\Controllers\AllocationRulesetController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\BudgetController;
+use App\Http\Controllers\PledgeController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\FinanceCategoryController;
 use App\Http\Controllers\FinanceController;
@@ -500,6 +501,16 @@ Route::middleware('auth')->group(function () {
                     Route::get('/csv',   [FinanceReportController::class, 'budgetVsActualCsv'])  ->name('.csv');
                 });
             });
+
+            // Phase 7.4.c — Pledge / AR Aging
+            Route::prefix('reports/pledge-aging')->name('reports.pledge-aging')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'pledgeAging']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'pledgeAgingPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'pledgeAgingPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'pledgeAgingCsv'])  ->name('.csv');
+                });
+            });
         });
 
         // Categories — finance.view baseline; Store/Update FormRequests gate
@@ -522,6 +533,14 @@ Route::middleware('auth')->group(function () {
         Route::delete('budgets/{budget}', [BudgetController::class, 'destroy'])
              ->middleware('permission:finance.edit')
              ->name('budgets.destroy');
+
+        // Phase 7.4.c — Pledges CRUD. Same gating layer as budgets.
+        Route::resource('pledges', PledgeController::class)
+             ->except(['show', 'destroy'])
+             ->middleware('permission:finance.view');
+        Route::delete('pledges/{pledge}', [PledgeController::class, 'destroy'])
+             ->middleware('permission:finance.edit')
+             ->name('pledges.destroy');
 
         // Transaction list exports — registered BEFORE the resource route so
         // /finance/transactions/export/* doesn't get parsed as Route::resource's
