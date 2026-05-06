@@ -8,7 +8,24 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class FinanceCategory extends Model
 {
-    protected $fillable = ['name', 'type', 'description', 'is_active'];
+    /** Phase 7.4.a — NFP functional classification (IRS-990 expense buckets). */
+    public const FUNCTION_PROGRAM            = 'program';
+    public const FUNCTION_MANAGEMENT_GENERAL = 'management_general';
+    public const FUNCTION_FUNDRAISING        = 'fundraising';
+
+    public const FUNCTIONS = [
+        self::FUNCTION_PROGRAM,
+        self::FUNCTION_MANAGEMENT_GENERAL,
+        self::FUNCTION_FUNDRAISING,
+    ];
+
+    public const FUNCTION_LABELS = [
+        self::FUNCTION_PROGRAM            => 'Program',
+        self::FUNCTION_MANAGEMENT_GENERAL => 'Management & General',
+        self::FUNCTION_FUNDRAISING        => 'Fundraising',
+    ];
+
+    protected $fillable = ['name', 'type', 'description', 'is_active', 'function_classification'];
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -36,6 +53,26 @@ class FinanceCategory extends Model
     public function scopeExpense(Builder $query): Builder
     {
         return $query->where('type', 'expense');
+    }
+
+    public function scopeProgram(Builder $query): Builder
+    {
+        return $query->where('function_classification', self::FUNCTION_PROGRAM);
+    }
+
+    public function scopeManagementGeneral(Builder $query): Builder
+    {
+        return $query->where('function_classification', self::FUNCTION_MANAGEMENT_GENERAL);
+    }
+
+    public function scopeFundraising(Builder $query): Builder
+    {
+        return $query->where('function_classification', self::FUNCTION_FUNDRAISING);
+    }
+
+    public function functionLabel(): string
+    {
+        return self::FUNCTION_LABELS[$this->function_classification] ?? 'Program';
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

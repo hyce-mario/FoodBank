@@ -134,13 +134,15 @@ class FinanceReportController extends Controller
                 'route'       => 'finance.reports.category-trend',
                 'icon'        => 'document',
             ],
-            // ── Phase 7.4 (needs schema) ─────────────────────────────
+            // ── Phase 7.4 ────────────────────────────────────────────
             [
                 'id'          => 'functional_expenses',
                 'title'       => 'Statement of Functional Expenses',
                 'description' => 'Expenses cross-tabulated by Program / Management / Fundraising. IRS Form 990 prep.',
                 'category'    => 'Compliance',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.functional-expenses',
+                'icon'        => 'document',
             ],
             [
                 'id'          => 'budget_vs_actual',
@@ -910,6 +912,142 @@ class FinanceReportController extends Controller
             fclose($out);
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.4.a — Statement of Functional Expenses
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function functionalExpenses(Request $request): View
+    {
+        $period = $this->service->resolvePeriod($request);
+        $data   = $this->service->functionalExpenses($period['from'], $period['to'], $period['compare_from'], $period['compare_to']);
+
+        return view('finance.reports.functional-expenses', compact('period', 'data'));
+    }
+
+    public function functionalExpensesPrint(Request $request): View
+    {
+        $period   = $this->service->resolvePeriod($request);
+        $data     = $this->service->functionalExpenses($period['from'], $period['to'], $period['compare_from'], $period['compare_to']);
+        $branding = $this->exportBranding();
+        $autoPrint = true;
+
+        return view('finance.reports.exports.functional-expenses-print', compact('period', 'data', 'branding', 'autoPrint'));
+    }
+
+    public function functionalExpensesPdf(Request $request): Response
+    {
+        $period   = $this->service->resolvePeriod($request);
+        $data     = $this->service->functionalExpenses($period['from'], $period['to'], $period['compare_from'], $period['compare_to']);
+        $branding = $this->exportBranding();
+
+        $filename = 'functional-expenses-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.pdf';
+        $payload  = compact('period', 'data', 'branding');
+
+        try {
+            return Pdf::loadView('finance.reports.exports.functional-expenses-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-functional-expenses-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.functional-expenses-pdf', $payload)
+                ->setPaper('a4', 'portrait')
+                ->download($filename);
+        }
+    }
+
+    public function functionalExpensesCsv(Request $request): StreamedResponse
+    {
+        $period = $this->service->resolvePeriod($request);
+        $data   = $this->service->functionalExpenses($period['from'], $period['to'], $period['compare_from'], $period['compare_to']);
+
+        $filename = 'functional-expenses-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
+
+        return response()->streamDownload(function () use ($data, $period) {
+            $out = fopen('php://output', 'w');
+            // UTF-8 BOM for Excel friendliness
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['Statement of Functional Expenses']);
+            fputcsv($out, ['Period',         $period['label']]);
+            fputcsv($out, ['Total Expenses', number_format($data['total'], 2, '.', '')]);
+            fputcsv($out, ['Program Ratio',  number_format($data['program_ratio'] * 100, 1) . '%']);
+            if ($data['compare']) {
+                fputcsv($out, ['Compare Period', $data['compare']['label']]);
+                fputcsv($out, ['Prior Total',    number_format($data['prior_total'] ?? 0, 2, '.', '')]);
+                fputcsv($out, ['Prior Program Ratio',
+                    $data['prior_program_ratio'] !== null
+                        ? number_format($data['prior_program_ratio'] * 100, 1) . '%'
+                        : '—']);
+            }
+            fputcsv($out, []);
+
+            $header = ['Function', 'Category', 'Amount', 'Share of Function', 'Share of Total'];
+            if ($data['compare']) {
+                $header[] = 'Prior Function Total';
+                $header[] = 'Δ vs Prior';
+            }
+            fputcsv($out, $header);
+
+            foreach ($data['by_function'] as $f) {
+                if (empty($f['categories'])) {
+                    $row = [$f['label'], '(no categories)', '0.00', '0.0%', '0.0%'];
+                    if ($data['compare']) {
+                        $row[] = number_format($f['prior_total'] ?? 0, 2, '.', '');
+                        $row[] = '';
+                    }
+                    fputcsv($out, $row);
+                    continue;
+                }
+
+                foreach ($f['categories'] as $c) {
+                    $row = [
+                        $f['label'],
+                        $c['name'],
+                        number_format($c['amount'], 2, '.', ''),
+                        number_format($c['share'] * 100, 1) . '%',
+                        $data['total'] > 0
+                            ? number_format(($c['amount'] / $data['total']) * 100, 1) . '%'
+                            : '0.0%',
+                    ];
+                    if ($data['compare']) {
+                        $row[] = number_format($f['prior_total'] ?? 0, 2, '.', '');
+                        $row[] = isset($f['delta']) && $f['delta'] !== null
+                            ? number_format($f['delta'] * 100, 1) . '%'
+                            : '';
+                    }
+                    fputcsv($out, $row);
+                }
+
+                $subtotalRow = [
+                    $f['label'] . ' SUBTOTAL', '',
+                    number_format($f['total'], 2, '.', ''),
+                    '100.0%',
+                    number_format($f['share'] * 100, 1) . '%',
+                ];
+                if ($data['compare']) {
+                    $subtotalRow[] = number_format($f['prior_total'] ?? 0, 2, '.', '');
+                    $subtotalRow[] = isset($f['delta']) && $f['delta'] !== null
+                        ? number_format($f['delta'] * 100, 1) . '%'
+                        : '';
+                }
+                fputcsv($out, $subtotalRow);
+            }
+
+            $grandRow = ['GRAND TOTAL', '', number_format($data['total'], 2, '.', ''), '', '100.0%'];
+            if ($data['compare']) {
+                $grandRow[] = number_format($data['prior_total'] ?? 0, 2, '.', '');
+                $grandRow[] = '';
+            }
+            fputcsv($out, $grandRow);
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ]);
     }
 

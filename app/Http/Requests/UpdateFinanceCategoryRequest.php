@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\FinanceCategory;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateFinanceCategoryRequest extends FormRequest
 {
@@ -15,10 +17,12 @@ class UpdateFinanceCategoryRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name'        => ['required', 'string', 'max:100'],
-            'type'        => ['required', 'in:income,expense'],
-            'description' => ['nullable', 'string', 'max:500'],
-            'is_active'   => ['boolean'],
+            'name'                    => ['required', 'string', 'max:100'],
+            'type'                    => ['required', 'in:income,expense'],
+            'description'             => ['nullable', 'string', 'max:500'],
+            'is_active'               => ['boolean'],
+            // Phase 7.4.a — NFP functional classification.
+            'function_classification' => ['nullable', Rule::in(FinanceCategory::FUNCTIONS)],
         ];
     }
 }

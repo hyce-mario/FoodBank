@@ -479,6 +479,16 @@ Route::middleware('auth')->group(function () {
                     Route::get('/csv',   [FinanceReportController::class, 'categoryTrendCsv'])  ->name('.csv');
                 });
             });
+
+            // Phase 7.4.a — Statement of Functional Expenses
+            Route::prefix('reports/functional-expenses')->name('reports.functional-expenses')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'functionalExpenses']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'functionalExpensesPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'functionalExpensesPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'functionalExpensesCsv'])  ->name('.csv');
+                });
+            });
         });
 
         // Categories — finance.view baseline; Store/Update FormRequests gate

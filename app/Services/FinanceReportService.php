@@ -1611,4 +1611,213 @@ class FinanceReportService
 
         return $bullets;
     }
+
+    // ─── Phase 7.4.a — Statement of Functional Expenses ──────────────────────
+
+    /**
+     * Statement of Functional Expenses — IRS Form 990 expense rollup.
+     *
+     * Cross-tabulates completed expense transactions by NFP-functional
+     * classification (Program / Management & General / Fundraising) using
+     * the function_classification column added to finance_categories in
+     * Phase 7.4.a. Income is excluded by definition.
+     *
+     * The headline metric is the **program ratio** — % of expenses that
+     * went to Program. Watchdog charity-raters benchmark at 75%+; under
+     * 65% is a yellow flag in donor screening.
+     *
+     * @return array{
+     *   period: array{label:string, from:Carbon, to:Carbon},
+     *   compare: ?array{label:string, from:Carbon, to:Carbon},
+     *   by_function: array<string, array{
+     *     key:string, label:string, color:string, total:float, count:int,
+     *     share:float, categories: array<int, array{name:string, amount:float}>,
+     *     prior_total?:float, prior_share?:float, delta?:?float
+     *   }>,
+     *   total: float,
+     *   prior_total: ?float,
+     *   program_ratio: float,
+     *   prior_program_ratio: ?float,
+     *   insights: array<int, string>,
+     * }
+     */
+    public function functionalExpenses(Carbon $from, Carbon $to, ?Carbon $compareFrom = null, ?Carbon $compareTo = null): array
+    {
+        // Each function gets a distinct brand colour so the donut + table
+        // headers read consistently across the report and its exports.
+        $functions = [
+            'program'            => ['label' => 'Program',              'color' => '#1b2b4b'], // navy 700
+            'management_general' => ['label' => 'Management & General', 'color' => '#f97316'], // brand orange
+            'fundraising'        => ['label' => 'Fundraising',          'color' => '#3a4a6b'], // navy 500
+        ];
+
+        // Initialize buckets so every function appears in the output even
+        // when there are zero rows under it (clearer than missing keys).
+        $byFunction = [];
+        foreach ($functions as $key => $meta) {
+            $byFunction[$key] = [
+                'key'        => $key,
+                'label'      => $meta['label'],
+                'color'      => $meta['color'],
+                'total'      => 0.0,
+                'count'      => 0,
+                'share'      => 0.0,
+                'categories' => [],
+            ];
+        }
+
+        $rows = FinanceTransaction::query()
+            ->where('transaction_type', 'expense')
+            ->where('status', 'completed')
+            ->whereBetween('transaction_date', [$from, $to])
+            ->with('category:id,name,function_classification')
+            ->get(['id', 'transaction_date', 'amount', 'category_id']);
+
+        // Buffer category sums per function so we can sort them at the end.
+        $catSums = [
+            'program'            => [],
+            'management_general' => [],
+            'fundraising'        => [],
+        ];
+
+        foreach ($rows as $tx) {
+            $func    = $tx->category?->function_classification ?? 'program';
+            $catName = $tx->category?->name ?? '(Uncategorised)';
+            $amount  = (float) $tx->amount;
+
+            // Defense — if category somehow has an unknown function value
+            // (e.g. legacy data), fold it into program rather than 500.
+            if (! isset($byFunction[$func])) {
+                $func = 'program';
+            }
+
+            $byFunction[$func]['total'] += $amount;
+            $byFunction[$func]['count']++;
+            $catSums[$func][$catName] = ($catSums[$func][$catName] ?? 0) + $amount;
+        }
+
+        $total = (float) array_sum(array_column($byFunction, 'total'));
+
+        // Inline category breakdown into each function (sorted desc by amount).
+        foreach ($byFunction as $key => &$f) {
+            arsort($catSums[$key]);
+            $f['categories'] = [];
+            foreach ($catSums[$key] as $name => $amount) {
+                $f['categories'][] = [
+                    'name'   => $name,
+                    'amount' => (float) $amount,
+                    'share'  => $f['total'] > 0 ? ($amount / $f['total']) : 0.0,
+                ];
+            }
+            $f['share'] = $total > 0 ? ($f['total'] / $total) : 0.0;
+        }
+        unset($f);
+
+        // Prior-period comparison
+        $priorTotal       = null;
+        $priorByFunction  = ['program' => 0.0, 'management_general' => 0.0, 'fundraising' => 0.0];
+        $priorProgramRatio = null;
+        if ($compareFrom) {
+            $priorRows = FinanceTransaction::query()
+                ->where('transaction_type', 'expense')
+                ->where('status', 'completed')
+                ->whereBetween('transaction_date', [$compareFrom, $compareTo])
+                ->with('category:id,function_classification')
+                ->get(['amount', 'category_id']);
+
+            foreach ($priorRows as $tx) {
+                $func = $tx->category?->function_classification ?? 'program';
+                if (! isset($priorByFunction[$func])) {
+                    $func = 'program';
+                }
+                $priorByFunction[$func] += (float) $tx->amount;
+            }
+
+            $priorTotal = (float) array_sum($priorByFunction);
+
+            foreach ($byFunction as $key => &$f) {
+                $f['prior_total'] = $priorByFunction[$key];
+                $f['prior_share'] = $priorTotal > 0 ? ($priorByFunction[$key] / $priorTotal) : 0.0;
+                $f['delta']       = $priorByFunction[$key] > 0
+                    ? ($f['total'] - $priorByFunction[$key]) / $priorByFunction[$key]
+                    : null;
+            }
+            unset($f);
+
+            $priorProgramRatio = $priorTotal > 0
+                ? ($priorByFunction['program'] / $priorTotal)
+                : null;
+        }
+
+        $programRatio = $total > 0 ? ($byFunction['program']['total'] / $total) : 0.0;
+
+        return [
+            'period'              => ['label' => $this->labelFor($from, $to), 'from' => $from, 'to' => $to],
+            'compare'             => $compareFrom
+                ? ['label' => $this->labelFor($compareFrom, $compareTo), 'from' => $compareFrom, 'to' => $compareTo]
+                : null,
+            'by_function'         => $byFunction,
+            'total'               => $total,
+            'prior_total'         => $priorTotal,
+            'program_ratio'       => $programRatio,
+            'prior_program_ratio' => $priorProgramRatio,
+            'insights'            => $this->buildFunctionalExpensesInsights($byFunction, $total, $programRatio, $priorTotal, $priorProgramRatio),
+        ];
+    }
+
+    /** Insight bullets for Statement of Functional Expenses. */
+    private function buildFunctionalExpensesInsights(array $byFunction, float $total, float $programRatio, ?float $priorTotal, ?float $priorProgramRatio): array
+    {
+        $bullets = [];
+
+        if ($total <= 0) {
+            return ['No completed expenses recorded for this period.'];
+        }
+
+        $bullets[] = sprintf('Total expenses: %s across %d transaction%s.',
+            self::usd($total),
+            array_sum(array_column($byFunction, 'count')),
+            array_sum(array_column($byFunction, 'count')) === 1 ? '' : 's'
+        );
+
+        // Headline metric — program ratio. Industry guidance: 75%+ green,
+        // 65–75% yellow, <65% concerning to donor watchdogs.
+        $ratioPct = number_format($programRatio * 100, 1);
+        if ($programRatio >= 0.75) {
+            $bullets[] = sprintf('Program ratio: %s%% — meets the 75%%+ benchmark used by major charity raters.', $ratioPct);
+        } elseif ($programRatio >= 0.65) {
+            $bullets[] = sprintf('Program ratio: %s%% — within the 65–75%% yellow zone for charity-rating benchmarks.', $ratioPct);
+        } else {
+            $bullets[] = sprintf('Program ratio: %s%% — below the 65%% benchmark used by donor watchdogs; review overhead allocation.', $ratioPct);
+        }
+
+        // Each function's share + delta vs prior
+        foreach ($byFunction as $f) {
+            if ($f['total'] <= 0) {
+                continue;
+            }
+            $line = sprintf('%s: %s (%s%% of expenses)',
+                $f['label'],
+                self::usd($f['total']),
+                number_format($f['share'] * 100, 1)
+            );
+            if (isset($f['delta']) && $f['delta'] !== null) {
+                $arrow = $f['delta'] >= 0 ? '▲' : '▼';
+                $line .= sprintf(' %s %s%% vs prior period', $arrow, number_format(abs($f['delta']) * 100, 1));
+            }
+            $bullets[] = $line . '.';
+        }
+
+        // Prior program ratio comparison (if compare mode is on)
+        if ($priorProgramRatio !== null) {
+            $direction = $programRatio >= $priorProgramRatio ? 'up from' : 'down from';
+            $bullets[] = sprintf('Prior period program ratio was %s%% (%s %s%% this period).',
+                number_format($priorProgramRatio * 100, 1),
+                $direction,
+                $ratioPct
+            );
+        }
+
+        return $bullets;
+    }
 }

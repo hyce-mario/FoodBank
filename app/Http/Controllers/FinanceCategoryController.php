@@ -19,7 +19,10 @@ class FinanceCategoryController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('finance.categories.index', compact('categories'));
+        // Phase 7.4.a — function options for the Add/Edit modals.
+        $functionOptions = FinanceCategory::FUNCTION_LABELS;
+
+        return view('finance.categories.index', compact('categories', 'functionOptions'));
     }
 
     // ─── Store ────────────────────────────────────────────────────────────────

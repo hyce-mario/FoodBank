@@ -33,6 +33,20 @@
 </div>
 @endif
 
+{{-- Phase 7.4.a — Functional-classification review banner. Reminds admins
+     to verify the IRS-990 functional split (Program / Management & General
+     / Fundraising) on each expense category. New rows default to 'program';
+     this banner prompts the admin to reclassify the few that aren't. --}}
+@if($categories->where('type', 'expense')->isNotEmpty())
+<div class="mb-4 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
+    <svg class="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0-7.5a8.25 8.25 0 1 0 0 16.5 8.25 8.25 0 0 0 0-16.5Zm0 11.25h.008v.008H12v-.008Z"/></svg>
+    <div>
+        <div class="font-semibold">Review functional classifications</div>
+        <div class="text-amber-700 mt-0.5">Each expense category needs an IRS-990 functional bucket — Program, Management &amp; General, or Fundraising. New categories default to Program; reclassify the few that aren't via the Edit button. Used by the Statement of Functional Expenses report.</div>
+    </div>
+</div>
+@endif
+
 {{-- ── Alpine Component ──────────────────────────────────────────────────── --}}
 <div x-data="{
     modal: null,
@@ -41,15 +55,17 @@
     editType: 'expense',
     editDescription: '',
     editActive: true,
+    editFunction: 'program',
     deleteId: null,
     deleteName: '',
     openAdd() { this.modal = 'add'; },
-    openEdit(id, name, type, description, active) {
+    openEdit(id, name, type, description, active, functionClass) {
         this.editId          = id;
         this.editName        = name;
         this.editType        = type;
         this.editDescription = description;
         this.editActive      = active;
+        this.editFunction    = functionClass || 'program';
         this.modal = 'edit';
     },
     openDelete(id, name) {
@@ -87,6 +103,7 @@
                     <tr class="text-left text-xs font-semibold uppercase tracking-widest text-gray-400 border-b border-gray-100">
                         <th class="px-5 py-3">Name</th>
                         <th class="px-3 py-3">Type</th>
+                        <th class="px-3 py-3">Function</th>
                         <th class="px-3 py-3">Transactions</th>
                         <th class="px-5 py-3">Description</th>
                         <th class="px-3 py-3">Status</th>
@@ -102,6 +119,13 @@
                                 {{ $cat->typeLabel() }}
                             </span>
                         </td>
+                        <td class="px-3 py-3 text-xs text-gray-500">
+                            @if($cat->type === 'expense')
+                                {{ $cat->functionLabel() }}
+                            @else
+                                <span class="text-gray-300">—</span>
+                            @endif
+                        </td>
                         <td class="px-3 py-3 text-gray-500">{{ number_format($cat->transactions_count) }}</td>
                         <td class="px-5 py-3 text-gray-400 max-w-xs truncate">{{ $cat->description ?? '—' }}</td>
                         <td class="px-3 py-3">
@@ -113,7 +137,7 @@
                         </td>
                         <td class="px-5 py-3 text-right">
                             <div class="flex items-center justify-end gap-2">
-                                <button @click="openEdit({{ $cat->id }}, @js($cat->name), @js($cat->type), @js($cat->description ?? ''), {{ $cat->is_active ? 'true' : 'false' }})"
+                                <button @click="openEdit({{ $cat->id }}, @js($cat->name), @js($cat->type), @js($cat->description ?? ''), {{ $cat->is_active ? 'true' : 'false' }}, @js($cat->function_classification ?? 'program'))"
                                         class="text-xs font-medium text-gray-600 hover:text-navy-700 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors">
                                     Edit
                                 </button>
@@ -163,6 +187,16 @@
                     <select name="type" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400">
                         <option value="income">Income</option>
                         <option value="expense">Expense</option>
+                    </select>
+                </div>
+                {{-- Phase 7.4.a — IRS-990 functional classification (expense-only). --}}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Function <span class="text-gray-400 text-xs">(expense only)</span></label>
+                    <select name="function_classification"
+                            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400">
+                        @foreach($functionOptions as $value => $label)
+                        <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
                     </select>
                 </div>
                 <div>
@@ -215,6 +249,16 @@
                     <select name="type" x-model="editType" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400">
                         <option value="income">Income</option>
                         <option value="expense">Expense</option>
+                    </select>
+                </div>
+                {{-- Phase 7.4.a — IRS-990 functional classification (expense-only). --}}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Function <span class="text-gray-400 text-xs">(expense only)</span></label>
+                    <select name="function_classification" x-model="editFunction"
+                            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400">
+                        @foreach($functionOptions as $value => $label)
+                        <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
                     </select>
                 </div>
                 <div>
