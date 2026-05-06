@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Budget;
 use App\Models\FinanceTransaction;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -1815,6 +1816,240 @@ class FinanceReportService
                 number_format($priorProgramRatio * 100, 1),
                 $direction,
                 $ratioPct
+            );
+        }
+
+        return $bullets;
+    }
+
+    // ─── Phase 7.4.b — Budget vs. Actual / Variance ──────────────────────────
+
+    /**
+     * Budget vs. Actual report. Compares budgeted amounts (from the Phase
+     * 7.4.b `budgets` table) against actual completed transaction amounts
+     * for each category in the period.
+     *
+     * Direction defaults to 'expense' (the typical "budget" use case) but
+     * 'income' is supported (grant pipeline budgeting) and 'both' shows
+     * both sides separately.
+     *
+     * Variance = actual − budget. For expense categories, **negative
+     * variance is good** (under budget); for income, **positive variance
+     * is good** (over plan). The blade flips colour semantics by direction.
+     *
+     * Event filter: when $eventId is non-null, only budgets with
+     * event_id = $eventId AND transactions with event_id = $eventId are
+     * considered. When null (default), both org-wide budgets (event_id
+     * IS NULL) AND any per-event budgets in the period are summed together.
+     *
+     * @return array{
+     *   period: array{label:string, from:Carbon, to:Carbon},
+     *   direction: string,
+     *   event_id: ?int,
+     *   rows: array<int, array{
+     *     category_id:int, category_name:string, type:string,
+     *     budget:float, actual:float, variance:float, variance_pct:?float,
+     *     status:string,
+     *   }>,
+     *   totals: array{budget:float, actual:float, variance:float, variance_pct:?float},
+     *   over_budget: array<int, array{name:string, variance:float}>,
+     *   insights: array<int, string>,
+     * }
+     */
+    public function budgetVsActual(Carbon $from, Carbon $to, string $direction = 'expense', ?int $eventId = null): array
+    {
+        $direction = in_array($direction, ['income', 'expense', 'both'], true) ? $direction : 'expense';
+
+        // Pull budgets in the period scope. event_id filter:
+        //   - null (default) → all budgets (org-wide + per-event)
+        //   - int            → only budgets for that event
+        $budgetQuery = Budget::query()
+            ->where('period_start', '>=', $from->copy()->startOfDay())
+            ->where('period_start', '<=', $to->copy()->endOfDay());
+        if ($eventId !== null) {
+            $budgetQuery->where('event_id', $eventId);
+        }
+        $budgets = $budgetQuery->with('category:id,name,type')->get(['category_id', 'event_id', 'amount']);
+
+        // Sum budgets per category
+        $budgetByCat = []; // [category_id => float]
+        $catNames    = []; // [category_id => string]
+        $catTypes    = []; // [category_id => 'income'|'expense']
+        foreach ($budgets as $b) {
+            if (! $b->category) {
+                continue;
+            }
+            // Direction filter at the budget side
+            if ($direction !== 'both' && $b->category->type !== $direction) {
+                continue;
+            }
+            $budgetByCat[$b->category_id] = ($budgetByCat[$b->category_id] ?? 0) + (float) $b->amount;
+            $catNames[$b->category_id]    = $b->category->name;
+            $catTypes[$b->category_id]    = $b->category->type;
+        }
+
+        // Pull actuals in the period
+        $actualQuery = FinanceTransaction::query()
+            ->where('status', 'completed')
+            ->whereBetween('transaction_date', [$from, $to]);
+        if ($direction !== 'both') {
+            $actualQuery->where('transaction_type', $direction);
+        }
+        if ($eventId !== null) {
+            $actualQuery->where('event_id', $eventId);
+        }
+        $actualRows = $actualQuery->with('category:id,name,type')->get(['category_id', 'amount', 'transaction_type']);
+
+        $actualByCat = [];
+        foreach ($actualRows as $tx) {
+            $catId = $tx->category_id;
+            if (! $catId) {
+                continue; // skip uncategorised — no budget to compare against
+            }
+            // If the category wasn't in any budget but matches the direction,
+            // still surface it (over-spending an unbudgeted category is the
+            // headline anomaly the report exists to catch).
+            if (! isset($catNames[$catId])) {
+                $cat = $tx->category;
+                if (! $cat) continue;
+                if ($direction !== 'both' && $cat->type !== $direction) continue;
+                $catNames[$catId] = $cat->name;
+                $catTypes[$catId] = $cat->type;
+                $budgetByCat[$catId] = 0.0; // explicit zero budget
+            }
+            $actualByCat[$catId] = ($actualByCat[$catId] ?? 0) + (float) $tx->amount;
+        }
+
+        // Build per-category rows
+        $rows = [];
+        $totalBudget = 0.0;
+        $totalActual = 0.0;
+        foreach ($catNames as $catId => $name) {
+            $budget   = (float) ($budgetByCat[$catId] ?? 0);
+            $actual   = (float) ($actualByCat[$catId] ?? 0);
+            $variance = $actual - $budget;
+            $variancePct = $budget > 0 ? ($variance / $budget) : null;
+
+            // Status semantics depend on direction:
+            //   expense: actual > budget  → 'over'  (bad);  actual <= budget → 'under' (good)
+            //   income:  actual < budget  → 'under' (bad);  actual >= budget → 'over'  (good)
+            $type = $catTypes[$catId];
+            if ($type === 'expense') {
+                $status = abs($variance) < 0.005 ? 'on_target' : ($variance > 0 ? 'over' : 'under');
+            } else {
+                $status = abs($variance) < 0.005 ? 'on_target' : ($actual < $budget ? 'under' : 'over');
+            }
+
+            $rows[] = [
+                'category_id'   => $catId,
+                'category_name' => $name,
+                'type'          => $type,
+                'budget'        => $budget,
+                'actual'        => $actual,
+                'variance'      => $variance,
+                'variance_pct'  => $variancePct,
+                'status'        => $status,
+            ];
+
+            $totalBudget += $budget;
+            $totalActual += $actual;
+        }
+
+        // Sort: largest absolute variance first (most actionable rows up top)
+        usort($rows, fn ($a, $b) => abs($b['variance']) <=> abs($a['variance']));
+
+        $totalVariance    = $totalActual - $totalBudget;
+        $totalVariancePct = $totalBudget > 0 ? ($totalVariance / $totalBudget) : null;
+
+        // Over-budget callout: top 3 expense categories that overspent
+        $overBudget = [];
+        foreach ($rows as $r) {
+            if ($r['type'] === 'expense' && $r['status'] === 'over') {
+                $overBudget[] = ['name' => $r['category_name'], 'variance' => $r['variance']];
+            }
+        }
+        $overBudget = array_slice($overBudget, 0, 3);
+
+        return [
+            'period'      => ['label' => $this->labelFor($from, $to), 'from' => $from, 'to' => $to],
+            'direction'   => $direction,
+            'event_id'    => $eventId,
+            'rows'        => $rows,
+            'totals'      => [
+                'budget'       => $totalBudget,
+                'actual'       => $totalActual,
+                'variance'     => $totalVariance,
+                'variance_pct' => $totalVariancePct,
+            ],
+            'over_budget' => $overBudget,
+            'insights'    => $this->buildBudgetInsights($rows, $totalBudget, $totalActual, $totalVariance, $direction),
+        ];
+    }
+
+    /** Insight bullets for Budget vs. Actual. */
+    private function buildBudgetInsights(array $rows, float $totalBudget, float $totalActual, float $totalVariance, string $direction): array
+    {
+        $bullets = [];
+
+        if ($totalBudget <= 0 && $totalActual <= 0) {
+            return ['No budgets seeded and no actuals recorded — add budgets via /finance/budgets to start tracking variance.'];
+        }
+
+        if ($totalBudget <= 0) {
+            $bullets[] = sprintf('No budgets seeded for this period yet — actuals total %s with no plan to compare against.', self::usd($totalActual));
+            return $bullets;
+        }
+
+        $bullets[] = sprintf('Total budget: %s vs. actual: %s (variance: %s%s).',
+            self::usd($totalBudget),
+            self::usd($totalActual),
+            $totalVariance >= 0 ? '+' : '',
+            self::usd($totalVariance)
+        );
+
+        // Direction-aware overall verdict
+        if ($direction === 'expense') {
+            if ($totalVariance > 0) {
+                $bullets[] = sprintf('Overall expenses ran %s over budget (%s%% above plan).',
+                    self::usd($totalVariance),
+                    $totalBudget > 0 ? number_format(($totalVariance / $totalBudget) * 100, 1) : '—'
+                );
+            } else {
+                $bullets[] = sprintf('Overall expenses came in %s under budget — discipline maintained.',
+                    self::usd(abs($totalVariance))
+                );
+            }
+        } elseif ($direction === 'income') {
+            if ($totalVariance >= 0) {
+                $bullets[] = sprintf('Income exceeded plan by %s — pipeline performing above target.',
+                    self::usd($totalVariance)
+                );
+            } else {
+                $bullets[] = sprintf('Income fell short of plan by %s — review fundraising pipeline.',
+                    self::usd(abs($totalVariance))
+                );
+            }
+        }
+
+        // Top variance row
+        if (! empty($rows)) {
+            $top = $rows[0]; // already sorted by abs(variance) desc
+            if (abs($top['variance']) >= 0.01) {
+                $arrow = $top['variance'] >= 0 ? 'over' : 'under';
+                $bullets[] = sprintf('Largest variance: %s — %s by %s.',
+                    $top['category_name'],
+                    $arrow,
+                    self::usd(abs($top['variance']))
+                );
+            }
+        }
+
+        // Count of rows over budget (expense direction only)
+        $overCount = count(array_filter($rows, fn ($r) => $r['type'] === 'expense' && $r['status'] === 'over'));
+        if ($overCount > 0 && $direction !== 'income') {
+            $bullets[] = sprintf('%d expense categor%s over budget.',
+                $overCount,
+                $overCount === 1 ? 'y is' : 'ies are'
             );
         }
 

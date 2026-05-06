@@ -149,7 +149,9 @@ class FinanceReportController extends Controller
                 'title'       => 'Budget vs. Actual / Variance',
                 'description' => 'Period budget vs. actual by category. Color-coded over/under with % variance.',
                 'category'    => 'Compliance',
-                'live'        => false,
+                'live'        => true,
+                'route'       => 'finance.reports.budget-vs-actual',
+                'icon'        => 'document',
             ],
             [
                 'id'          => 'pledge_aging',
@@ -1043,6 +1045,116 @@ class FinanceReportController extends Controller
                 $grandRow[] = '';
             }
             fputcsv($out, $grandRow);
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7.4.b — Budget vs. Actual / Variance
+    // ─────────────────────────────────────────────────────────────────────
+
+    public function budgetVsActual(Request $request): View
+    {
+        $period    = $this->service->resolvePeriod($request);
+        $direction = in_array($request->get('direction'), ['income', 'expense', 'both'], true)
+            ? $request->get('direction') : 'expense';
+        $eventId   = $request->integer('event_id') ?: null;
+
+        $data   = $this->service->budgetVsActual($period['from'], $period['to'], $direction, $eventId);
+        $events = Event::orderByDesc('date')->limit(50)->get(['id', 'name', 'date']);
+
+        return view('finance.reports.budget-vs-actual', compact('period', 'data', 'events', 'direction', 'eventId'));
+    }
+
+    public function budgetVsActualPrint(Request $request): View
+    {
+        $period    = $this->service->resolvePeriod($request);
+        $direction = in_array($request->get('direction'), ['income', 'expense', 'both'], true)
+            ? $request->get('direction') : 'expense';
+        $eventId   = $request->integer('event_id') ?: null;
+
+        $data      = $this->service->budgetVsActual($period['from'], $period['to'], $direction, $eventId);
+        $branding  = $this->exportBranding();
+        $autoPrint = true;
+
+        return view('finance.reports.exports.budget-vs-actual-print', compact('period', 'data', 'branding', 'autoPrint'));
+    }
+
+    public function budgetVsActualPdf(Request $request): Response
+    {
+        $period    = $this->service->resolvePeriod($request);
+        $direction = in_array($request->get('direction'), ['income', 'expense', 'both'], true)
+            ? $request->get('direction') : 'expense';
+        $eventId   = $request->integer('event_id') ?: null;
+
+        $data     = $this->service->budgetVsActual($period['from'], $period['to'], $direction, $eventId);
+        $branding = $this->exportBranding();
+
+        $filename = 'budget-vs-actual-' . $direction . '-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.pdf';
+        $payload  = compact('period', 'data', 'branding');
+
+        try {
+            return Pdf::loadView('finance.reports.exports.budget-vs-actual-pdf', $payload)
+                ->setPaper('a4', 'landscape')
+                ->download($filename);
+        } catch (\Throwable $e) {
+            Log::warning('finance-budget-vs-actual-pdf: dompdf failed; retrying without logo.', ['message' => $e->getMessage()]);
+            $payload['branding']['logo_src'] = null;
+            return Pdf::loadView('finance.reports.exports.budget-vs-actual-pdf', $payload)
+                ->setPaper('a4', 'landscape')
+                ->download($filename);
+        }
+    }
+
+    public function budgetVsActualCsv(Request $request): StreamedResponse
+    {
+        $period    = $this->service->resolvePeriod($request);
+        $direction = in_array($request->get('direction'), ['income', 'expense', 'both'], true)
+            ? $request->get('direction') : 'expense';
+        $eventId   = $request->integer('event_id') ?: null;
+
+        $data = $this->service->budgetVsActual($period['from'], $period['to'], $direction, $eventId);
+
+        $filename = 'budget-vs-actual-' . $direction . '-' . $period['from']->format('Ymd') . '-' . $period['to']->format('Ymd') . '.csv';
+
+        return response()->streamDownload(function () use ($data, $period, $direction) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, ['Budget vs. Actual']);
+            fputcsv($out, ['Period',    $period['label']]);
+            fputcsv($out, ['Direction', ucfirst($direction)]);
+            fputcsv($out, ['Total Budget', number_format($data['totals']['budget'], 2, '.', '')]);
+            fputcsv($out, ['Total Actual', number_format($data['totals']['actual'], 2, '.', '')]);
+            fputcsv($out, ['Total Variance', number_format($data['totals']['variance'], 2, '.', '')]);
+            fputcsv($out, []);
+
+            fputcsv($out, ['Category', 'Type', 'Budget', 'Actual', 'Variance', 'Variance %', 'Status']);
+            foreach ($data['rows'] as $r) {
+                fputcsv($out, [
+                    $r['category_name'],
+                    ucfirst($r['type']),
+                    number_format($r['budget'], 2, '.', ''),
+                    number_format($r['actual'], 2, '.', ''),
+                    number_format($r['variance'], 2, '.', ''),
+                    $r['variance_pct'] !== null ? number_format($r['variance_pct'] * 100, 1) . '%' : '',
+                    str_replace('_', ' ', ucfirst($r['status'])),
+                ]);
+            }
+
+            fputcsv($out, []);
+            fputcsv($out, [
+                'TOTAL', '',
+                number_format($data['totals']['budget'], 2, '.', ''),
+                number_format($data['totals']['actual'], 2, '.', ''),
+                number_format($data['totals']['variance'], 2, '.', ''),
+                $data['totals']['variance_pct'] !== null ? number_format($data['totals']['variance_pct'] * 100, 1) . '%' : '',
+                '',
+            ]);
 
             fclose($out);
         }, $filename, [

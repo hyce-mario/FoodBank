@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AllocationRulesetController;
 use App\Http\Controllers\AuditLogController;
+use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\FinanceCategoryController;
 use App\Http\Controllers\FinanceController;
@@ -489,6 +490,16 @@ Route::middleware('auth')->group(function () {
                     Route::get('/csv',   [FinanceReportController::class, 'functionalExpensesCsv'])  ->name('.csv');
                 });
             });
+
+            // Phase 7.4.b — Budget vs. Actual / Variance
+            Route::prefix('reports/budget-vs-actual')->name('reports.budget-vs-actual')->group(function () {
+                Route::get('/', [FinanceReportController::class, 'budgetVsActual']);
+                Route::middleware('permission:finance_reports.export')->group(function () {
+                    Route::get('/print', [FinanceReportController::class, 'budgetVsActualPrint'])->name('.print');
+                    Route::get('/pdf',   [FinanceReportController::class, 'budgetVsActualPdf'])  ->name('.pdf');
+                    Route::get('/csv',   [FinanceReportController::class, 'budgetVsActualCsv'])  ->name('.csv');
+                });
+            });
         });
 
         // Categories — finance.view baseline; Store/Update FormRequests gate
@@ -500,6 +511,17 @@ Route::middleware('auth')->group(function () {
         Route::delete('categories/{category}', [FinanceCategoryController::class, 'destroy'])
              ->middleware('permission:finance.edit')
              ->name('categories.destroy');
+
+        // Phase 7.4.b — Budgets CRUD. Reads gate on finance.view; writes on
+        // finance.edit (via Store/Update FormRequest authorize + the resource
+        // middleware split below). Without budgets seeded, the Budget vs.
+        // Actual report still renders (just shows 0 budget across the board).
+        Route::resource('budgets', BudgetController::class)
+             ->except(['show', 'destroy'])
+             ->middleware('permission:finance.view');
+        Route::delete('budgets/{budget}', [BudgetController::class, 'destroy'])
+             ->middleware('permission:finance.edit')
+             ->name('budgets.destroy');
 
         // Transaction list exports — registered BEFORE the resource route so
         // /finance/transactions/export/* doesn't get parsed as Route::resource's
