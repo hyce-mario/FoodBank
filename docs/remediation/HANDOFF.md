@@ -4,144 +4,196 @@
 
 ---
 
-## Current state — 2026-05-07 (Session 11 closing — **Production deploy + Event Summary + UI polish**)
+## Current state — 2026-05-07 (Session 12 closing — **RBAC hardening + permanent guardrails + bot defense**)
 
 ### TL;DR for the next agent
 
-**FoodBank is LIVE in production at `https://ngo.heyjaytechnologies.com`.** All four Session-11 commits are pushed; the rebuilt frontend assets (new CSS hash `app-DXYd_5F0.css`) are scp'd up; Laravel caches are refreshed on the server. Working tree is clean.
+**FoodBank is LIVE in production at `https://ngo.heyjaytechnologies.com`.** Session 12 began with a user-reported permission/gate concern (custom roles "leak" UI even when their permissions don't grant access) and ended with a permanent guardrail system that prevents the entire class of bug from recurring. Seven commits land:
 
-The session bundled three goals in one stretch:
-1. **Deploy to HostGator shared hosting** — onboarding the live site for the first time, capturing every real-world gotcha as we hit it.
-2. **New feature: Event Summary report** — multi-section, vertical-then-horizontal-tab review with PDF / Print / XLSX exports, only visible on past events.
-3. **Drive-by UI polish + bug fixes** — topbar dropdowns, public-page branding, review-form bug, inventory route order, roles validation silent failure.
+1. UI-side fix for the original report (sidebar + dashboard widget gating per permission).
+2. Bot defense on every public-write endpoint (registration, review, volunteer signup) via honeypot + HMAC-signed time trap.
+3. Settings-write defense-in-depth (route middleware + controller guard + UI hide-the-button) closing the "Sys Admin can save settings" report — almost certainly a stale `route:cache` on production.
+4. **Two permanent automated guardrails** (`RbacRouteAuditTest` + `RbacNoPermissionSmokeTest`) that fail CI when any new authenticated route is added without a gate, OR when any zero-permission user accesses an admin page. Means "I created a role and now this leaks" is a CI failure going forward, not a user report.
+5. Catalog-validate role permissions (`Rule::in(...)`) so typo'd permission strings can't be saved.
+6. Defense-in-depth route-middleware split on households/events/volunteers/volunteer-groups resources (matches inventory + purchase_orders pattern). `php artisan route:list` now shows the gate explicitly for every action.
+7. `DEPLOY.md` clear-then-cache flow + `docs/10-rbac.md` contributor checklist + catalog/default-roles tables synced to source of truth.
+
+Working tree clean. 711 feature tests passing.
 
 ### Where we are
 
 | Area | Status |
 |---|---|
-| `main` branch | All Session-11 commits pushed to origin (`f5d92f2`) |
-| Live site | ✅ `https://ngo.heyjaytechnologies.com` — HTTPS, cron, media upload, login all verified |
-| Suite | Not re-run this session (no service / model changes that need test coverage; HTTP-layer fixes only) |
+| `main` branch | 7 new commits ahead of origin (last known push: `ef5369e`); local `origin/main` ref shows up-to-date but user has not run `git push` since session start, so verify on next push |
+| Live site | ✅ `https://ngo.heyjaytechnologies.com` — running pre-Session-12 code (`ef5369e`) until pushed |
+| Suite | **711 feature tests passing** (was 694 at Session 11 close; +9 BotDefense, +4 SettingsAuthorization, +2 RBAC guardrails, +2 BotDefense JSON-path) |
 | Working tree | Clean |
-| Git identity | Now set locally on this repo (`user.name=YTobby`, `user.email=digienergy0@gmail.com`); global config still empty |
-| Node / npm | **Now installed locally** at `C:\Program Files\nodejs\` — `npm run build` works |
+| Git identity | Local repo: `user.name=YTobby`, `user.email=digienergy0@gmail.com` |
 
-### What landed in Session 11 (4 commits)
+### What landed in Session 12 (7 commits)
 
-1. **`367929b`** `docs(deploy): refresh HostGator runbook with real-world gotchas`
-   - Rewrote `DEPLOY.md` (686 LOC) to reflect the actual deploy: the runbook had been written speculatively before the deploy; this version is what we did.
-   - Top-level "Gotchas" section captures the six things that bit us: HostGator subdomains live at `~/<subdomain>/` not `public_html/`; cPanel doc-root save is silently fragile; HostGator MySQL is 5.7 (rejects MariaDB-style JSON DEFAULTS); composer install needs `--no-scripts` first because `AppServiceProvider` boot queries `app_settings`; "Add User to Database" is a separate cPanel panel from creating user/db; bash passwords with `(`/`)` need single-quoted heredocs.
-   - Adds "Updating production" section + Backups section (manual mysqldump + scheduled cron).
+1. **`89d3f8c`** `fix(rbac): gate sidebar + dashboard widgets per permission`
+   - Sidebar in `layouts/app.blade.php`: every `<li>` now wrapped in `@can('<perm>')` (or `@can('viewAny', Model::class)` for policy-backed resources). ADMIN's `*` wildcard passes via the `Gate::before` bridge. Roles see only items their perms cover.
+   - Dashboard data computation in `DashboardController::index()` is now per-permission. Only widgets the user can see compute their data; others get zero/empty defaults. Per-widget `@if($canX)` in the blade hides them. Empty-state card shown when no widgets qualify. Closes the original report (the `xyz` test role with only `households.create` was seeing "everything" in the sidebar).
 
-2. **`9625b3e`** `feat(ui): topbar dropdowns + public-page branding + review submit fix`
-   - **Topbar (`layouts/app.blade.php`)** — removed inert Location button. Add New is now a permission-gated dropdown (Event/Household/Volunteer/Inventory Item via policies; Expense/Income via `finance.create`, both pre-fill `?type=` query). Views is a dropdown opening public + event-day pages in **new tabs**. Notifications is a dropdown with placeholder items + "Mark all read" frame ready for the real notifications model in a later phase.
-   - **Public layout (`layouts/public.blade.php`)** — pulls `brandingLogoDataUri()` + `brandingFaviconDataUri()`, renders the org's uploaded logo at the top + favicon in the tab. Falls back to the bag-icon SVG + `config('app.name')` when no logo is set. Affects all four `layouts.public` users (registration index/register/success + review).
-   - **Review form (`public/reviews/create.blade.php`)** — Submit button stayed disabled until the user re-clicked a star, because `hasText` getter read the DOM directly (Alpine can't track DOM mutations). Bound the textarea with `x-model="reviewText"` and rewrote `hasText` to read from `this.reviewText`. Now reactive on every keystroke, button enables the moment any rating ≥ 1 + non-whitespace text are present.
+2. **`139bcc7`** `chore(dashboard): tweak stat card labels`
+   - "Food Bundles Served" → "Food Pack Served" (capitalisation), "People Served" → "Family Members Served" (semantically aligned with the underlying SUM(household_size)).
 
-3. **`f9b9342`** `feat(events): event report exports + event summary report`
-   - **Phase C.3.b — Event Report exports** — wired the three placeholder buttons on the in-page Event Report card (PDF / Excel / Print) to real handlers. Routes `events.event-report.{print,pdf,csv}`. Output mirrors the in-page table: primary household + represented households with `↳` indent, allocated bag count via the event's ruleset, status badges. New blades at `events/exports/event-report-{print,pdf}.blade.php`.
-   - **Phase C.3.c — Event Summary report** — comprehensive multi-section report only available on past events (`$event->isLocked()`). Trigger pill button at top-right of the event description card opens a section-picker modal (8 toggles + Select all / Clear); "View Report" opens the summary in a new tab with `?sections[]=…`. Sections: Event Details, Attendees, Volunteers, Reviews, Inventory, Finance (auto-hidden if user lacks `finance.view`), Queue Summary, Evaluation. **Evaluation** is heuristic insights with positive/neutral/concerning kinds — pre-reg show-up rate, walk-in pressure, inventory utilisation, volunteer ratio, review sentiment, queue throughput, finance net. Routes `events.summary.{show,print,pdf,xlsx}`. Print page uses Tailwind + `print-color-adjust: exact` so cover gradient + section bands + colored stat tiles render in browser print/save-as-PDF. PDF uses table-based DomPDF-friendly markup. XLSX is one sheet per section via PhpSpreadsheet. Queue tab uses **HH:mm** format via `EventSummaryService::formatHm()`. Tabs are **horizontal** across the top (matched to existing event-detail tab style; `flex gap-1 overflow-x-auto`). Critical pattern lesson: PDF view originally used `@php use App\Services\EventSummaryService as ESS; @endphp` which fails because Blade compiled views run inside a closure scope where PHP `use` for class aliases is invalid syntax — switched to `$hm = fn ($m) => \App\Services\…::formatHm($m);` closure.
-   - **Inventory route order fix** — `/inventory/items/create` was 404'ing because the read-only resource (`only(['index','show'])`) registered `show` (with `{inventory_item}` wildcard) BEFORE the writes resource registered `create`. Laravel matched `show` first with `{inventory_item}='create'`, model binding failed, 404 returned even though `inventory.items.create` was defined. Swapped the order; added a comment so the next person doesn't tidy them back.
+3. **`622a79d`** `feat(security): bot defense on public registration + review forms`
+   - New `BotDefense` middleware (`app/Http/Middleware/BotDefense.php`) — two layers:
+     - Honeypot field `website_url` (CSS-hidden, ARIA-hidden, tabindex=-1, autocomplete=off). Naive scrapers autofill it; if filled, request is silently dropped.
+     - HMAC-signed time trap `_form_ts` — `<unix_ts>.<hmac>` keyed on APP_KEY. Verifies signature + enforces 3s minimum between render and submit.
+   - `<x-bot-defense />` blade component (`resources/views/components/bot-defense.blade.php`) emits the two hidden fields. Drop into any public form inside the `<form>` tag.
+   - Wired onto `POST /register/{event}` and `POST /review`. Throttle middleware still in place (5/min/IP).
+   - 9 new feature tests in `BotDefenseTest`.
 
-4. **`f5d92f2`** `fix(roles): role creation silently fails due to ConvertEmptyStringsToNull`
-   - **The bug**: `roles/create.blade.php:104` had `<input type="hidden" name="permissions[]" value="" x-show="false">` whose intent was "ensure permissions[] always exists in the request". But Laravel's default `\Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull` rewrites every `""` in input to `null` BEFORE validation runs. The `permissions.* => string` rule then failed (`is_string(null) === false`) with "The permissions.0 field must be a string." The form had no inline `@error` for the permissions field, so the user just saw the page silently 302 back to itself with no visible feedback.
-   - **The fix**: removed the broken hidden input. Laravel handles a missing `permissions[]` key fine via `nullable|array` + `?? []` in the service.
-   - **Defensive add**: top-level `@if($errors->any())` summary block at the top of the form. Surfaces every validation error regardless of which field failed, so any future error on a field without an inline `@error` block is visible.
+4. **`e23da52`** `fix(settings): defense-in-depth on settings.update + hide save UI for non-grantees`
+   - Three layers now block a settings.view-only user from saving settings:
+     - Route middleware (`permission:settings.update`) — primary, unchanged.
+     - Controller `abort_unless()` in `SettingsController::{update, uploadBrandingAsset, deleteBrandingAsset}` — guards against stale route cache.
+     - UI gating in `settings/show.blade.php` (read-only banner + `<fieldset disabled>` + save bar `@can('settings.update')`) and `branding_above.blade.php` (whole upload card hidden via `@can`).
+   - 4 new feature tests in `SettingsAuthorizationTest`.
+   - Most likely root cause of the original "Ben can save settings" report: stale `php artisan route:cache` on production from before the Tier 2 RBAC pass. Fixed by `DEPLOY.md` change in commit 8427ad6.
+
+5. **`8427ad6`** `feat(security): permanent RBAC guardrails — audit test, smoke test, catalog validation, deploy hardening`
+   - **`tests/Feature/RbacRouteAuditTest.php`** — static analysis via `ReflectionMethod`. Walks every authenticated route; classifies as GATED (route middleware) / POLICY (controller `$this->authorize()` or typed FormRequest containing `hasPermission(`). Anything else must be in `ALLOWLIST`. New ungated routes fail CI with a fix-suggestion message.
+   - **`tests/Feature/RbacNoPermissionSmokeTest.php`** — behavioural complement. Zero-permission user hits every parameterless GET admin route; asserts not 200. Catches "policy exists but checks the wrong permission" class of bug.
+   - **`scripts/rbac-audit.php`** — standalone CLI for ad-hoc spot checks: `php artisan route:list --json | php scripts/rbac-audit.php`.
+   - **`Store/UpdateRoleRequest`** validate `permissions[]` against `RolePermissionService::allPermissions() + ['*']` via `Rule::in(...)`. Typo'd permission strings rejected on save.
+   - **`DEPLOY.md`** update flow now `route:clear / config:clear / view:clear / event:clear` BEFORE `*:cache`. The clear is load-bearing — production Sys-Admin-can-save-settings report was almost certainly a stale route cache snapshot.
+
+6. **`654de45`** `docs(rbac): contributor checklist for adding permissions/routes/UI + automated-guardrail reference`
+   - Appends three sections to `docs/10-rbac.md`: automated guardrails, catalog validation, contributor checklists for new permissions / new routes / new admin UI elements.
+
+7. **`07a798b`** `fix(rbac): defense-in-depth route middleware on resource routes + JSON-aware bot defense + docs sync`
+   - **Resource route splits** — households / events / volunteers / volunteer-groups now split per action (matches inventory + purchase_orders pattern):
+     - index/show → `<resource>.view`
+     - create/store → `<resource>.create`
+     - edit/update → `<resource>.edit`
+     - destroy → `<resource>.delete`
+   - Sibling routes (exports, regenerate-qr, attach/detach, service-history, member editor, attendees, summary, event-report) grouped under read or write middleware.
+   - Why split-by-action and not resource-wide: a role with ONLY `households.create` (the original `xyz` test case) needs to reach `/households/create` without holding `households.view`. The split lets that work.
+   - Controllers still call `$this->authorize()` so policies remain a defense-in-depth backup.
+   - `route:list` now shows GATED middleware explicitly for every action — easier ops/audit.
+   - **JSON-aware BotDefense** — middleware returns 422 JSON (instead of `back()` redirect) when `$request->expectsJson()`. Wired bot-defense onto `POST /volunteer-checkin/signup`. Other kiosk endpoints (check-in, check-out, search) require a valid volunteer_id and stay throttle-only.
+   - `docs/10-rbac.md` catalog + default-roles tables synced to source of truth (was missing FINANCE / WAREHOUSE / purchase_orders / audit_logs / finance_reports).
 
 ### Tags on origin
 
-No new tags this session. The work doesn't fit the audit-phase model — it's deployment + new feature work + drive-by fixes, not a numbered phase. If a future session wants to tag this session's wrap point, `phase-deploy-go-live` is unused and would fit.
+No new tags this session. The work isn't a single phase — it's a permission-system hardening pass driven by user reports.
 
 ---
 
 ## What's next — start here on resume
 
-Production is live and stable. Several optional directions, none urgent:
+### A. Push the 7 Session-12 commits to production
 
-### A. Notifications system (placeholder is in place, needs real wiring)
+User did NOT push during this session. Action sequence:
 
-The notifications dropdown in the topbar (Session 11) renders 4 hardcoded placeholder items + a "View all notifications" link to `#`. Building the real thing means:
-1. New `notifications` model + migration (Laravel ships a generic `notifications` table for `Notifiable` trait — could reuse).
-2. Decide WHICH events trigger a notification: new review submitted, inventory below reorder, volunteer first-timer checked in, new event registration, etc.
-3. Wire the dropdown to query unread notifications for the authenticated user, mark-as-read on click.
+```bash
+git push origin main
+ssh heyjayte@ngo.heyjaytechnologies.com
+cd ~/ngo.heyjaytechnologies.com && git pull && \
+  php artisan route:clear  && php artisan config:clear && \
+  php artisan view:clear   && php artisan event:clear  && \
+  php artisan route:cache  && php artisan config:cache && \
+  php artisan view:cache   && php artisan event:cache
+```
 
-Not load-bearing — the placeholder is acceptable indefinitely. Build it when the user asks.
+The clear-then-cache cycle is load-bearing — even if production code already had the gates, the cached route file on disk may still be the stale pre-Tier-2 snapshot. Running it once permanently closes the "stale cache makes middleware vanish" failure mode.
 
-### B. Carry-forward open items (still open from earlier sessions)
+No `npm run build` needed for these commits — pure PHP + blade changes. No CSS classes added. No `scp` of `public/build/` required.
 
-- **Phase 6.5 household merge tool** — Phase 6.5 prevents new duplicate households but doesn't merge legacy duplicates. Phase 5.8 volunteer-merge service is the proven shape — port that pattern. Asked but never confirmed.
-- **Phase 2.1.f backfill scope** — historical exited visits: forward-only or backfill? Open since Session 5.
-- **"Photos & Video" tab name** — PDFs upload too now; "Media" or "Photos, Video & Documents"? User hasn't picked.
+### B. Open work the user has signalled they may pick up
 
-### C. Phase 7.4 follow-ups (small, already designed-in)
+- **Notifications system** — placeholder dropdown in topbar still hardcoded. Not load-bearing. Build when asked.
 
-- **Pledge payment plan** — v1 uses single-amount + 'partial' status. A future `pledge_payments` sibling table is additive.
-- **Functional-classification allocation table** — for true IRS-990 fidelity (e.g. "Office rent — 70% Program / 30% Mgmt&General") add a `category_function_allocations(category_id, function, percentage)` table.
-- **Aging buckets configurable** — `pledge_aging_buckets` setting key, no schema change.
+### C. Phase 7.4 follow-ups (small, designed-in)
 
-### D. New feature work (no audit driver — purely user-driven)
-
-If the user comes back with new feature requests, follow the established cadence: discuss → plan → confirm open questions → implement. Don't auto-start anything.
-
----
-
-## Carry-forward open questions for the user (not load-bearing)
-
-- **Tailwind class for `border-navy-200`** — used briefly in the Event Summary trigger button but isn't in the safelist. Replaced with `border-navy-100` (which IS safelisted). If the user wants a slightly darker border eventually, add `'border-navy-200'` to `tailwind.config.js` `safelist` and rebuild.
-- **Notification placeholder strings** — the four placeholder items in the topbar Notifications dropdown are real-looking ("New review received for May 1 distribution", "Inventory low — 3 items below reorder threshold", etc.). When the real notifications model lands, those strings should be deleted; until then they may confuse users into thinking something happened. Worth flagging if the user reports confusion.
-- Existing carry-forward from earlier sessions (LOG.md `5.11` row commit-SHA cleanup; pledge QA seed data) still open.
+- Pledge payment plan (additive `pledge_payments` sibling table)
+- Functional-classification allocation table for true IRS-990 fidelity
+- Aging buckets configurable via `pledge_aging_buckets` setting
 
 ---
 
 ## Architecture notes carried forward (still load-bearing)
 
-### Production deploy procedure (Session 11)
+### Production deploy procedure
 
-`DEPLOY.md` (project root) is the source of truth. The routine update flow on `main` is:
+`DEPLOY.md` (project root) is the source of truth. Update flow on `main`:
 
 1. **Local:** make changes, commit, `git push origin main`.
 2. **Local:** if any frontend changes → `npm run build` (regenerates `public/build/`).
 3. **Local:** if frontend changed → `scp -r public/build heyjayte@ngo.heyjaytechnologies.com:~/ngo.heyjaytechnologies.com/public/`.
-4. **Server (SSH):** `cd ~/ngo.heyjaytechnologies.com && git pull && php artisan {route,view,config}:cache`.
+4. **Server (SSH):** `cd ~/ngo.heyjaytechnologies.com && git pull && php artisan {route,config,view,event}:clear && php artisan {route,config,view,event}:cache`. **Always clear before cache** — see Session 12 commit `8427ad6` and the rationale in `docs/10-rbac.md`.
 5. Verify: hit the site, force-refresh with Ctrl+Shift+R.
 
-`public/build/` is gitignored so Vite output never travels via git — has to be scp'd. Don't try to commit it.
+`public/build/` is gitignored. Don't try to commit it.
 
-### Permission gates layout (after Tier 2/3 — unchanged in S11)
+### Permission system — current shape (after Session 12)
 
-The permission catalog (`RolePermissionService::permissionGroups()`) has 14 resource groups. Each is enforced at TWO layers — route middleware + FormRequest::authorize. For most resources, reads gate on `.view` and writes gate on `.edit`. Exceptions:
-- `finance.*` — split `view / create / edit / delete`
-- `purchase_orders.*` — split `view / create / receive / cancel`
-- `users.*` and `roles.*` — split `view / create / edit / delete`
-- `finance_reports.*` — `view` reads, `export` for print/pdf/csv
-- `checkin.*` — `view` reads, `scan` writes; the public-shared `event-day-or-auth` `/checkin` POST is intentionally NOT gated by permission middleware.
+**Catalog** (`RolePermissionService::permissionGroups()`) has 14 resource groups:
 
-### Event Summary architecture (Session 11)
+```
+households       view create edit delete
+events           view create edit delete
+volunteers       view create edit delete
+checkin          view scan
+inventory        view edit
+purchase_orders  view create edit receive cancel
+finance          view create edit delete
+reports          view export
+finance_reports  view export
+reviews          view moderate
+audit_logs       view
+users            view create edit delete
+roles            view create edit delete
+settings         view update
+```
 
-- **Service `EventSummaryService::buildPayload(Event, array $sections, ?User)`** returns a section-keyed array. Each `*Section` private method aggregates ONE tab's data. Computes only the requested sections. Finance is the only section gated separately on `finance.view` (returns `['gated' => true]` for users without it; controller drops the section entirely from the payload before render).
-- **`EventSummaryService::formatHm($minutes)`** — static helper, formats decimal minute count as `HH:mm`. Returns `00:00` for null/zero. Used in Queue tab + PDF.
-- **`Schedule::command('inspire')`** is **not** added to `routes/console.php`; the existing 3 scheduled tasks are unchanged.
-- **Vertical-then-horizontal-tab pivot** — initial design was a 220px left rail. User asked for horizontal across the top instead; current layout uses `flex gap-1 overflow-x-auto` with the navy-700 active pill matching the existing event-detail tab style.
-- **Print color rendering** — added `* { print-color-adjust: exact !important; }` to the print view's stylesheet; without it, Chrome/Edge/Safari strip background colors when printing/saving as PDF, which made the cover panel + colored stat tiles render white-on-white.
-- **Blade `@php use ... as Foo;` doesn't work** in views. Compiled Blade views run inside a closure where PHP's `use` statement for class aliases is a parse error. Use `$foo = fn ($x) => \Fully\Qualified\Class::method($x);` instead, or call the static method via fully-qualified name inline.
+**Three layers of enforcement** (every gate should ideally hit ≥ 2):
 
-### Tailwind prebuilt CSS — Node IS now available
+1. **Route middleware** — `permission:<perm>`. Visible in `php artisan route:list`. Now applied to every action on every resource.
+2. **Controller `$this->authorize()`** — routes through Policies. Still in place for households/events/volunteers/volunteer-groups (defense-in-depth).
+3. **FormRequest `authorize()`** — for forms with side effects. Used by `Store/UpdateRoleRequest`, `Store/UpdateUserRequest`, `Store/UpdatePurchaseOrderRequest`, etc.
 
-Previous sessions noted "Tailwind prebuilt CSS is frozen — Node/npm not installed." That changed in Session 11: Node is installed at `C:\Program Files\nodejs\`, `npm run build` works, and `npm run build` now appears in the deploy flow whenever `resources/css/app.css` or any new utility classes are added.
+**Two automated guardrails** (run on every test pass):
 
-PowerShell needed `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` to allow `.ps1` scripts (npm.ps1) to run. Done at install time. New PowerShell windows must be opened after install for PATH updates to take effect.
+- `RbacRouteAuditTest` — static. Adding a new auth route without a gate breaks CI.
+- `RbacNoPermissionSmokeTest` — behavioural. Zero-permission user hits every parameterless GET admin route, asserts not 200.
 
-`public/build/` content is gitignored. The build is rebuilt locally → `scp`'d to the server. Server has no Node and never will.
+**UI gating** (the original leak class):
 
-### Recent UI patterns (Session 11)
+- Sidebar nav items wrapped in `@can` per item.
+- Dashboard widgets gated per permission.
+- Settings save bar hidden via `@can('settings.update')` + `<fieldset disabled>` + read-only banner.
+- Topbar Add-New dropdown items wrapped in `@can`.
+- Quick Actions on dashboard wrapped in `@can`.
 
-- **Topbar dropdowns** all use the same Alpine pattern as the user-avatar dropdown: `x-data="{ open: false }"`, `@click.outside="open = false"`, the standard `x-transition` shape. Zero new JS dependencies. If a fifth dropdown is added later, copy the pattern from any of the four.
-- **Section-picker modal** for Event Summary uses an object-shaped `summarySections` Alpine state with one bool per section + `summaryHasSelection()` / `summarySelectAll(bool)` / `openSummaryReport()` helpers. Same pattern works for any future "let user pick which subset to include" flow.
-- **Top-level error summary** — added to `roles/create.blade.php` defensively. Should be the default for any form going forward — the silent 302-back is an awful UX trap.
+### Bot defense (Session 12)
+
+- `BotDefense` middleware = honeypot field `website_url` + HMAC-signed `_form_ts` (≥3s min). Logs blocked attempts via `Log::warning('bot-defense.blocked', …)` — grep for spam-pattern visibility.
+- `<x-bot-defense />` blade component renders the two hidden fields. Drop into any public form inside the `<form>` tag.
+- Returns 422 JSON when `$request->expectsJson()`, else `back()`. Both shapes look unremarkable; bots don't get a "you tripped the trap" signal.
+- Currently applied to: `POST /register/{event}`, `POST /review`, `POST /volunteer-checkin/signup`. Other kiosk endpoints require a valid volunteer_id and are throttle-only.
+- **If real spam still gets through**: the next escalation is Cloudflare Turnstile (free, lighter than reCAPTCHA, no `.env` keys).
+
+### Tailwind prebuilt CSS — Node available
+
+Node 22.x + npm 10.x installed locally at `C:\Program Files\nodejs\`. `npm run build` works. PowerShell execution policy `RemoteSigned` (CurrentUser scope) — needed for `.ps1` scripts.
+
+`public/build/` is gitignored. Build runs locally, then `scp` to server. Server has no Node.
+
+### Recent UI patterns
+
+- **Topbar dropdowns** — `x-data="{ open: false }"`, `@click.outside="open = false"`, standard `x-transition`. Zero new JS deps. Copy this pattern for any new dropdown.
+- **Section-picker modal** for Event Summary uses object-shaped Alpine state with bool-per-section + helpers.
+- **Top-level error summary** — `@if($errors->any())` block at the top of every form. Should be the default — silent 302-back is an awful UX trap.
+- **Read-only form pattern** — see `settings/show.blade.php`: read-only banner + `<fieldset disabled>` + submit hidden via `@can`. Use for any form whose write route is gated.
 
 ### Coverage gaps (carry forward)
 
-- `EventSummaryService` has zero PHPUnit coverage. Heuristic Evaluation rules + finance breakdown logic are pure functions that would test cleanly. Worth adding when the next test-infra pass happens.
+- `EventSummaryService` has zero PHPUnit coverage. Heuristic Evaluation rules + finance breakdown logic are pure functions that would test cleanly.
 - Override modal + insufficient-stock modal — no browser-level tests (Phase 5 Dusk).
 - PII retention on `checkin_overrides.reason` and `audit_logs` — Phase 5/6 retention policy.
 - `overview()` / `overviewTrend()` / `trends()` use MySQL-only SQL (`TIMESTAMPDIFF`, `DATE_FORMAT`, `YEARWEEK`); not covered on sqlite.
@@ -153,15 +205,16 @@ PowerShell needed `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Curr
 - Plain-English orientation before each step; user confirms before destructive actions.
 - Commit messages reference `AUDIT_REPORT.md` Part/Phase OR feature area.
 - Stage explicitly — never `git add .` or `git add -A`.
-- For multi-piece feature work, lay out a phase plan and get explicit answers on open questions before starting.
 - Production-grade: full migrations, FormRequests for new endpoints, HTTP feature tests for new actions, defensive guards.
 - Bug-fix workflow: read `storage/logs/laravel.log` and re-run the failing command before guessing.
-- **New (S11)**: when a form silently 302s back, check `$errors` first (not the form code). Add a top-level `@if($errors->any())` summary if there isn't one. Most "form not saving" reports are silent validation rejects, often on a hidden field with no `@error` display.
-- **New (S11)**: Blade `@php use ... as Foo;` doesn't work in compiled views — use a closure or fully-qualified call.
+- When a form silently 302s back, check `$errors` first (not the form code). Add a top-level `@if($errors->any())` summary if there isn't one. Most "form not saving" reports are silent validation rejects.
+- Blade `@php use ... as Foo;` doesn't work in compiled views — use a closure or fully-qualified call.
+- **New (S12)**: when adding a new admin route, prefer route middleware (`->middleware('permission:<perm>')`) over controller-only `$this->authorize()`. The audit test catches both, but route middleware is visible in `route:list` and survives controller refactors.
+- **New (S12)**: when adding a new admin UI element (button, link, modal, form), wrap in `@can` so users without the permission don't see it. For forms whose POST is gated, also disable inputs and hide the submit button.
+- **New (S12)**: every production deploy must `clear` before `cache` for routes/config/views/events. Stale `route:cache` is a real failure mode that masks middleware additions.
 
-### Constraints (carry forward — UPDATED)
+### Constraints (carry forward)
 
-- ~~**Tailwind prebuilt CSS is frozen** — Node/npm not installed.~~ **Repealed in S11**: Node IS installed locally; rebuilds work. Build still has to be `scp`'d to production (no Node on host).
 - **Settings section blades are hardcoded** — edit blade AND definitions array when adding a key.
 - **JS fetch paths need `appUrl()`** — raw paths break subdirectory deployment.
 - **MySQL is required for `php artisan serve`** but not for tests (sqlite). If user reports "app not reachable", check MySQL first.
@@ -172,11 +225,11 @@ PowerShell needed `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Curr
 - PHP 8.2.12 via XAMPP locally, `c:\xampp\htdocs\Foodbank`.
 - **Live production: `https://ngo.heyjaytechnologies.com`** on HostGator shared. PHP 8.2.30 server-side. MySQL 5.7.44.
 - Server SSH: `ssh heyjayte@ngo.heyjaytechnologies.com` → `~/ngo.heyjaytechnologies.com/`.
-- Git identity now set locally (this repo only): `user.name=YTobby`, `user.email=digienergy0@gmail.com`. Global git config still has none.
-- Node 22.x + npm 10.x installed locally at `C:\Program Files\nodejs\`. PowerShell execution policy `RemoteSigned` (CurrentUser scope).
-- Current `public/build/assets/app-*.css` hash on server: **`app-DXYd_5F0.css`** (S11 rebuild).
+- Git identity (this repo only): `user.name=YTobby`, `user.email=digienergy0@gmail.com`.
+- Node 22.x + npm 10.x at `C:\Program Files\nodejs\`. PowerShell execution policy `RemoteSigned` (CurrentUser scope).
+- Current `public/build/assets/app-*.css` hash on server: **`app-DXYd_5F0.css`** (S11 rebuild — unchanged in S12; no new Tailwind classes).
 - mysqldump path on local Windows: `c:/xampp/mysql/bin/mysqldump.exe`.
-- Tests use sqlite `:memory:`. Last full run was end of Session 10: **695 tests passing**.
+- Tests use sqlite `:memory:`. Last full run end of S12: **711 tests passing**.
 - Windows scheduled task `FoodBank Schedule Runner` runs `php artisan schedule:run` every minute.
 - Production cron: `* * * * * /opt/cpanel/ea-php82/root/usr/bin/php /home3/heyjayte/ngo.heyjaytechnologies.com/artisan schedule:run >> /dev/null 2>&1`
 
@@ -190,16 +243,19 @@ PowerShell needed `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Curr
 
 `main` — all commits land directly on main in this project. Do not create feature branches.
 
-### Recent commits (Session 11 + last few from S10)
+### Recent commits (Session 12 + last few from S11)
 
 ```
+07a798b fix(rbac): defense-in-depth route middleware on resource routes + JSON-aware bot defense + docs sync
+654de45 docs(rbac): contributor checklist for adding permissions/routes/UI + automated-guardrail reference
+8427ad6 feat(security): permanent RBAC guardrails — audit test, smoke test, catalog validation, deploy hardening
+e23da52 fix(settings): defense-in-depth on settings.update + hide save UI for non-grantees
+622a79d feat(security): bot defense on public registration + review forms
+139bcc7 chore(dashboard): tweak stat card labels
+89d3f8c fix(rbac): gate sidebar + dashboard widgets per permission
+ef5369e docs(remediation): close Session 11 — production deploy + Event Summary + UI polish
 f5d92f2 fix(roles): role creation silently fails due to ConvertEmptyStringsToNull
 f9b9342 feat(events): event report exports + event summary report
 9625b3e feat(ui): topbar dropdowns + public-page branding + review submit fix
 367929b docs(deploy): refresh HostGator runbook with real-world gotchas
-6231c2d fix(finance-reports): donut() arg type + enterprise-grade pledge aging exports
-cb36e39 docs(remediation): close Session 10 — Tier 2/3 RBAC + Phase 7.4 wrap
-47b9d73 feat(finance-reports): Phase 7.4.c — Pledge / AR Aging + pledges table + admin CRUD (CLOSES Phase 7)
-78fc156 feat(finance-reports): Phase 7.4.b — Budget vs. Actual / Variance + budgets table + admin CRUD
-da215d3 feat(finance-reports): Phase 7.4.a — Statement of Functional Expenses + function_classification enum
 ```
