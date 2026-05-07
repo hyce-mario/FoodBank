@@ -51,7 +51,7 @@
     {{-- 1. Total food bundles served --}}
     @if($canVisits)
     <x-stat-card
-        label="Food pack Served"
+        label="Food Pack Served"
         value="{{ number_format($stats['total_bundles']) }}"
         change="{{ abs($stats['bundles_change']) }}%"
         :up="$stats['bundles_up']"
@@ -75,7 +75,7 @@
     {{-- 3. People served --}}
     @if($canVisits)
     <x-stat-card
-        label="People Served"
+        label="Family Members Served"
         value="{{ number_format($stats['people_served']) }}"
         icon="people"
         variant="navy"
