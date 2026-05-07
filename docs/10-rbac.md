@@ -131,3 +131,97 @@ Available at `/roles` (requires `roles.view` permission).
 - Create new roles with a permission matrix (checkboxes grouped by module)
 - Edit existing roles (cannot change ADMIN name)
 - Delete roles (blocked if ADMIN or has assigned users)
+
+---
+
+## Automated Guardrails (don't break these)
+
+Two feature tests catch the entire class of "I created a role with limited
+permissions and now this page leaks" bugs that recur whenever new admin
+surface area is added:
+
+### `tests/Feature/RbacRouteAuditTest.php`
+
+Static analysis. Walks `Route::getRoutes()`, classifies every authenticated
+route as **GATED** (route middleware `permission:*`) or **POLICY**
+(controller `$this->authorize(...)` or typed FormRequest containing
+`hasPermission(`). Anything else must appear in the test's `ALLOWLIST`
+constant. **Adding a new auth-protected route without a gate breaks CI.**
+
+### `tests/Feature/RbacNoPermissionSmokeTest.php`
+
+Behavioural complement. Creates a user whose role has zero permissions,
+hits every parameterless GET admin route, asserts `status !== 200`. Catches
+the "policy exists but checks the wrong permission string" class of bug
+that static analysis can't see.
+
+The `scripts/rbac-audit.php` CLI does the same classification ad-hoc:
+
+```bash
+php artisan route:list --json | php scripts/rbac-audit.php
+```
+
+---
+
+## Catalog validation
+
+`Store/UpdateRoleRequest` validate `permissions[]` against
+`RolePermissionService::allPermissions() + ['*']` via `Rule::in(...)`.
+Custom roles cannot save typo'd or unknown permission strings. Adding a
+new permission means **also** updating
+`RolePermissionService::permissionGroups()` — otherwise the role-edit form
+won't render the checkbox AND the validator will reject the string.
+
+---
+
+## Contributor checklist
+
+When **adding a new permission** (e.g. `purchase_orders.export`):
+
+1. Add it to `RolePermissionService::permissionGroups()`.
+2. Reference it from the gate that enforces it — route middleware
+   `permission:purchase_orders.export` and/or a Policy method.
+3. Optionally seed it into `database/seeders/RoleSeeder.php` for the
+   roles that should have it by default.
+4. Run the suite. The audit + smoke tests will pass automatically because
+   the new gate is in place.
+
+When **adding a new admin route**:
+
+1. Pick the permission that gates the action (or create a new one — see
+   above).
+2. Apply `->middleware('permission:<perm>')` on the route. **Prefer route
+   middleware over controller-only `$this->authorize()`** — it's visible
+   in `php artisan route:list` and survives controller refactors.
+3. If the action is intentionally accessible to all authenticated users
+   (Profile, Logout, Dashboard), add the route name to `ALLOWLIST` in
+   `RbacRouteAuditTest` AND `ALWAYS_ACCESSIBLE` in
+   `RbacNoPermissionSmokeTest` with a one-line justification comment.
+
+When **adding a new admin UI** (button, link, modal, form):
+
+1. Wrap the element in `@can('<perm>')` so users without the permission
+   don't see it. The permission system supports both dot-notation
+   (`@can('settings.update')`) and policy-style (`@can('viewAny', App\Models\Event::class)`).
+2. For forms whose POST/PUT route is gated, also disable inputs and hide
+   the submit button when the user lacks the permission. See
+   `resources/views/settings/show.blade.php` for the canonical pattern
+   (read-only banner + `<fieldset disabled>` + submit hidden via
+   `@can('settings.update')`).
+
+---
+
+## Production deploy hygiene
+
+Cached routes + views can mask permission middleware that was added in
+a later commit. After `git pull`, **always** clear-then-rebuild:
+
+```bash
+php artisan route:clear  && php artisan route:cache
+php artisan config:clear && php artisan config:cache
+php artisan view:clear   && php artisan view:cache
+php artisan event:clear  && php artisan event:cache
+```
+
+The `clear` step is load-bearing — see [DEPLOY.md](../DEPLOY.md) "Updating
+production" section for the full flow.
