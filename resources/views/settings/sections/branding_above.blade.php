@@ -12,6 +12,11 @@
     $hasLogo    = ! empty($settings['logo_path']);
     $hasFavicon = ! empty($settings['favicon_path']);
 @endphp
+{{-- Upload + delete are gated on settings.update — without it the whole
+     card is hidden so a stale-cache middleware bypass can't reach the
+     POST/DELETE forms inside. The current logo/favicon is still visible
+     in the topbar / public layouts via the branding helpers. --}}
+@can('settings.update')
 <div class="bg-white rounded-xl border border-gray-200 shadow-sm mb-6">
     <div class="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -255,6 +260,7 @@
         </form>
     </div>
 </div>
+@endcan
 
 @push('scripts')
 <script>

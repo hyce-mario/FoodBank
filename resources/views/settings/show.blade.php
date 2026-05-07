@@ -50,13 +50,38 @@
             ])
             @stack('settings_standalone_forms')
 
+            @cannot('settings.update')
+                <div class="mb-4 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">
+                    <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487 18.549 2.799a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"/>
+                    </svg>
+                    <div>
+                        <p class="font-medium">Read-only view</p>
+                        <p class="text-xs text-amber-700 mt-0.5">Your role can view settings but does not have permission to make changes. Contact an administrator if you need to update these values.</p>
+                    </div>
+                </div>
+            @endcannot
+
             <form method="POST" action="{{ route('settings.update', $group) }}">
                 @csrf
                 @method('PUT')
 
+                {{-- Disable every input under this group when the user cannot
+                     update settings. Belt-and-braces: the controller + route
+                     middleware also reject. --}}
+                @cannot('settings.update')
+                    <fieldset disabled class="space-y-0">
+                @endcannot
+
                 @include('settings.sections.' . $group, ['settings' => $settings, 'definitions' => $definitions])
 
-                {{-- Save bar --}}
+                @cannot('settings.update')
+                    </fieldset>
+                @endcannot
+
+                {{-- Save bar — hidden for read-only users so a stale-cache
+                     middleware bypass cannot accidentally let them save. --}}
+                @can('settings.update')
                 <div class="mt-6 flex items-center justify-between bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-4">
                     <p class="text-sm text-gray-500">
                         Saving updates <span class="font-semibold text-gray-700">{{ $groupLabel }}</span> settings only.
@@ -70,6 +95,7 @@
                         Save {{ $groupLabel }} Settings
                     </button>
                 </div>
+                @endcan
             </form>
         </div>
 

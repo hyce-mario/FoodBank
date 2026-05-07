@@ -49,6 +49,12 @@ class SettingsController extends Controller
 
     public function update(Request $request, string $group): RedirectResponse
     {
+        // Defense-in-depth: route middleware (`permission:settings.update`) is
+        // the primary gate, but we re-check here so a stale `route:cache` (e.g.
+        // built before this gate was added and never refreshed) cannot leak
+        // write access to a settings.view-only role.
+        abort_unless((bool) $request->user()?->hasPermission('settings.update'), 403);
+
         $groups = SettingService::groups();
 
         abort_if(! array_key_exists($group, $groups), 404);
@@ -137,6 +143,9 @@ class SettingsController extends Controller
      */
     public function uploadBrandingAsset(Request $request, string $asset): RedirectResponse
     {
+        // Defense-in-depth — see SettingsController::update for rationale.
+        abort_unless((bool) $request->user()?->hasPermission('settings.update'), 403);
+
         abort_if(! in_array($asset, ['logo', 'favicon']), 404);
 
         $rules = match ($asset) {
@@ -211,6 +220,9 @@ class SettingsController extends Controller
 
     public function deleteBrandingAsset(string $asset): RedirectResponse
     {
+        // Defense-in-depth — see SettingsController::update for rationale.
+        abort_unless((bool) request()->user()?->hasPermission('settings.update'), 403);
+
         abort_if(! in_array($asset, ['logo', 'favicon']), 404);
 
         $settingKey = "branding.{$asset}_path";
