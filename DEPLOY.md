@@ -601,7 +601,17 @@ composer install --no-dev --optimize-autoloader --no-interaction
 # Run any new migrations
 php artisan migrate --force
 
-# Re-cache (cached config/routes/views are stale after git pull)
+# Clear-then-rebuild caches. The clear step is load-bearing: a previous
+# `route:cache` run may have written a stale snapshot to disk that Laravel
+# keeps using if the rebuild fails silently. Symptom: new permission
+# middleware (or any new middleware) added to routes/web.php silently
+# doesn't fire on production. The clear forces Laravel to rebuild from
+# current source.
+php artisan route:clear
+php artisan config:clear
+php artisan view:clear
+php artisan event:clear
+
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache

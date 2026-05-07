@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Services\RolePermissionService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,12 +20,18 @@ class StoreRoleRequest extends FormRequest
 
     public function rules(): array
     {
+        // Permissions must be drawn from the official catalog plus the
+        // wildcard. Without this, a typo'd entry (e.g. "setings.update")
+        // would save successfully but silently grant nothing — a
+        // confusing UX trap when custom roles are built via the UI.
+        $allowed = array_merge(RolePermissionService::allPermissions(), ['*']);
+
         return [
             'name'         => ['required', 'string', 'max:50', 'regex:/^[A-Z0-9_]+$/', Rule::unique('roles', 'name')],
             'display_name' => ['required', 'string', 'max:100'],
             'description'  => ['nullable', 'string', 'max:500'],
             'permissions'  => ['nullable', 'array'],
-            'permissions.*'=> ['string', 'max:100'],
+            'permissions.*'=> ['string', Rule::in($allowed)],
         ];
     }
 
@@ -33,6 +40,7 @@ class StoreRoleRequest extends FormRequest
         return [
             'name.regex' => 'Role name must be uppercase letters, numbers, and underscores only (e.g. MY_ROLE).',
             'name.unique' => 'A role with this name already exists.',
+            'permissions.*.in' => 'One or more selected permissions are not recognised. Refresh the page and try again.',
         ];
     }
 }
