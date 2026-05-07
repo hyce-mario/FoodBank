@@ -38,51 +38,67 @@
 </div>
 
 {{-- ═══════════════════════════════════════════════════════
-     STAT CARDS
+     STAT CARDS — each gated on the permission that backs its data.
 ═══════════════════════════════════════════════════════ --}}
+@php
+    // Whether this row should render at all. If a role can see none of these
+    // metrics (e.g. a household-creator-only role), drop the entire grid.
+    $showStatRow = $canVisits || $canHouseholds || $canVolunteers;
+@endphp
+@if($showStatRow)
 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
 
     {{-- 1. Total food bundles served --}}
+    @if($canVisits)
     <x-stat-card
-        label="Food Bundles Served"
+        label="Food pack Served"
         value="{{ number_format($stats['total_bundles']) }}"
         change="{{ abs($stats['bundles_change']) }}%"
         :up="$stats['bundles_up']"
         icon="gift"
         variant="white"
     />
+    @endif
 
     {{-- 2. Households served --}}
+    @if($canVisits)
     <x-stat-card
         label="Households Served"
         value="{{ number_format($stats['households_served']) }}"
-        change="of {{ number_format($stats['total_households']) }} registered"
+        change="{{ $canHouseholds ? 'of ' . number_format($stats['total_households']) . ' registered' : '' }}"
         :plain="true"
         icon="home"
         variant="orange"
     />
+    @endif
 
     {{-- 3. People served --}}
+    @if($canVisits)
     <x-stat-card
         label="People Served"
         value="{{ number_format($stats['people_served']) }}"
         icon="people"
         variant="navy"
     />
+    @endif
 
     {{-- 4. Volunteers --}}
+    @if($canVolunteers)
     <x-stat-card
         label="Volunteers"
         value="{{ number_format($stats['volunteers']) }}"
         icon="volunteer"
         variant="light"
     />
+    @endif
 </div>
+@endif
 
 {{-- ═══════════════════════════════════════════════════════
      TODAY'S EVENT / UPCOMING EVENT BANNER
+     Gated on events.view — banner exposes event names + check-in counts.
 ═══════════════════════════════════════════════════════ --}}
-@if($currentEvent)
+@if($canEvents && $currentEvent)
 {{-- Today's event — same card structure as Next Upcoming below, just with
      a brand-orange accent + a live-ring on the icon to signal "happening now".
      Keeps the dashboard's calm orange/navy palette intact. --}}
@@ -125,7 +141,7 @@
         </a>
     </div>
 </div>
-@elseif($nextEvent)
+@elseif($canEvents && $nextEvent)
 <div class="bg-white rounded-2xl px-5 py-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm border border-gray-100">
     <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -153,11 +169,14 @@
 @endif
 
 {{-- ═══════════════════════════════════════════════════════
-     CHARTS ROW
+     CHARTS ROW — Monthly Distribution gated on checkin.view (visit data),
+     Family Composition gated on households.view (demographic data).
 ═══════════════════════════════════════════════════════ --}}
+@if($canVisits || $canHouseholds)
 <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-5">
 
     {{-- Monthly Distribution (area chart) --}}
+    @if($canVisits)
     <div class="xl:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-base font-semibold text-gray-900">Monthly Distribution</h2>
@@ -172,8 +191,10 @@
             <canvas id="monthlyChart"></canvas>
         </div>
     </div>
+    @endif
 
     {{-- Family composition (donut chart) --}}
+    @if($canHouseholds)
     <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
         <div class="flex items-center justify-between mb-4">
             <div>
@@ -225,12 +246,14 @@
             </div>
         </div>
     </div>
+    @endif
 </div>
+@endif
 
 {{-- ═══════════════════════════════════════════════════════
-     RECENT EVENTS
+     RECENT EVENTS — gated on events.view.
 ═══════════════════════════════════════════════════════ --}}
-@if($recentEvents->total() > 0)
+@if($canEvents && $recentEvents->total() > 0)
 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-5 overflow-hidden">
     <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <h2 class="text-sm font-bold text-gray-900">Recent Events</h2>
@@ -273,9 +296,9 @@
 @endif
 
 {{-- ═══════════════════════════════════════════════════════
-     INVENTORY STOCK ALERTS
+     INVENTORY STOCK ALERTS — gated on inventory.view.
 ═══════════════════════════════════════════════════════ --}}
-@if($stockAlerts->total() > 0)
+@if($canInventory && $stockAlerts->total() > 0)
 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-5 overflow-hidden">
 
     <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -350,12 +373,21 @@
 @endif
 
 {{-- ═══════════════════════════════════════════════════════
-     QUICK ACTIONS
+     QUICK ACTIONS — each link gated on the destination's permission.
+     If none qualify, the whole card is dropped to avoid an empty section.
 ═══════════════════════════════════════════════════════ --}}
+@php
+    $showQuickActions = auth()->user()->can('create', \App\Models\Event::class)
+        || auth()->user()->can('create', \App\Models\Household::class)
+        || $canVisits
+        || auth()->user()->can('reports.view');
+@endphp
+@if($showQuickActions)
 <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
     <h2 class="text-base font-semibold text-gray-900 mb-4">Quick Actions</h2>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
+        @can('create', \App\Models\Event::class)
         <a href="{{ route('events.create') }}" class="quick-action group">
             <div class="w-12 h-12 rounded-full bg-navy-700 group-hover:bg-navy-800 flex items-center justify-center transition-colors">
                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -364,7 +396,9 @@
             </div>
             <span class="text-sm font-medium text-gray-700 text-center">Create Event</span>
         </a>
+        @endcan
 
+        @can('create', \App\Models\Household::class)
         <a href="{{ route('households.create') }}" class="quick-action group">
             <div class="w-12 h-12 rounded-full bg-navy-700 group-hover:bg-navy-800 flex items-center justify-center transition-colors">
                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -373,7 +407,9 @@
             </div>
             <span class="text-sm font-medium text-gray-700 text-center">Add Household</span>
         </a>
+        @endcan
 
+        @if($canVisits)
         <a href="{{ route('checkin.index') }}" class="quick-action group">
             <div class="w-12 h-12 rounded-full bg-navy-700 group-hover:bg-navy-800 flex items-center justify-center transition-colors">
                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -383,7 +419,9 @@
             </div>
             <span class="text-sm font-medium text-gray-700 text-center">Check-in</span>
         </a>
+        @endif
 
+        @can('reports.view')
         <a href="{{ route('reports.overview') }}" class="quick-action group">
             <div class="w-12 h-12 rounded-full bg-navy-700 group-hover:bg-navy-800 flex items-center justify-center transition-colors">
                 <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -392,8 +430,22 @@
             </div>
             <span class="text-sm font-medium text-gray-700 text-center">Reports</span>
         </a>
+        @endcan
     </div>
 </div>
+@endif
+
+{{-- ═══════════════════════════════════════════════════════
+     EMPTY STATE — when the user's role grants no dashboard
+     widget (e.g. a tightly-scoped 'create households only' role),
+     show a friendly note instead of an empty page.
+═══════════════════════════════════════════════════════ --}}
+@if(! $showStatRow && ! ($canEvents && ($currentEvent || $nextEvent || $recentEvents->total() > 0)) && ! ($canVisits || $canHouseholds) && ! ($canInventory && $stockAlerts->total() > 0) && ! $showQuickActions)
+<div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 text-center">
+    <p class="text-gray-700 text-base font-semibold mb-1">Welcome, {{ auth()->user()->name }}</p>
+    <p class="text-gray-500 text-sm">Use the menu on the left to access the areas you have permission for.</p>
+</div>
+@endif
 
 @endsection
 

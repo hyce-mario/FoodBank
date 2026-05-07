@@ -101,6 +101,7 @@
                         </svg>
                     </a>
                 </li>
+                @can('checkin.view')
                 <li>
                     <a href="{{ route('checkin.index') }}" class="nav-item {{ request()->routeIs('checkin.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
                         <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
@@ -112,6 +113,8 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
+                @can('viewAny', App\Models\Event::class)
                 <li>
                     <a href="{{ route('events.index') }}"
                        class="nav-item {{ request()->routeIs('events.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -124,6 +127,8 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
+                @can('viewAny', App\Models\Household::class)
                 <li>
                     <a href="{{ route('households.index') }}"
                        class="nav-item {{ request()->routeIs('households.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -136,7 +141,9 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
                 
+                @can('checkin.view')
                 <li>
                     <a href="{{ route('monitor.index') }}"
                        class="nav-item {{ request()->routeIs('monitor.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -162,6 +169,7 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
                 
             </ul>
         </div>
@@ -170,6 +178,7 @@
         <div>
             <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-3 mb-2">Management</p>
             <ul class="space-y-0.5">
+                @can('inventory.edit')
                 <li>
                     <a href="{{ route('allocation-rulesets.index') }}"
                        class="nav-item {{ request()->routeIs('allocation-rulesets.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -179,6 +188,8 @@
                         <span>Allocation Rules</span>
                     </a>
                 </li>
+                @endcan
+                @can('viewAny', App\Models\Volunteer::class)
                 <li>
                     <a href="{{ route('volunteers.index') }}"
                        class="nav-item {{ request()->routeIs('volunteers.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -191,6 +202,8 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
+                @can('finance.view')
                 <li>
                     <a href="{{ route('finance.dashboard') }}"
                        class="nav-item {{ request()->routeIs('finance.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -203,6 +216,8 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
+                @can('inventory.view')
                 <li>
                     <a href="{{ route('inventory.items.index') }}"
                        class="nav-item {{ request()->routeIs('inventory.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -215,6 +230,8 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
+                @can('purchase_orders.view')
                 <li>
                     <a href="{{ route('purchase-orders.index') }}"
                        class="nav-item {{ request()->routeIs('purchase-orders.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -227,6 +244,8 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
+                @can('reviews.view')
                 <li>
                     <a href="{{ route('reviews.index') }}"
                        class="nav-item {{ request()->routeIs('reviews.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -239,6 +258,7 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
                 
                 
                 @can('reports.view')
@@ -263,6 +283,7 @@
         <div>
             <p class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-3 mb-2">Administration</p>
             <ul class="space-y-0.5">
+                @can('users.view')
                 <li>
                     <a href="{{ route('users.index') }}"
                        class="nav-item {{ request()->routeIs('users.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -275,6 +296,8 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
+                @can('roles.view')
                 <li>
                     <a href="{{ route('roles.index') }}"
                        class="nav-item {{ request()->routeIs('roles.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -287,6 +310,8 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
+                @can('settings.view')
                 <li>
                     <a href="{{ route('settings.index') }}"
                        class="nav-item {{ request()->routeIs('settings.*') ? 'nav-item-active' : 'nav-item-inactive' }}">
@@ -300,6 +325,7 @@
                         </svg>
                     </a>
                 </li>
+                @endcan
                 @can('viewAny', App\Models\AuditLog::class)
                 <li>
                     <a href="{{ route('audit-logs.index') }}"
