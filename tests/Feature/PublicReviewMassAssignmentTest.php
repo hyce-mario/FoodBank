@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\BotDefense;
 use App\Models\Event;
 use App\Models\EventReview;
 use App\Services\SettingService;
@@ -59,6 +60,7 @@ class PublicReviewMassAssignmentTest extends TestCase
             'rating'      => 5,
             'review_text' => 'Great event overall!',
             'is_visible'  => '1',  // attacker trying to bypass moderation
+            '_form_ts'    => BotDefense::signedTimestamp(time() - 5),
         ])->assertRedirect();
 
         $review = EventReview::first();
@@ -81,6 +83,7 @@ class PublicReviewMassAssignmentTest extends TestCase
             'event_id'    => $this->event->id,
             'rating'      => 4,
             'review_text' => 'Very helpful staff!',
+            '_form_ts'    => BotDefense::signedTimestamp(time() - 5),
         ])->assertRedirect();
 
         $this->assertTrue(EventReview::first()->is_visible);

@@ -66,6 +66,7 @@
 <form method="POST" action="{{ route('public.reviews.store') }}"
       x-data="reviewForm()" x-cloak>
     @csrf
+    <x-bot-defense />
 
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div class="p-6 space-y-6">

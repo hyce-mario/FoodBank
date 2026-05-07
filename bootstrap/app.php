@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'permission'        => \App\Http\Middleware\CheckPermission::class,
             'event-day-or-auth' => \App\Http\Middleware\EventDayOrAuth::class,
+            'bot-defense'       => \App\Http\Middleware\BotDefense::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

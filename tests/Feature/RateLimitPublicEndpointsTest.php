@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\BotDefense;
 use App\Models\Event;
 use App\Services\SettingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -62,6 +63,7 @@ class RateLimitPublicEndpointsTest extends TestCase
             'event_id'    => $this->currentEvent->id,
             'rating'      => 5,
             'review_text' => 'Great event, thank you so much!',
+            '_form_ts'    => BotDefense::signedTimestamp(time() - 5),
         ];
 
         for ($i = 1; $i <= 5; $i++) {
@@ -86,6 +88,7 @@ class RateLimitPublicEndpointsTest extends TestCase
             'children_count' => 0,
             'adults_count'   => 1,
             'seniors_count'  => 0,
+            '_form_ts'       => BotDefense::signedTimestamp(time() - 5),
         ];
 
         for ($i = 1; $i <= 5; $i++) {

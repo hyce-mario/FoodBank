@@ -65,7 +65,7 @@ Route::prefix('register')->name('public.')->group(function () {
     Route::get('/{event}',       [PublicEventController::class, 'register']) ->name('register');
     // Phase 3.1: throttle submission to prevent form spam / duplicate registrations.
     Route::post('/{event}',      [PublicEventController::class, 'submit'])   ->name('submit')
-         ->middleware('throttle:5,1');
+         ->middleware(['throttle:5,1', 'bot-defense']);
     Route::get('/{event}/success',[PublicEventController::class, 'success']) ->name('success');
 });
 
@@ -74,7 +74,7 @@ Route::prefix('review')->name('public.reviews.')->group(function () {
     Route::get('/',  [PublicReviewController::class, 'create'])->name('create');
     // Phase 3.1: throttle to prevent review spam.
     Route::post('/', [PublicReviewController::class, 'store']) ->name('store')
-         ->middleware('throttle:5,1');
+         ->middleware(['throttle:5,1', 'bot-defense']);
 });
 
 // ─── Public Volunteer Check-In (no auth required) ─────────────────────────────

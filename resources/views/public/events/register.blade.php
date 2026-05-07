@@ -29,6 +29,7 @@
           get total() { return (parseInt(this.children)||0) + (parseInt(this.adults)||0) + (parseInt(this.seniors)||0); }
       }">
     @csrf
+    <x-bot-defense />
 
     {{-- Event card header --}}
     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-1">
