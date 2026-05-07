@@ -23,22 +23,34 @@ users ──── role_id ──▶ roles ──── id ──▶ role_permis
 
 ## Permission Strings
 
-Format: `module.action`
+Format: `module.action`. Source of truth is `RolePermissionService::permissionGroups()`.
 
 | Module | Actions |
 |--------|---------|
 | households | view, create, edit, delete |
-| checkin | view, scan |
 | events | view, create, edit, delete |
-| inventory | view, create, edit, delete |
-| finance | view, create, edit, delete |
 | volunteers | view, create, edit, delete |
-| volunteer_groups | view, create, edit, delete |
-| reports | view |
-| settings | view, update |
+| checkin | view, scan |
+| inventory | view, edit |
+| purchase_orders | view, create, edit, receive, cancel |
+| finance | view, create, edit, delete |
+| reports | view, export |
+| finance_reports | view, export |
+| reviews | view, moderate |
+| audit_logs | view |
 | users | view, create, edit, delete |
 | roles | view, create, edit, delete |
-| reviews | view, moderate |
+| settings | view, update |
+
+Notes:
+- `inventory` has only view/edit (no separate create/delete) — the catalog
+  was kept this way pre-Tier-1 and the routes were wired around it.
+- `volunteer_groups` has no separate permission set — `VolunteerGroupPolicy`
+  reuses `volunteers.*` because groups are a sub-concept of volunteers.
+- `distributions.*` was removed in Tier 1 (never referenced by any
+  policy/middleware/controller). Existing role rows still containing those
+  strings are harmless ghosts; they're auto-cleaned the next time the
+  role is saved through the editor.
 
 ### Special: Wildcard Permission
 A role with permission `*` has access to everything. The ADMIN role has this by default.
@@ -81,14 +93,18 @@ $middleware->alias(['permission' => CheckPermission::class]);
 
 ## Default Roles
 
+Seeded by `database/seeders/RoleSeeder.php`. Source of truth.
+
 | Role | Key Permissions |
 |------|----------------|
 | ADMIN | `*` (everything) |
-| INTAKE | households.view, checkin.view, checkin.scan, events.view |
-| SCANNER | checkin.view, checkin.scan, events.view |
-| LOADER | checkin.view, events.view |
-| REPORTS | reports.view, households.view, events.view |
-| VOL_MANAGER | volunteers.*, volunteer_groups.*, events.view |
+| INTAKE | households.{view,create,edit}, checkin.view, events.view |
+| SCANNER | checkin.{view,scan} |
+| LOADER | inventory.{view,edit} |
+| REPORTS | reports.{view,export} |
+| VOL_MANAGER | volunteers.{view,create,edit,delete} |
+| FINANCE | finance.{view,create,edit,delete}, finance_reports.{view,export} |
+| WAREHOUSE | inventory.{view,edit}, purchase_orders.{view,create,receive,cancel} |
 
 ---
 

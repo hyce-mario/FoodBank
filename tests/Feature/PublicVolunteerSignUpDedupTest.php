@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\BotDefense;
 use App\Models\Event;
 use App\Models\Role;
 use App\Models\RolePermission;
@@ -62,6 +63,7 @@ class PublicVolunteerSignUpDedupTest extends TestCase
     public function test_phone_is_required_on_signup(): void
     {
         $this->postJson(route('volunteer-checkin.signup'), [
+                 '_form_ts'   => BotDefense::signedTimestamp(time() - 5),
                  'first_name' => 'A',
                  'last_name'  => 'B',
              ])
@@ -74,6 +76,7 @@ class PublicVolunteerSignUpDedupTest extends TestCase
     public function test_new_phone_creates_volunteer_and_checks_in(): void
     {
         $this->postJson(route('volunteer-checkin.signup'), [
+                 '_form_ts'   => BotDefense::signedTimestamp(time() - 5),
                  'first_name' => 'New',
                  'last_name'  => 'Person',
                  'phone'      => '5551111',
@@ -105,6 +108,7 @@ class PublicVolunteerSignUpDedupTest extends TestCase
         ]);
 
         $this->postJson(route('volunteer-checkin.signup'), [
+                 '_form_ts'   => BotDefense::signedTimestamp(time() - 5),
                  // Submitted name should be IGNORED — record stays as-is.
                  'first_name' => 'Different',
                  'last_name'  => 'Name',
@@ -153,6 +157,7 @@ class PublicVolunteerSignUpDedupTest extends TestCase
         ]);
 
         $this->postJson(route('volunteer-checkin.signup'), [
+                 '_form_ts'   => BotDefense::signedTimestamp(time() - 5),
                  'first_name' => 'Already',
                  'last_name'  => 'In',
                  'phone'      => '5553333',
@@ -178,6 +183,7 @@ class PublicVolunteerSignUpDedupTest extends TestCase
         ]);
 
         $this->postJson(route('volunteer-checkin.signup'), [
+                 '_form_ts'   => BotDefense::signedTimestamp(time() - 5),
                  'first_name' => 'Different',
                  'last_name'  => 'Person',
                  'phone'      => '5559999',          // new phone
@@ -209,6 +215,7 @@ class PublicVolunteerSignUpDedupTest extends TestCase
         ]);
 
         $this->postJson(route('volunteer-checkin.signup'), [
+                 '_form_ts'   => BotDefense::signedTimestamp(time() - 5),
                  'first_name' => 'Whoever',
                  'last_name'  => 'Submits',
                  'phone'      => '5557777',           // matches $matched

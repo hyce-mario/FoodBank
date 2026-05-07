@@ -99,9 +99,11 @@ class BotDefense
     }
 
     /**
-     * Log the blocked attempt + redirect back to the form. We do NOT abort
-     * with 422 because that would tell a smart bot exactly what tripped;
-     * a 302-to-form looks like an unremarkable form reload.
+     * Log the blocked attempt + return a response shape matching the
+     * request. For traditional form posts we redirect back (the bot sees
+     * an unremarkable 302). For AJAX/JSON requests we return a 422 with
+     * a generic error so the calling JS treats it like any validation
+     * failure — neither shape gives a "you tripped the bot trap" signal.
      */
     private function block(Request $request, string $reason): Response
     {
@@ -112,6 +114,13 @@ class BotDefense
             'ua'     => $request->userAgent(),
             'reason' => $reason,
         ]);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Submission could not be processed. Please refresh the page and try again.',
+            ], 422);
+        }
 
         return back();
     }

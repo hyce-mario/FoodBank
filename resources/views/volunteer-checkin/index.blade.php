@@ -647,6 +647,7 @@
             </div>
 
             <form id="newVolForm" @submit.prevent="submitNewVol()" class="px-6 py-6 space-y-4">
+                <x-bot-defense />
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label for="newVolFirstName" class="block text-xs font-bold text-gray-600 uppercase tracking-widest mb-1.5">

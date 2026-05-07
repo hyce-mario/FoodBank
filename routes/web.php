@@ -89,7 +89,7 @@ Route::prefix('volunteer-checkin')->name('volunteer-checkin.')->group(function (
     Route::post('/checkout', [PublicVolunteerCheckInController::class, 'checkOut']) ->name('checkout')
          ->middleware('throttle:10,1');
     Route::post('/signup',   [PublicVolunteerCheckInController::class, 'signUp'])   ->name('signup')
-         ->middleware('throttle:5,1');
+         ->middleware(['throttle:5,1', 'bot-defense']);
 });
 
 // ─── Guest Routes ─────────────────────────────────────────────────────────────
@@ -110,63 +110,111 @@ Route::middleware('auth')->group(function () {
     // Dashboard
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
-    // Households
-    // Phase C exports — registered BEFORE the resource route so /households/export/*
-    // doesn't get parsed as Route::resource's show action with {household}=export.
-    Route::get('households/export/print', [HouseholdController::class, 'exportPrint'])->name('households.export.print');
-    Route::get('households/export/xlsx',  [HouseholdController::class, 'exportXlsx'])->name('households.export.xlsx');
+    // ─── Households ───────────────────────────────────────────────────────────
+    // Each action gets its own permission gate at the route layer (matches
+    // inventory + purchase_orders pattern). Controllers ALSO call
+    // $this->authorize() so the policy layer is a defense-in-depth backup.
+    // Splitting the resource by `only(...)` lets a role with ONLY
+    // `households.create` reach `/households/create` without needing
+    // `households.view` (a single resource-wide middleware would block them).
+    //
+    // ORDER MATTERS: the writes resource is registered FIRST so the literal
+    // /create + /edit paths beat the {household} show wildcard.
+    Route::middleware('permission:households.view')->group(function () {
+        Route::get('households/export/print', [HouseholdController::class, 'exportPrint'])->name('households.export.print');
+        Route::get('households/export/xlsx',  [HouseholdController::class, 'exportXlsx'])->name('households.export.xlsx');
+    });
 
-    Route::resource('households', HouseholdController::class);
+    Route::resource('households', HouseholdController::class)
+         ->only(['create', 'store'])
+         ->middleware('permission:households.create');
+    Route::resource('households', HouseholdController::class)
+         ->only(['edit', 'update'])
+         ->middleware('permission:households.edit');
+    Route::resource('households', HouseholdController::class)
+         ->only(['index', 'show'])
+         ->middleware('permission:households.view');
+    Route::delete('households/{household}', [HouseholdController::class, 'destroy'])
+         ->middleware('permission:households.delete')
+         ->name('households.destroy');
 
-    // Phase D — per-household event report exports
-    Route::get('households/{household}/event-report/print', [HouseholdController::class, 'eventReportPrint'])->name('households.event-report.print');
-    Route::get('households/{household}/event-report/pdf',   [HouseholdController::class, 'eventReportPdf'])->name('households.event-report.pdf');
-    Route::get('households/{household}/event-report/xlsx',  [HouseholdController::class, 'eventReportXlsx'])->name('households.event-report.xlsx');
+    // Per-household sibling routes — gated independently. Reads share
+    // households.view; writes share households.edit (regenerate-qr,
+    // attach, detach are mutations on the household itself).
+    Route::middleware('permission:households.view')->group(function () {
+        Route::get('households/{household}/event-report/print', [HouseholdController::class, 'eventReportPrint'])->name('households.event-report.print');
+        Route::get('households/{household}/event-report/pdf',   [HouseholdController::class, 'eventReportPdf'])->name('households.event-report.pdf');
+        Route::get('households/{household}/event-report/xlsx',  [HouseholdController::class, 'eventReportXlsx'])->name('households.event-report.xlsx');
+    });
+    Route::middleware('permission:households.edit')->group(function () {
+        Route::post('households/{household}/regenerate-qr', [HouseholdController::class, 'regenerateQr'])
+            ->name('households.regenerate-qr');
+        Route::post('households/{household}/attach', [HouseholdController::class, 'attach'])
+            ->name('households.attach');
+        Route::delete('households/{household}/detach/{represented}', [HouseholdController::class, 'detach'])
+            ->name('households.detach');
+    });
 
-    Route::post('households/{household}/regenerate-qr', [HouseholdController::class, 'regenerateQr'])
-        ->name('households.regenerate-qr');
-    Route::post('households/{household}/attach', [HouseholdController::class, 'attach'])
-        ->name('households.attach');
-    Route::delete('households/{household}/detach/{represented}', [HouseholdController::class, 'detach'])
-        ->name('households.detach');
+    // ─── Events ───────────────────────────────────────────────────────────────
+    // Same per-action split. Order matters (writes first) so /create + /edit
+    // beat the {event} show wildcard.
+    Route::resource('events', EventController::class)
+         ->only(['create', 'store'])
+         ->middleware('permission:events.create');
+    Route::resource('events', EventController::class)
+         ->only(['edit', 'update'])
+         ->middleware('permission:events.edit');
+    Route::resource('events', EventController::class)
+         ->only(['index', 'show'])
+         ->middleware('permission:events.view');
+    Route::delete('events/{event}', [EventController::class, 'destroy'])
+         ->middleware('permission:events.delete')
+         ->name('events.destroy');
 
-    // Events
-    Route::resource('events', EventController::class);
-    Route::patch('events/{event}/status', [EventController::class, 'updateStatus'])
-        ->name('events.status');
-    Route::delete('events/{event}/volunteers/{volunteer}', [EventController::class, 'detachVolunteer'])
-        ->name('events.volunteers.detach');
-    Route::post('events/{event}/attendees/{attendee}/match', [EventController::class, 'matchAttendee'])
-        ->name('events.attendees.match');
-    Route::post('events/{event}/attendees/{attendee}/dismiss', [EventController::class, 'dismissAttendee'])
-        ->name('events.attendees.dismiss');
-    Route::post('events/{event}/attendees/{attendee}/register', [EventController::class, 'registerAttendee'])
-        ->name('events.attendees.register');
-    Route::delete('events/{event}/attendees/{attendee}', [EventController::class, 'deleteAttendee'])
-        ->name('events.attendees.delete');
-    // Phase C.3 — branded printable sheet + streamed CSV download
-    Route::get('events/{event}/attendees/print', [EventController::class, 'attendeesPrint'])
-        ->name('events.attendees.print');
-    Route::get('events/{event}/attendees/export.csv', [EventController::class, 'attendeesCsv'])
-        ->name('events.attendees.csv');
-    // Phase C.3.b — Event Report exports (per-event check-in roster)
-    Route::get('events/{event}/event-report/print', [EventController::class, 'eventReportPrint'])
-        ->name('events.event-report.print');
-    Route::get('events/{event}/event-report/pdf', [EventController::class, 'eventReportPdf'])
-        ->name('events.event-report.pdf');
-    Route::get('events/{event}/event-report/export.csv', [EventController::class, 'eventReportCsv'])
-        ->name('events.event-report.csv');
-    // Phase C.3.c — Event Summary report (vertical-tab view, only for past events)
-    Route::get('events/{event}/summary',             [EventSummaryController::class, 'show'])
-        ->name('events.summary.show');
-    Route::get('events/{event}/summary/print',       [EventSummaryController::class, 'print'])
-        ->name('events.summary.print');
-    Route::get('events/{event}/summary/pdf',         [EventSummaryController::class, 'pdf'])
-        ->name('events.summary.pdf');
-    Route::get('events/{event}/summary/export.xlsx', [EventSummaryController::class, 'xlsx'])
-        ->name('events.summary.xlsx');
-    Route::post('events/{event}/regenerate-codes', [EventController::class, 'regenerateCodes'])
-        ->name('events.regenerate-codes');
+    // Status transitions, regeneration, attendee management — all mutate
+    // the event so all gate on events.edit.
+    Route::middleware('permission:events.edit')->group(function () {
+        Route::patch('events/{event}/status', [EventController::class, 'updateStatus'])
+            ->name('events.status');
+        Route::delete('events/{event}/volunteers/{volunteer}', [EventController::class, 'detachVolunteer'])
+            ->name('events.volunteers.detach');
+        Route::post('events/{event}/attendees/{attendee}/match', [EventController::class, 'matchAttendee'])
+            ->name('events.attendees.match');
+        Route::post('events/{event}/attendees/{attendee}/dismiss', [EventController::class, 'dismissAttendee'])
+            ->name('events.attendees.dismiss');
+        Route::post('events/{event}/attendees/{attendee}/register', [EventController::class, 'registerAttendee'])
+            ->name('events.attendees.register');
+        Route::delete('events/{event}/attendees/{attendee}', [EventController::class, 'deleteAttendee'])
+            ->name('events.attendees.delete');
+        Route::post('events/{event}/regenerate-codes', [EventController::class, 'regenerateCodes'])
+            ->name('events.regenerate-codes');
+    });
+
+    // Read-only sibling routes — attendee + event-report + summary exports.
+    // All gate on events.view since they expose event data without mutating.
+    Route::middleware('permission:events.view')->group(function () {
+        // Phase C.3 — branded printable sheet + streamed CSV download
+        Route::get('events/{event}/attendees/print', [EventController::class, 'attendeesPrint'])
+            ->name('events.attendees.print');
+        Route::get('events/{event}/attendees/export.csv', [EventController::class, 'attendeesCsv'])
+            ->name('events.attendees.csv');
+        // Phase C.3.b — Event Report exports (per-event check-in roster)
+        Route::get('events/{event}/event-report/print', [EventController::class, 'eventReportPrint'])
+            ->name('events.event-report.print');
+        Route::get('events/{event}/event-report/pdf', [EventController::class, 'eventReportPdf'])
+            ->name('events.event-report.pdf');
+        Route::get('events/{event}/event-report/export.csv', [EventController::class, 'eventReportCsv'])
+            ->name('events.event-report.csv');
+        // Phase C.3.c — Event Summary report (vertical-tab view, only for past events)
+        Route::get('events/{event}/summary',             [EventSummaryController::class, 'show'])
+            ->name('events.summary.show');
+        Route::get('events/{event}/summary/print',       [EventSummaryController::class, 'print'])
+            ->name('events.summary.print');
+        Route::get('events/{event}/summary/pdf',         [EventSummaryController::class, 'pdf'])
+            ->name('events.summary.pdf');
+        Route::get('events/{event}/summary/export.xlsx', [EventSummaryController::class, 'xlsx'])
+            ->name('events.summary.xlsx');
+    });
 
     // Admin-side volunteer check-in / checkout for a specific event.
     // Tier 2 — all routes mutate volunteer service rows; gate on volunteers.edit.
@@ -221,21 +269,41 @@ Route::middleware('auth')->group(function () {
          ->middleware('permission:checkin.scan')
          ->name('checkin.done');
 
-    // Volunteers
-    // List exports — registered BEFORE the resource route so /volunteers/export/*
-    // doesn't get parsed as Route::resource's show action with {volunteer}=export.
-    Route::get('volunteers/export/print', [VolunteerController::class, 'exportPrint'])->name('volunteers.export.print');
-    Route::get('volunteers/export/csv',   [VolunteerController::class, 'exportCsv'])  ->name('volunteers.export.csv');
+    // ─── Volunteers ───────────────────────────────────────────────────────────
+    // Same per-action split as households / events. Order: writes first so
+    // /create + /edit beat the {volunteer} show wildcard.
+    Route::middleware('permission:volunteers.view')->group(function () {
+        Route::get('volunteers/export/print', [VolunteerController::class, 'exportPrint'])->name('volunteers.export.print');
+        Route::get('volunteers/export/csv',   [VolunteerController::class, 'exportCsv'])  ->name('volunteers.export.csv');
+    });
 
-    Route::resource('volunteers', VolunteerController::class);
-    Route::post('volunteers/{volunteer}/groups', [VolunteerController::class, 'attachGroup'])
-        ->name('volunteers.groups.attach');
-    Route::post('volunteers/{volunteer}/merge', [VolunteerController::class, 'merge'])
-        ->name('volunteers.merge');
-    Route::get('volunteers/{volunteer}/service-history/print', [VolunteerController::class, 'serviceHistoryPrint'])
-        ->name('volunteers.service-history.print');
-    Route::get('volunteers/{volunteer}/service-history/export.csv', [VolunteerController::class, 'serviceHistoryCsv'])
-        ->name('volunteers.service-history.csv');
+    Route::resource('volunteers', VolunteerController::class)
+         ->only(['create', 'store'])
+         ->middleware('permission:volunteers.create');
+    Route::resource('volunteers', VolunteerController::class)
+         ->only(['edit', 'update'])
+         ->middleware('permission:volunteers.edit');
+    Route::resource('volunteers', VolunteerController::class)
+         ->only(['index', 'show'])
+         ->middleware('permission:volunteers.view');
+    Route::delete('volunteers/{volunteer}', [VolunteerController::class, 'destroy'])
+         ->middleware('permission:volunteers.delete')
+         ->name('volunteers.destroy');
+
+    // Sibling routes. Group attach + merge mutate the volunteer →
+    // volunteers.edit. Service history exports are reads → volunteers.view.
+    Route::middleware('permission:volunteers.edit')->group(function () {
+        Route::post('volunteers/{volunteer}/groups', [VolunteerController::class, 'attachGroup'])
+            ->name('volunteers.groups.attach');
+        Route::post('volunteers/{volunteer}/merge', [VolunteerController::class, 'merge'])
+            ->name('volunteers.merge');
+    });
+    Route::middleware('permission:volunteers.view')->group(function () {
+        Route::get('volunteers/{volunteer}/service-history/print', [VolunteerController::class, 'serviceHistoryPrint'])
+            ->name('volunteers.service-history.print');
+        Route::get('volunteers/{volunteer}/service-history/export.csv', [VolunteerController::class, 'serviceHistoryCsv'])
+            ->name('volunteers.service-history.csv');
+    });
 
     // Inventory — Tier 2. Reads gated on inventory.view; writes gated on
     // inventory.edit. The catalog uses just two keys (view/edit) — no
@@ -360,11 +428,29 @@ Route::middleware('auth')->group(function () {
          ->middleware('permission:roles.view');
 
     // Volunteer Groups
-    Route::resource('volunteer-groups', VolunteerGroupController::class);
-    Route::get('volunteer-groups/{volunteer_group}/members', [VolunteerGroupController::class, 'editMembers'])
-        ->name('volunteer-groups.members.edit');
-    Route::post('volunteer-groups/{volunteer_group}/members', [VolunteerGroupController::class, 'updateMembers'])
-        ->name('volunteer-groups.members.update');
+    // Volunteer Groups — VolunteerGroupPolicy reuses the volunteers.*
+    // permission set (groups are a sub-concept of volunteers). Same
+    // per-action split.
+    Route::resource('volunteer-groups', VolunteerGroupController::class)
+         ->only(['create', 'store'])
+         ->middleware('permission:volunteers.create');
+    Route::resource('volunteer-groups', VolunteerGroupController::class)
+         ->only(['edit', 'update'])
+         ->middleware('permission:volunteers.edit');
+    Route::resource('volunteer-groups', VolunteerGroupController::class)
+         ->only(['index', 'show'])
+         ->middleware('permission:volunteers.view');
+    Route::delete('volunteer-groups/{volunteer_group}', [VolunteerGroupController::class, 'destroy'])
+         ->middleware('permission:volunteers.delete')
+         ->name('volunteer-groups.destroy');
+    // Membership editor — view + update separately (matches the policy's
+    // manageMembers ability, which itself maps to volunteers.edit).
+    Route::middleware('permission:volunteers.edit')->group(function () {
+        Route::get('volunteer-groups/{volunteer_group}/members', [VolunteerGroupController::class, 'editMembers'])
+            ->name('volunteer-groups.members.edit');
+        Route::post('volunteer-groups/{volunteer_group}/members', [VolunteerGroupController::class, 'updateMembers'])
+            ->name('volunteer-groups.members.update');
+    });
 
     // Audit Log (read-only). Tier 3a — gated behind the dedicated audit_logs.view
     // permission rather than hard-coded isAdmin(); ADMIN keeps full access via the

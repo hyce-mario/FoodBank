@@ -7,6 +7,7 @@ use App\Models\Event;
 use App\Models\EventPreRegistration;
 use App\Models\EventReview;
 use App\Models\Household;
+use App\Models\Volunteer;
 use App\Services\SettingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
@@ -162,6 +163,39 @@ class BotDefenseTest extends TestCase
 
         $this->assertSame(1, EventPreRegistration::count());
         $this->assertSame(1, Household::count());
+    }
+
+    // ─── Volunteer signup (JSON / AJAX path) ──────────────────────────────────
+
+    public function test_honeypot_filled_blocks_volunteer_signup_with_json_response(): void
+    {
+        $response = $this->postJson(route('volunteer-checkin.signup'), [
+            'first_name'                  => 'Spam',
+            'last_name'                   => 'Bot',
+            'phone'                       => '5551234567',
+            '_form_ts'                    => BotDefense::signedTimestamp(time() - 5),
+            BotDefense::HONEYPOT_FIELD    => 'http://spam.example/promo',
+        ]);
+
+        // JSON path must return 422 with the generic shape — never a 302
+        // redirect (that would break the kiosk JS).
+        $response->assertStatus(422)->assertJson(['ok' => false]);
+
+        $this->assertSame(0, Volunteer::count(), 'Bot signup must not create a volunteer record');
+    }
+
+    public function test_too_recent_timestamp_blocks_volunteer_signup_with_json_response(): void
+    {
+        $response = $this->postJson(route('volunteer-checkin.signup'), [
+            'first_name' => 'Fast',
+            'last_name'  => 'Bot',
+            'phone'      => '5559999999',
+            '_form_ts'   => BotDefense::signedTimestamp(),
+        ]);
+
+        $response->assertStatus(422)->assertJson(['ok' => false]);
+
+        $this->assertSame(0, Volunteer::count());
     }
 
     // ─── Logging ──────────────────────────────────────────────────────────────
