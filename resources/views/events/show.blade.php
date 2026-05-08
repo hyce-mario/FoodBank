@@ -767,19 +767,31 @@
                                         @endif
 
                                     @else
+                                        {{-- 'new' / 'unmatched' / null. Two sub-cases:
+                                             (a) household_id IS set — auto-created household
+                                                 from public registration (no pre-existing match).
+                                                 Show the green "New" pill + household number;
+                                                 NO action button — the link already exists.
+                                             (b) household_id is null — truly orphan attendee
+                                                 (e.g. a dismissed potential-match). Admin needs
+                                                 to click "Register as Household" to create one. --}}
                                         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
                                             New
                                         </span>
-                                        <form method="POST"
-                                              action="{{ route('events.attendees.register', [$event, $reg]) }}"
-                                              class="mt-1.5">
-                                            @csrf
-                                            <button type="submit"
-                                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white transition-colors">
-                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-                                                Register as Household
-                                            </button>
-                                        </form>
+                                        @if ($reg->household_id && $reg->household)
+                                            <p class="text-xs text-gray-400 mt-1">#{{ $reg->household->household_number }}</p>
+                                        @else
+                                            <form method="POST"
+                                                  action="{{ route('events.attendees.register', [$event, $reg]) }}"
+                                                  class="mt-1.5">
+                                                @csrf
+                                                <button type="submit"
+                                                        class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-600 hover:bg-green-700 text-white transition-colors">
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                                                    Register as Household
+                                                </button>
+                                            </form>
+                                        @endif
                                     @endif
                                 </td>
 

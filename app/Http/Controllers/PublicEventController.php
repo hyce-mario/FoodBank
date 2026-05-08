@@ -163,10 +163,16 @@ class PublicEventController extends Controller
                 'seniors_count'  => $seniors,
                 'household_size' => $totalSize,
                 'household_id'   => $household->id,
-                // Phase 6.5.a: auto-created household IS linked from the start —
-                // mark as matched so the admin UI doesn't surface a redundant
-                // "Register as Household" action that would otherwise confuse staff.
-                'match_status'   => 'matched',
+                // Status semantics (Session 12 follow-up):
+                //   'matched' is reserved for "linked to a PRE-EXISTING household
+                //    after admin review" — Phase 6.5.a's choice to mark fresh
+                //    auto-creates as 'matched' was misleading admins (a brand-new
+                //    household looked identical to an admin-confirmed match).
+                //    Auto-created households now carry 'new' instead. The admin
+                //    view recognises 'new' + populated household_id and shows the
+                //    "New" pill + household number without offering a redundant
+                //    "Register as Household" action.
+                'match_status'   => 'new',
             ]);
         }
 
