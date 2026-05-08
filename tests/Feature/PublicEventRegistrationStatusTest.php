@@ -6,6 +6,9 @@ use App\Http\Middleware\BotDefense;
 use App\Models\Event;
 use App\Models\EventPreRegistration;
 use App\Models\Household;
+use App\Models\Role;
+use App\Models\RolePermission;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -133,5 +136,63 @@ class PublicEventRegistrationStatusTest extends TestCase
         $this->assertSame('potential_match', $reg->match_status);
         $this->assertSame($existing->id, $reg->potential_household_id);
         $this->assertNull($reg->household_id);
+    }
+
+    public function test_dismissing_a_potential_match_marks_attendee_as_new_without_db_error(): void
+    {
+        // Reproduces the bug the user hit: clicking "Not them" on a
+        // potential_match attendee threw SQLSTATE[23000] "Column
+        // 'match_status' cannot be null" on production MySQL because the
+        // controller wrote NULL into a NOT-NULL column. SQLite (test
+        // suite) silently coerced NULL to the default('new') so the bug
+        // never surfaced in CI. Asserting the post-state value pins the
+        // fix and the not-error makes the regression test concrete.
+        $existing = Household::create([
+            'household_number' => 'H010',
+            'first_name'       => 'Pre',
+            'last_name'        => 'Existing',
+            'email'            => 'pre@example.test',
+            'household_size'   => 2,
+            'qr_token'         => str_repeat('c', 32),
+        ]);
+
+        $reg = EventPreRegistration::create([
+            'event_id'               => $this->event->id,
+            'attendee_number'        => '00001',
+            'first_name'             => 'Pre',
+            'last_name'              => 'Existing',
+            'email'                  => 'someone-else@example.test',
+            'children_count'         => 0,
+            'adults_count'           => 1,
+            'seniors_count'          => 0,
+            'household_size'         => 1,
+            'potential_household_id' => $existing->id,
+            'match_status'           => 'potential_match',
+        ]);
+
+        // Admin user with events.edit (the route now requires it).
+        $admin = $this->makeAdmin();
+
+        $this->actingAs($admin)
+            ->post(route('events.attendees.dismiss', [$this->event, $reg]))
+            ->assertRedirect();
+
+        $reg->refresh();
+        $this->assertSame('new', $reg->match_status, 'Dismissed attendee must drop to "new" — not null');
+        $this->assertNull($reg->potential_household_id, 'Potential link must be cleared');
+        $this->assertNull($reg->household_id, 'No household auto-assigned by dismiss');
+    }
+
+    private function makeAdmin(): User
+    {
+        $role = Role::create(['name' => 'ADMIN', 'display_name' => 'Admin', 'description' => '']);
+        RolePermission::create(['role_id' => $role->id, 'permission' => '*']);
+        return User::create([
+            'name'              => 'Admin',
+            'email'             => 'admin-status-test@example.test',
+            'password'          => bcrypt('p'),
+            'role_id'           => $role->id,
+            'email_verified_at' => now(),
+        ]);
     }
 }

@@ -551,9 +551,15 @@ class EventController extends Controller
     public function dismissAttendee(Event $event, EventPreRegistration $attendee): RedirectResponse
     {
         $this->authorize('update', $event);
+        // event_pre_registrations.match_status is NOT NULL with default 'new'.
+        // The earlier `null` value passed MySQL strict mode as
+        // SQLSTATE[23000] "Column 'match_status' cannot be null" — the flash
+        // message below confirms the intent was always "marked as new".
+        // SQLite (test suite) silently coerced null to the default which is
+        // why this slipped through CI; production MySQL did not.
         $attendee->update([
             'potential_household_id' => null,
-            'match_status'           => null,
+            'match_status'           => 'new',
         ]);
 
         return back()->with('success', 'Potential match dismissed — attendee marked as new.');
