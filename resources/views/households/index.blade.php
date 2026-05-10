@@ -14,14 +14,27 @@
             <span class="text-gray-600 font-medium">Households</span>
         </nav>
     </div>
-    <a href="{{ route('households.create') }}"
-       class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white
-              font-semibold text-sm rounded-lg px-4 py-2 transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-        </svg>
-        Add Household
-    </a>
+    <div class="flex flex-wrap items-center gap-2">
+        @can('create', \App\Models\Household::class)
+            <a href="{{ route('households.import.create') }}"
+               class="inline-flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-700
+                      font-semibold text-sm rounded-lg px-4 py-2 border border-gray-300 transition-colors"
+               title="Bulk import households from CSV or XLSX">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/>
+                </svg>
+                Import
+            </a>
+        @endcan
+        <a href="{{ route('households.create') }}"
+           class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white
+                  font-semibold text-sm rounded-lg px-4 py-2 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+            </svg>
+            Add Household
+        </a>
+    </div>
 </div>
 
 {{-- Flash --}}

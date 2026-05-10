@@ -125,6 +125,27 @@ Route::middleware('auth')->group(function () {
         Route::get('households/export/xlsx',  [HouseholdController::class, 'exportXlsx'])->name('households.export.xlsx');
     });
 
+    // Phase 6.5.e — bulk import (CSV / XLSX). All five routes gated on
+    // households.create at the route layer; "update existing" decisions
+    // are additionally authorized in the commit controller. ORDER MATTERS:
+    // these literal-prefix routes must be registered BEFORE the
+    // `Route::resource('households', …)` calls below so /import doesn't
+    // collide with the {household} show wildcard.
+    Route::middleware('permission:households.create')->group(function () {
+        Route::get('households/import',                  [\App\Http\Controllers\HouseholdImportController::class, 'create'])
+            ->name('households.import.create');
+        Route::get('households/import/template/{format}', [\App\Http\Controllers\HouseholdImportController::class, 'template'])
+            ->where('format', 'csv|xlsx')
+            ->name('households.import.template');
+        Route::post('households/import/upload',          [\App\Http\Controllers\HouseholdImportController::class, 'store'])
+            ->name('households.import.store');
+        Route::get('households/import/preview/{token}',  [\App\Http\Controllers\HouseholdImportController::class, 'preview'])
+            ->where('token', '[0-9a-fA-F-]{36}')
+            ->name('households.import.preview');
+        Route::post('households/import/commit',          [\App\Http\Controllers\HouseholdImportController::class, 'commit'])
+            ->name('households.import.commit');
+    });
+
     Route::resource('households', HouseholdController::class)
          ->only(['create', 'store'])
          ->middleware('permission:households.create');

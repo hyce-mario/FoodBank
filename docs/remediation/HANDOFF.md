@@ -4,11 +4,15 @@
 
 ---
 
-## Current state — 2026-05-10 (Session 13 mid-session — **Phase 6.5.d household merge shipped (uncommitted)**)
+## Current state — 2026-05-10 (Session 13 — **Phase 6.5.d shipped + Phase 6.5.e household import in flight**)
 
 ### TL;DR for the next agent
 
-**FoodBank is LIVE in production at `https://ngo.heyjaytechnologies.com`.** Session 13 picked up an open carry-forward item that had fallen off the HANDOFF rewrite during Session 12 — the **Phase 6.5.d atomic household merge tool**. It is now implemented and tested but **uncommitted**. The work is the household analogue of the Phase 5.8 volunteer merge: pick keeper + duplicate from the household Show page → atomic transfer of all visits / pre-regs / pledges / represented households / check-in overrides (incl. JSON `household_ids` rewrite) / `events_attended_count` recompute → duplicate deleted. Three conflict cases handled: open-visit-same-event refused, representative-cycle refused, confirmed-preg-same-event auto-cancelled (more forgiving than the volunteer pattern — a stale pre-reg is benign). Lock ordering by ID prevents deadlock under concurrent merges; all JSON manipulation kept in PHP for sqlite test parity; portable subquery for the count recompute. 19 new tests; suite 716 → 735. **No schema migration required.**
+**FoodBank is LIVE in production at `https://ngo.heyjaytechnologies.com`.** Session 13 closed the third leg of the Phase 6.5 duplicate-handling stool. Two pieces of work landed:
+
+1. **Phase 6.5.d — Atomic household merge tool** (commit `8cf4c97`, **pushed to origin/main but not yet deployed to live server**). Household analogue of the Phase 5.8 volunteer merge: keeper + duplicate picker on the Show page → atomic transfer of visits / pre-regs / pledges / represented households / check-in overrides (FK + JSON rewrite) → duplicate deleted. 19 tests.
+
+2. **Phase 6.5.e — Bulk household import (CSV / XLSX)** — IMPLEMENTED + 27 tests passing locally but **uncommitted** as of this writing. Two-phase preview-then-confirm flow. 13-column template (5 always-required, 2 always-optional, 6 conditionally-required by org settings). Per-row decision dropdown (Create / Skip / Create anyway / Update existing). All-or-nothing commit inside one DB::transaction. Single rollup audit row instead of per-household. No schema migration required.
 
 Session 12 (2026-05-07) closed the prior wave: RBAC hardening + permanent guardrails + bot defense — see prior session block below.
 
@@ -28,8 +32,8 @@ Working tree clean. 711 feature tests passing.
 |---|---|
 | `main` branch | 7 new commits ahead of origin (last known push: `ef5369e`); local `origin/main` ref shows up-to-date but user has not run `git push` since session start, so verify on next push |
 | Live site | ✅ `https://ngo.heyjaytechnologies.com` — running pre-Session-12 code (`ef5369e`) until pushed |
-| Suite | **735 feature tests passing** (was 716 at end of Session 12 + dismissAttendee + public-registration fixes; +19 from Phase 6.5.d HouseholdMergeTest) |
-| Working tree | **Phase 6.5.d files unstaged** — see "What's next" §A |
+| Suite | **762 feature tests passing** (was 716 at end of Session 12 + post-S12 fixes; +19 from Phase 6.5.d, +27 from Phase 6.5.e) |
+| Working tree | **Phase 6.5.e files unstaged** — see "What's next" §A. Phase 6.5.d already committed as `8cf4c97`. |
 | Git identity | Local repo: `user.name=YTobby`, `user.email=digienergy0@gmail.com` |
 
 ### What landed in Session 12 (7 commits)
@@ -88,32 +92,39 @@ No new tags this session. The work isn't a single phase — it's a permission-sy
 
 ## What's next — start here on resume
 
-### A. Commit + push the Phase 6.5.d household merge work
+### A. Commit + push the Phase 6.5.e household-import work
 
-The Phase 6.5.d files are unstaged on the local working tree. Before committing, the next agent should re-run `php artisan test --filter=HouseholdMergeTest` (and ideally the full suite) to confirm no regression on the resume machine. Files added/modified:
+The Phase 6.5.e files are unstaged on the local working tree. Re-run `php artisan test --filter=HouseholdImportTest` (and ideally the full suite) to confirm no regression on the resume machine. Files added/modified:
 
-- `app/Exceptions/HouseholdMergeConflictException.php` (new)
-- `app/Services/HouseholdMergeService.php` (new)
-- `app/Http/Controllers/HouseholdController.php` (added `merge()` method, `$mergeCandidates` in `show()`, updated constructor)
-- `routes/web.php` (added `households.merge` POST under `permission:households.edit` group)
-- `resources/views/households/show.blade.php` (Merge button + modal + Alpine state)
-- `tests/Feature/HouseholdMergeTest.php` (new, 19 tests)
-- `docs/remediation/LOG.md` (new Phase 6.5.d row)
+- `app/Exceptions/HouseholdImportValidationException.php` (new)
+- `app/Services/HouseholdImportService.php` (new — parse + validate + duplicate-flag + commit)
+- `app/Http/Requests/UploadHouseholdImportRequest.php` (new — file size/extension validation)
+- `app/Http/Requests/CommitHouseholdImportRequest.php` (new — per-row decision shape validation)
+- `app/Http/Controllers/HouseholdImportController.php` (new — 5 actions: create / template / store / preview / commit)
+- `routes/web.php` (added 5 routes under `permission:households.create`, BEFORE the household resource so `/import` doesn't collide with `{household}` show)
+- `resources/views/households/import/upload.blade.php` (new — file picker + template downloads + required-columns reference)
+- `resources/views/households/import/preview.blade.php` (new — stat strip + per-row decision table)
+- `resources/views/households/index.blade.php` (added "Import" button, gated `@can('create', Household)`)
+- `tests/Feature/HouseholdImportTest.php` (new — 27 tests)
+- `docs/remediation/LOG.md` (new Phase 6.5.e row)
 - `docs/remediation/HANDOFF.md` (this file)
 
 Suggested commit message (single commit; the work is one cohesive feature):
 
 ```
-feat(households): Phase 6.5.d — atomic household merge tool
+feat(households): Phase 6.5.e — bulk import (CSV / XLSX, preview-then-confirm)
 
-Drains the legacy-duplicate household backlog from before Phase 6.5.c added
-fuzzy duplicate detection at create time. Mirrors the Phase 5.8 volunteer
-merge shape; this version is heavier because households have more incoming
-FKs (visits, pre-registrations × 2, pledges, check-in overrides FK + JSON
-column, self-FK for representative chain) and a denormalised
-events_attended_count cache that needs recomputing post-merge.
+Closes the third leg of the Phase 6.5 duplicate-handling stool: 6.5.c
+prevents new duplicates at create time, 6.5.d merges existing duplicates
+ad-hoc, 6.5.e brings new households in safely from spreadsheets.
 
-[full body — see HouseholdMergeService docblock for the contract]
+Two-phase flow: upload → row-level validation → if any row malformed,
+the whole upload is refused with a row-level error report; on clean
+validation, parsed rows are cached for 30 min and admin lands on the
+Preview page → per-row decision dropdown → Confirm runs all decisions
+inside one DB::transaction.
+
+[full body — see HouseholdImportService docblock for the contract]
 ```
 
 After commit, push and apply the standard production deploy cycle from `DEPLOY.md`:
@@ -128,13 +139,13 @@ cd ~/ngo.heyjaytechnologies.com && git pull && \
   php artisan view:cache   && php artisan event:cache
 ```
 
-No `npm run build` needed — pure PHP + blade changes. No new Tailwind classes (the Merge button reuses `bg-orange-600 / hover:bg-orange-700` and the modal uses `bg-amber-100 / text-amber-600` already present in the prebuilt bundle from the volunteer-merge work). No `public/build/` rebuild or scp required.
+No `npm run build` needed — pure PHP + Blade. No new Tailwind classes (the Import button + amber heads-up panel + emerald confirm button reuse classes already present in the prebuilt bundle from prior work). No `public/build/` rebuild or scp required.
 
-**No schema migration required** — every FK that the service writes to already exists in production. The only data manipulations are UPDATEs/DELETEs against existing columns, plus rewriting the JSON `household_ids` array on `checkin_overrides` rows in PHP via Eloquent's `array` cast.
+**No schema migration required** — the importer writes to existing `households` columns only. The audit rollup row is written into `audit_logs` using the existing schema (target_type=User, target_id=actor.id — same shape as Phase 6.10's `permissions_changed` row).
 
-### B. Push the Session-12 commits to production (still pending from prior handoff)
+### B. Phase 6.5.d already pushed (commit `8cf4c97`)
 
-The seven Session-12 commits (89d3f8c → 07a798b) plus the two Session-12-tail bug fixes (fa3c068, 34995fd) plus this Phase 6.5.d work are all still unpushed. The deploy cycle in §A covers all of them in one push.
+The household merge tool was committed and pushed during this session. **Server-side deploy still pending** — the user opted to handle the SSH deploy themselves. The deploy cycle in §A covers the merge tool + the import work + the Session-12 backlog (89d3f8c, fa3c068, 34995fd) in one go.
 
 ### C. Open work the user has signalled they may pick up
 
