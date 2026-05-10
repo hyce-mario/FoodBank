@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\HouseholdMergeConflictException;
 use App\Http\Requests\StoreHouseholdRequest;
 use App\Http\Requests\UpdateHouseholdRequest;
 use App\Models\Household;
+use App\Services\HouseholdMergeService;
 use App\Services\HouseholdService;
 use App\Services\SettingService;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -21,7 +23,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class HouseholdController extends Controller
 {
-    public function __construct(private readonly HouseholdService $householdService) {}
+    public function __construct(
+        private readonly HouseholdService $householdService,
+        private readonly HouseholdMergeService $mergeService,
+    ) {}
 
     // ─── Index ────────────────────────────────────────────────────────────────
 
@@ -271,6 +276,15 @@ class HouseholdController extends Controller
             ->orderBy('first_name')
             ->get(['id', 'first_name', 'last_name', 'household_number']);
 
+        // Phase 6.5.d — candidate keepers for the Merge picker. Excludes
+        // the current household; ordered by name. Light payload (id +
+        // names + household_number + phone) so the dropdown is fast even
+        // on installations with thousands of households.
+        $mergeCandidates = Household::where('id', '!=', $household->id)
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name', 'household_number', 'phone']);
+
         $perPage = in_array((int) $request->get('per_page', 10), [10, 25, 50])
             ? (int) $request->get('per_page', 10)
             : 10;
@@ -278,7 +292,13 @@ class HouseholdController extends Controller
         $eventHistory = $this->eventHistoryQuery($household)->paginate($perPage)->withQueryString();
         $historyStats = $this->historyStats($household);
 
-        return view('households.show', compact('household', 'attachCandidates', 'eventHistory', 'historyStats'));
+        return view('households.show', compact(
+            'household',
+            'attachCandidates',
+            'mergeCandidates',
+            'eventHistory',
+            'historyStats',
+        ));
     }
 
     /**
@@ -542,6 +562,88 @@ class HouseholdController extends Controller
         $this->householdService->detach($represented);
 
         return back()->with('success', "\"{$represented->full_name}\" has been unlinked.");
+    }
+
+    // ─── Merge into another household (Phase 6.5.d) ──────────────────────────
+
+    /**
+     * Merge this household (the "duplicate") into a chosen "keeper".
+     *
+     * Authorization: requires `households.delete` (the duplicate row will be
+     * deleted) AND `households.edit` (the keeper row gets new attached
+     * visits / pre-regs / pledges / represented households). Mirrors the
+     * volunteer-merge precedent — both abilities checked explicitly so role
+     * granularity holds. Route middleware additionally filters on
+     * households.edit; the policy on $duplicate enforces households.delete.
+     *
+     * The atomic transfer is in HouseholdMergeService; this method is the
+     * HTTP shim — it validates the keeper id, runs the service, and
+     * surfaces HouseholdMergeConflictException as a friendly error
+     * (same pattern as the Volunteer merge flow).
+     */
+    public function merge(Request $request, Household $household): RedirectResponse
+    {
+        $this->authorize('delete', $household);
+
+        $data = $request->validate([
+            'keeper_id' => ['required', 'integer', 'exists:households,id'],
+        ]);
+
+        // Laravel's `different:` rule references INPUT FIELDS, not route
+        // bindings, so we can't express "different from the URL household"
+        // declaratively. Compare here so the validator surfaces the
+        // session error in the same shape any other field rule would.
+        if ((int) $data['keeper_id'] === $household->id) {
+            return back()
+                ->withErrors(['keeper_id' => 'Cannot merge a household with itself.'])
+                ->withInput();
+        }
+
+        $keeper = Household::findOrFail($data['keeper_id']);
+        $this->authorize('update', $keeper);
+
+        try {
+            $result = $this->mergeService->merge($keeper, $household);
+        } catch (HouseholdMergeConflictException $e) {
+            $count = count($e->conflictingIds);
+            $copy  = match ($e->conflictType) {
+                'open_visit' =>
+                    "Can't merge — both households have an active visit at {$count} event"
+                    . ($count === 1 ? '' : 's')
+                    . '. Please complete or exit one of them first.',
+                'representative_cycle' =>
+                    "Can't merge — doing so would create a circular link in the representative chain "
+                    . "(would loop on {$count} household" . ($count === 1 ? '' : 's')
+                    . '). Detach the affected representative link first.',
+                default => $e->getMessage(),
+            };
+            return back()->with('error', $copy);
+        }
+
+        $visits     = $result['visits_transferred'];
+        $preRegs    = $result['pre_regs_transferred'];
+        $cancelled  = $result['pre_regs_cancelled'];
+        $pledges    = $result['pledges_transferred'];
+        $represented = $result['represented_transferred'];
+
+        $parts = [
+            "Transferred {$visits} visit"               . ($visits === 1 ? '' : 's'),
+            "{$preRegs} pre-registration"               . ($preRegs === 1 ? '' : 's'),
+            "{$pledges} pledge"                         . ($pledges === 1 ? '' : 's'),
+            "{$represented} represented household"      . ($represented === 1 ? '' : 's'),
+        ];
+        $cancelledNote = $cancelled > 0
+            ? " ({$cancelled} duplicate pre-registration" . ($cancelled === 1 ? '' : 's')
+              . ' cancelled to avoid a same-event collision)'
+            : '';
+
+        return redirect()
+            ->route('households.show', $keeper)
+            ->with(
+                'success',
+                "Merged \"{$result['merged_household_name']}\" (#{$result['merged_household_number']}) into "
+                . "\"{$keeper->full_name}\". " . implode(', ', $parts) . '.' . $cancelledNote,
+            );
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

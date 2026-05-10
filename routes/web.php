@@ -153,6 +153,12 @@ Route::middleware('auth')->group(function () {
             ->name('households.attach');
         Route::delete('households/{household}/detach/{represented}', [HouseholdController::class, 'detach'])
             ->name('households.detach');
+        // Phase 6.5.d — atomic merge. Route gate is households.edit (the
+        // keeper is being modified); the controller additionally requires
+        // households.delete on the duplicate via $this->authorize. Effective
+        // permission: households.edit AND households.delete.
+        Route::post('households/{household}/merge', [HouseholdController::class, 'merge'])
+            ->name('households.merge');
     });
 
     // ─── Events ───────────────────────────────────────────────────────────────

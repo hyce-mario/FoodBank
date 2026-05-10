@@ -4,11 +4,13 @@
 
 ---
 
-## Current state — 2026-05-07 (Session 12 closing — **RBAC hardening + permanent guardrails + bot defense**)
+## Current state — 2026-05-10 (Session 13 mid-session — **Phase 6.5.d household merge shipped (uncommitted)**)
 
 ### TL;DR for the next agent
 
-**FoodBank is LIVE in production at `https://ngo.heyjaytechnologies.com`.** Session 12 began with a user-reported permission/gate concern (custom roles "leak" UI even when their permissions don't grant access) and ended with a permanent guardrail system that prevents the entire class of bug from recurring. Seven commits land:
+**FoodBank is LIVE in production at `https://ngo.heyjaytechnologies.com`.** Session 13 picked up an open carry-forward item that had fallen off the HANDOFF rewrite during Session 12 — the **Phase 6.5.d atomic household merge tool**. It is now implemented and tested but **uncommitted**. The work is the household analogue of the Phase 5.8 volunteer merge: pick keeper + duplicate from the household Show page → atomic transfer of all visits / pre-regs / pledges / represented households / check-in overrides (incl. JSON `household_ids` rewrite) / `events_attended_count` recompute → duplicate deleted. Three conflict cases handled: open-visit-same-event refused, representative-cycle refused, confirmed-preg-same-event auto-cancelled (more forgiving than the volunteer pattern — a stale pre-reg is benign). Lock ordering by ID prevents deadlock under concurrent merges; all JSON manipulation kept in PHP for sqlite test parity; portable subquery for the count recompute. 19 new tests; suite 716 → 735. **No schema migration required.**
+
+Session 12 (2026-05-07) closed the prior wave: RBAC hardening + permanent guardrails + bot defense — see prior session block below.
 
 1. UI-side fix for the original report (sidebar + dashboard widget gating per permission).
 2. Bot defense on every public-write endpoint (registration, review, volunteer signup) via honeypot + HMAC-signed time trap.
@@ -26,8 +28,8 @@ Working tree clean. 711 feature tests passing.
 |---|---|
 | `main` branch | 7 new commits ahead of origin (last known push: `ef5369e`); local `origin/main` ref shows up-to-date but user has not run `git push` since session start, so verify on next push |
 | Live site | ✅ `https://ngo.heyjaytechnologies.com` — running pre-Session-12 code (`ef5369e`) until pushed |
-| Suite | **711 feature tests passing** (was 694 at Session 11 close; +9 BotDefense, +4 SettingsAuthorization, +2 RBAC guardrails, +2 BotDefense JSON-path) |
-| Working tree | Clean |
+| Suite | **735 feature tests passing** (was 716 at end of Session 12 + dismissAttendee + public-registration fixes; +19 from Phase 6.5.d HouseholdMergeTest) |
+| Working tree | **Phase 6.5.d files unstaged** — see "What's next" §A |
 | Git identity | Local repo: `user.name=YTobby`, `user.email=digienergy0@gmail.com` |
 
 ### What landed in Session 12 (7 commits)
@@ -86,9 +88,35 @@ No new tags this session. The work isn't a single phase — it's a permission-sy
 
 ## What's next — start here on resume
 
-### A. Push the 7 Session-12 commits to production
+### A. Commit + push the Phase 6.5.d household merge work
 
-User did NOT push during this session. Action sequence:
+The Phase 6.5.d files are unstaged on the local working tree. Before committing, the next agent should re-run `php artisan test --filter=HouseholdMergeTest` (and ideally the full suite) to confirm no regression on the resume machine. Files added/modified:
+
+- `app/Exceptions/HouseholdMergeConflictException.php` (new)
+- `app/Services/HouseholdMergeService.php` (new)
+- `app/Http/Controllers/HouseholdController.php` (added `merge()` method, `$mergeCandidates` in `show()`, updated constructor)
+- `routes/web.php` (added `households.merge` POST under `permission:households.edit` group)
+- `resources/views/households/show.blade.php` (Merge button + modal + Alpine state)
+- `tests/Feature/HouseholdMergeTest.php` (new, 19 tests)
+- `docs/remediation/LOG.md` (new Phase 6.5.d row)
+- `docs/remediation/HANDOFF.md` (this file)
+
+Suggested commit message (single commit; the work is one cohesive feature):
+
+```
+feat(households): Phase 6.5.d — atomic household merge tool
+
+Drains the legacy-duplicate household backlog from before Phase 6.5.c added
+fuzzy duplicate detection at create time. Mirrors the Phase 5.8 volunteer
+merge shape; this version is heavier because households have more incoming
+FKs (visits, pre-registrations × 2, pledges, check-in overrides FK + JSON
+column, self-FK for representative chain) and a denormalised
+events_attended_count cache that needs recomputing post-merge.
+
+[full body — see HouseholdMergeService docblock for the contract]
+```
+
+After commit, push and apply the standard production deploy cycle from `DEPLOY.md`:
 
 ```bash
 git push origin main
@@ -100,11 +128,15 @@ cd ~/ngo.heyjaytechnologies.com && git pull && \
   php artisan view:cache   && php artisan event:cache
 ```
 
-The clear-then-cache cycle is load-bearing — even if production code already had the gates, the cached route file on disk may still be the stale pre-Tier-2 snapshot. Running it once permanently closes the "stale cache makes middleware vanish" failure mode.
+No `npm run build` needed — pure PHP + blade changes. No new Tailwind classes (the Merge button reuses `bg-orange-600 / hover:bg-orange-700` and the modal uses `bg-amber-100 / text-amber-600` already present in the prebuilt bundle from the volunteer-merge work). No `public/build/` rebuild or scp required.
 
-No `npm run build` needed for these commits — pure PHP + blade changes. No CSS classes added. No `scp` of `public/build/` required.
+**No schema migration required** — every FK that the service writes to already exists in production. The only data manipulations are UPDATEs/DELETEs against existing columns, plus rewriting the JSON `household_ids` array on `checkin_overrides` rows in PHP via Eloquent's `array` cast.
 
-### B. Open work the user has signalled they may pick up
+### B. Push the Session-12 commits to production (still pending from prior handoff)
+
+The seven Session-12 commits (89d3f8c → 07a798b) plus the two Session-12-tail bug fixes (fa3c068, 34995fd) plus this Phase 6.5.d work are all still unpushed. The deploy cycle in §A covers all of them in one push.
+
+### C. Open work the user has signalled they may pick up
 
 - **Notifications system** — placeholder dropdown in topbar still hardcoded. Not load-bearing. Build when asked.
 
